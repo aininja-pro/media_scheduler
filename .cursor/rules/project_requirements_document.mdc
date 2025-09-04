@@ -1,0 +1,169 @@
+---
+description: Apply these rules when making changes to the project
+globs:
+alwaysApply: true
+---
+
+Update this rule if user requested changes to the project requirement, etc.
+# Project Requirements Document (PRD)
+
+## 1. Project Overview
+
+DriveShop’s Media Scheduling Optimizer is a web-based engine that automatically assigns DriveShop vehicles to media partners each week across 17 markets. It ingests tabular data (initially CSVs), applies a set of hard constraints (availability windows, tier caps, cooldown rules, office capacity, eligibility flags) and soft preferences (partner tier weight, geographic match, historical performance), then generates a ranked schedule. A React-based review UI embedded in the existing Ruby on Rails Fleet Management System (FMS) lets operations teams approve or override assignments before exporting the final schedule.
+
+This tool cuts down manual work, enforces consistent rules, and maximizes partner engagement by prioritizing higher-tier relationships and past performance. Success is measured by:
+
+*   **End-to-end flow**: upload CSVs → generate schedule → review/override → export CSV
+*   **Rule enforcement**: strict adherence to availability, caps, cooldowns, capacity
+*   **Usable UI**: rationale chips, filtering/sorting, responsive design
+*   **Secure integration**: reverse-proxy under Rails, JWT SSO, audit logs
+
+## 2. In-Scope vs. Out-of-Scope
+
+**In-Scope (Version 1)**
+
+*   CSV ingestion for vehicles, partners, ranks, loan history, current activity, ops capacity (budgets optional)
+*   ETL transforms: rolling publication rate, cooldown flags, day-level availability
+*   Greedy baseline solver + OR-Tools CP-SAT layer (with greedy fallback)
+*   React + Vite + Tailwind UI: week view table, filtering, sorting, search, rationale chips
+*   Human-in-the-loop: inline override, approval, publish
+*   CSV export of approved schedule
+*   JWT SSO via Rails reverse proxy and `/auth/exchange` endpoint
+*   Audit logging of uploads, runs, overrides, publications
+*   Error notifications via email (immediate for failures, daily digest for warnings)
+*   Dockerized deployment, GitHub Actions CI (pytest + frontend build)
+
+**Out-of-Scope (Deferred to Later Phases)**
+
+*   Airtable export integration (stub only)
+*   Hard-blocking budget constraints (budget warnings only in v1)
+*   Advanced analytics/reporting beyond CSV (e.g., PowerBI connectors)
+*   Mobile-only native apps (UI is responsive but no dedicated mobile app)
+*   Role-based feature toggles beyond MVP Editor/Approver/Viewer
+*   Multi-language or localization support
+
+## 3. User Flow
+
+When an authorized DriveShop user (Scheduler or Manager) clicks “Scheduler” in the Rails FMS, the Rails app reverse-proxies the request under `/scheduler/*`, injecting an `X-DriveShop-Token` JWT. The frontend immediately calls `POST /auth/exchange` to validate the token, establish an HttpOnly session cookie, and fetch the user’s markets and permissions. Once authenticated, the user lands on the **Scheduler Dashboard** showing available offices and a calendar view selector.
+
+From the dashboard, the user uploads one or more CSV files via `POST /ingest/{table}`. Upon successful ingestion, they select an office and week (Monday–Sunday) and click “Generate Schedule.” The app runs ETL and the greedy solver (or CP-SAT), then displays assignments in a responsive table. Users can filter by office/partner/make/flags, search by VIN, sort by score or date, click chips for `/explain/{vin}/{partner_id}/{day}` details, and override assignments inline. When ready, they hit “Publish,” which calls `POST /schedule/publish` to persist the final schedule and returns a run ID. Finally, they download the approved schedule as CSV via an export button or revisit past runs with `GET /schedule/{id}`.
+
+## 4. Core Features
+
+*   **CSV Ingestion & Validation**
+
+    *   `POST /ingest/{table}` accepts CSV, validates via Pydantic schemas, upserts to Postgres
+    *   Tables: vehicles, media_partners, partner_make_rank, loan_history, current_activity, ops_capacity, budgets (optional)
+
+*   **ETL Transforms**
+
+    *   Compute rolling 24-month publication rates
+    *   Identify cooldown flags for recent same-trim assignments
+    *   Expand vehicle availability into a daily grid
+
+*   **Greedy & CP-SAT Solvers**
+
+    *   Greedy: filter by hard rules, compute score = tier_weight + geo_bonus + history_bonus
+    *   CP-SAT: binary decision x[v,p,d], same constraints, maximize total score, fallback to greedy on timeout
+
+*   **Review UI (React + Tailwind)**
+
+    *   Week-view table with rows (VIN, partner, day, score, chips)
+    *   Filtering (flags, office, partner, make), sorting, search bar
+    *   Inline override partner/day, approve toggles, tooltips
+    *   Rationale chips: tier_ok, cooldown_ok, capacity_ok, availability_ok, budget_status
+
+*   **Publish & Persistence**
+
+    *   `POST /schedule/publish` persists approved rows, returns schedule ID
+    *   `GET /schedule/{id}` retrieves run details, approvals history
+
+*   **Explain API**
+
+    *   `GET /explain/{vin}/{partner_id}/{day}` returns rule pass/fail and score breakdown
+
+*   **Authentication & Integration**
+
+    *   Rails reverse proxy with `X-DriveShop-Token` header
+    *   `POST /auth/exchange` issues session cookie (HttpOnly, Secure, SameSite=Lax)
+    *   Idle timeout (15 min), absolute max (8 hours), logout redirect
+
+*   **Notifications & Audit Logs**
+
+    *   Email alerts on ingest or schedule failures; daily digest for warnings
+    *   `audit_log` table records CSV uploads, schedule runs, overrides, publications
+
+*   **DevOps & CI**
+
+    *   Docker, docker-compose (backend, frontend, Postgres)
+    *   GitHub Actions: `pytest -q`, frontend build, linting
+
+## 5. Tech Stack & Tools
+
+*   **Backend**: Python 3.11, FastAPI, Pandas, Google OR-Tools (CP-SAT)
+*   **Database**: Supabase (PostgreSQL)
+*   **Frontend**: React, Vite, Tailwind CSS
+*   **Auth & Integration**: JWT SSO, Rails reverse proxy
+*   **Infra**: Docker, docker-compose, GitHub Actions (pytest, build)
+*   **IDE & AI Helpers**: Claude Code, Cursor (for in-IDE code suggestions)
+
+## 6. Non-Functional Requirements
+
+*   **Performance**
+
+    *   CSV ingest validation < 2 s for 1,000 rows
+    *   Greedy solver response < 1 s for ~300 vehicles, 100 assignments
+    *   CP-SAT solve within 30 s, else fallback to greedy
+
+*   **Security & Compliance**
+
+    *   Enforce HTTPS/TLS 1.2+ (prefer 1.3)
+    *   Session cookies: HttpOnly, Secure, SameSite=Lax
+    *   JWT validation: verify `iss`, `aud`, signature, `jti` replay protection
+    *   Audit log retention ≥ 12 months
+
+*   **Usability**
+
+    *   UI load times < 2 s on modern desktop and tablet
+    *   Responsive design down to 320px width
+    *   Accessible color contrast, keyboard navigation
+
+## 7. Constraints & Assumptions
+
+*   **Data**: Initial inputs are CSV; later phases may use direct DB tables
+*   **Time Zone**: All dates/times are naive in America/Los_Angeles
+*   **Tier Caps**: A+ = 999/week, A = 6, B = 2, C = 0
+*   **Cooldown**: 60 days same trim per partner
+*   **Capacity**: daily drivers_per_day per office
+*   **Budgets**: advisory only (warnings, no hard block in v1)
+*   **JWT SSO**: requires shared `SCHEDULER_JWT_SECRET` and Rails proxy setup
+
+## 8. Known Issues & Potential Pitfalls
+
+*   **Solver Timeouts**
+
+    *   CP-SAT may exceed time limits; ensure greedy fallback is robust
+    *   Mitigation: configurable CP-SAT timeout, logging of fallback events
+
+*   **CSV Schema Mismatch**
+
+    *   Users may upload malformed files; use strict Pydantic feedback and templates in `docs/csv_templates`
+    *   Mitigation: display first 5 errors, link to correct template
+
+*   **Notification Noise**
+
+    *   High volume of warnings can spam inbox; implement debounce and daily digest grouping
+
+*   **JWT Replay**
+
+    *   Short TTL and store seen `jti` in Redis or in-db for 5 min to avoid reuse
+
+*   **UI Scalability**
+
+    *   Week view > 500 rows might lag; plan pagination or virtualization for next phase
+
+*   **Proxy & CORS**
+
+    *   Ensure Rails/Nginx proxy correctly forwards headers and cookies; test in staging
+
+This document fully describes the MVP’s scope, flows, features, and constraints. It serves as the authoritative reference for subsequent technical guides, architecture diagrams, and coding tasks.

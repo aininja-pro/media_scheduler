@@ -1,0 +1,156 @@
+---
+description: Apply these rules when making changes to the project
+globs:
+alwaysApply: true
+---
+
+Update this rule if user requested changes to the project requirement, etc.
+# Frontend Guideline Document
+
+This document outlines the frontend setup for the DriveShop Media Scheduling Optimizer. It covers the architecture, design principles, styling, components, state management, routing, performance, testing, and a final summary to ensure everyone—from non-technical stakeholders to new developers—understands how the UI is built and why.
+
+## 1. Frontend Architecture
+
+### Overview
+- **Framework & Bundler**: React with Vite. Vite provides a fast development server and efficient builds.
+- **Styling**: Tailwind CSS (utility-first) complemented by custom CSS for global styles and overrides.
+- **Integration**: The React app lives under `/scheduler/*` and is reverse-proxied by Rails. Authentication uses JWT via a custom HTTP header (`X-DriveShop-Token`).
+- **Project Structure** (simplified):
+  - `src/pages` – top-level views (e.g., `Week.tsx`)
+  - `src/components` – reusable UI pieces (e.g., `Upload.tsx`, `RecTable.tsx`, `Chips.tsx`)
+  - `src/lib` – API calls and utility functions (`api.ts`)
+  - `src/context` – shared React Contexts and hooks
+  - `src/assets` – global CSS, images (logo)
+
+### Scalability, Maintainability, Performance
+- **Scalability**: Component-based structure lets us add new pages or features without touching unrelated code. Vite’s code splitting and dynamic imports keep initial load small.
+- **Maintainability**: Clear folder conventions (`pages`, `components`, `lib`, `context`) with self-documenting file names. Tailwind utility classes reduce custom CSS, making visual changes predictable.
+- **Performance**: Vite’s native ES modules serve only changed code during development. In production, Vite bundles and tree-shakes, and Tailwind’s PurgeCSS removes unused styles.
+
+## 2. Design Principles
+
+### Usability
+- Simple flows: upload CSV, generate schedule, review chips, approve/override, export.
+- Clear labels and consistent terminology (e.g., “Approve,” “Override,” “Export CSV”).
+
+### Accessibility
+- Semantic HTML elements (tables, buttons, form fields).
+- Sufficient color contrast between text and background.
+- Keyboard-navigable: focus states on interactive elements.
+- `aria-*` attributes for screen readers on dynamic content (e.g., chip tooltips).
+
+### Responsiveness
+- Mobile-first layout using Tailwind’s responsive utilities.
+- Table transforms into a scrollable block on small screens.
+- Collapse non-critical columns under a “Details” toggle on narrow viewports.
+
+## 3. Styling and Theming
+
+### Styling Approach
+- **Utility-First**: Tailwind CSS guides most styling via utility classes in JSX.
+- **Global Styles**: A small `global.css` for resets and typography defaults.
+- **Custom Classes**: Scoped CSS modules for edge cases where utilities don’t suffice.
+
+### Theming & Look-and-Feel
+- **Style**: Modern, flat design with minimalist elements. No heavy shadows or gradients.
+- **Color Palette**:
+  - Primary Black: #000000
+  - Primary White: #FFFFFF
+  - Gray 100: #F5F5F5 (backgrounds)
+  - Gray 500: #6B7280 (text secondary)
+  - Accent Blue: #2563EB (buttons, links)
+  - Warning Yellow: #FBBF24 (budget warnings)
+  - Success Green: #10B981 (successful actions)
+  - Error Red: #EF4444 (errors, invalid uploads)
+
+### Typography
+- **Font Family**: Inter, fallback to Helvetica Neue, Roboto, sans-serif.
+- **Sizes**: Defined in Tailwind config (e.g., `text-sm`, `text-base`, `text-lg`).
+- **Line-Height & Letter-Spacing**: Set in theme to ensure readability.
+
+## 4. Component Structure
+
+### Organization
+- **Pages**: Top-level routes live in `src/pages`. Each page composes multiple components.
+- **Atoms & Molecules**: Small pieces in `src/components`, like `Chip`, `Button`, `Input`, then larger blocks like `RecTable`.
+- **Feature Folders**: If a page becomes complex, group related components in a subfolder (e.g., `Week/WeekView.tsx`, `Week/WeekControls.tsx`).
+
+### Reusability
+- Centralize common UI patterns (chips for reasons, file upload form, paginated table) to avoid duplication.
+- Props-driven components ensure behavior and styling can adapt without copying code.
+
+### Benefits of Component-Based Architecture
+- Easier to test components in isolation.
+- Clear ownership: each team member can work on distinct components without merge conflicts.
+- Rapid prototyping: drop in existing components to build new screens quickly.
+
+## 5. State Management
+
+### Data Fetching & Caching
+- Use **React Query** (recommended) or simple `useEffect` + `fetch` wrappers:
+  - Handles loading, error, and caching.
+  - Automatic refetching on focus or reconnection.
+
+### Global State
+- **React Context** for:
+  - Auth state and user role (Editor, Approver, Viewer).
+  - Current schedule run ID and week parameters.
+- Contexts live under `src/context`, with custom hooks like `useAuth()` and `useSchedule()`.
+
+### Local State
+- Component-specific state (e.g., filter inputs, sort order) via `useState` or `useReducer` for complex forms.
+
+## 6. Routing and Navigation
+
+### Library
+- **React Router v6** for client-side routing.
+
+### Routes
+- `/scheduler/week/:office/:week` → `Week.tsx` page showing the weekly view.
+- `/scheduler/auth` → Hidden endpoint for token exchange; handled in `src/pages/Auth.tsx`.
+- Fallback `*` route → 404 page or redirect to `/scheduler/week`.
+
+### Navigation Flow
+1. User lands via Rails proxy at `/scheduler/week/SEA/2025-09-08`.
+2. If no session cookie, React triggers `POST /auth/exchange` behind the scenes.
+3. Upon success, load week data (`GET /schedule/{id}` or generate new run).
+4. Tabs or breadcrumb to switch offices or weeks.
+5. Logout link clears session cookie and redirects to the Rails FMS.
+
+## 7. Performance Optimization
+
+- **Lazy Loading**: Use `React.lazy` and `Suspense` for heavy pages (e.g., Help/Docs component).
+- **Code Splitting**: Vite auto-splits bundles by route when dynamic imports are used.
+- **Tree Shaking**: Tailwind purge removes unused CSS classes in production.
+- **Table Virtualization** (optional): For >500 rows, integrate `react-window` or similar.
+- **Debouncing**: Debounce filter and search inputs to avoid frequent re-renders.
+- **Image Optimization**: Serve SVG for logos; compress any PNG/JPEG used.
+- **HTTP Caching**: Leverage browser cache headers on static assets.
+
+## 8. Testing and Quality Assurance
+
+### Unit Tests
+- **Jest** + **React Testing Library**:
+  - Test components render correctly with various props.
+  - Simulate user events (click, type, navigation) and assert outcomes.
+
+### Integration Tests
+- Combine data fetch (mocked) with component tree. Verify that API responses drive UI state as expected.
+
+### End-to-End Tests
+- **Cypress** or **Playwright**:
+  - Full flows: CSV upload → schedule generate → chip display → approve/override → CSV export.
+  - Login flow via JWT exchange stub.
+
+### Linters & Formatters
+- **ESLint** with React and TypeScript rules.
+- **Prettier** for consistent code formatting.
+- **Tailwind Lint** or plugin to enforce design tokens.
+
+## 9. Conclusion and Overall Frontend Summary
+
+The DriveShop Media Scheduling Optimizer frontend is built with React, Vite, and Tailwind CSS to deliver a fast, maintainable, and scalable UI. We follow modern design principles—usability, accessibility, and responsiveness—paired with a minimalist, flat visual style. A clear component hierarchy, React Context/React Query for state, and React Router for navigation keep the code organized.
+
+Performance is boosted through lazy loading, code splitting, and utility-first CSS. Robust testing (Jest, RTL, Cypress) and linting tools ensure code quality. Finally, seamless Rails integration via reverse proxy and JWT SSO makes embedding this scheduler into the client’s FMS straightforward.
+
+With these guidelines, anyone can understand, extend, or maintain the frontend without ambiguity. Welcome to a consistent and efficient development experience!

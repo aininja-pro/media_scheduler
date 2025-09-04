@@ -1,0 +1,263 @@
+---
+description: Apply these rules when making changes to the project
+globs:
+alwaysApply: true
+---
+
+Update this rule if user requested changes to the project requirement, etc.
+# Backend Structure Document
+
+This document outlines the backend setup for the DriveShop Media Scheduling Optimizer. It describes how the system is built, how data flows, how we host and secure it, and how we keep it running smoothly. Anyone reading this should get a clear picture of the backend without needing deep technical expertise.
+
+## 1. Backend Architecture
+
+### Overview
+- We use **FastAPI** (Python 3.11) as our web framework. It’s lightweight, fast, and supports automatic docs.
+- We follow a **modular folder structure** so each responsibility lives in its own place (ingest, ETL, solver, rules, explain, utils).
+- The design favors **separation of concerns**: CSV ingest and validation, data transforms, solving (greedy & CP-SAT), and API routing are all separate layers.
+
+### Design Patterns & Frameworks
+- **Dependency Injection** in FastAPI to pass database connections and config settings cleanly.
+- **Pydantic** models for data validation and serialization.
+- **Command pattern** for running the scheduling solver (each solver version implements a common interface).
+- **Repository pattern** for database access, so SQL queries are encapsulated and easy to swap out.
+
+### Scalability, Maintainability, Performance
+- **Dockerized services** allow us to scale individual components (e.g., spin up more solver instances if needed).
+- **Asynchronous endpoints** in FastAPI let us handle multiple requests concurrently.
+- **CI/CD** (GitHub Actions) runs tests and builds images automatically so we catch issues early.
+- **Clean code organization** makes it easier to onboard new developers and maintain the project over time.
+
+## 2. Database Management
+
+### Technology
+- We use **Supabase** (managed PostgreSQL) as our primary database.
+- PostgreSQL (SQL) fits well for structured data, relational joins, and enforcement of constraints.
+
+### Data Workflow
+1. **CSV Ingest**: Users upload CSVs via `POST /ingest/{table}`.
+2. **Validation & Upsert**: Pydantic schemas validate each row, then we upsert into the corresponding table.
+3. **ETL Transforms**: We run transformations to generate derived fields:
+   - Rolling publication rate over 24 months
+   - Cooldown flags for recent trims
+   - Per-day availability based on date ranges
+4. **Solver Input**: The solver reads both raw and derived data in memory, applies rules, and returns schedule candidates.
+5. **Publishing**: Approved schedules are saved to a dedicated table.
+
+### Data Management Practices
+- **Transactional upserts** ensure partial failures don’t leave the database in a bad state.
+- **Indexes** on commonly filtered columns (e.g., `vin`, `office`, `week_start`) for fast lookups.
+- **Foreign key constraints** keep relationships consistent (e.g., `partner_id` in schedules must exist in `media_partners`).
+
+## 3. Database Schema
+
+Below is a human‐readable summary of each table, followed by actual SQL definitions.
+
+### Human-Readable Table Descriptions
+- **vehicles**: Stores each car’s VIN, make, model, trim, home office, availability window, and status.
+- **media_partners**: Lists partners, their home office, contact info, eligibility flags, and default regions.
+- **partner_make_rank**: Ranks each partner for each make (A+, A, B, C).
+- **loan_history**: Past loans showing which car went to which partner and when.
+- **current_activity**: Holds ongoing loans, service appointments, or holds for each VIN by day.
+- **ops_capacity**: Office‐level drivers-per-day limits.
+- **budgets**: (Optional) Quarterly budgets used versus remaining per office and make.
+- **schedulers**: Records each scheduling run (ID, week start, office, timestamp).
+- **published_schedules**: Approved assignments with VIN, partner, date, score, flags, and a link to a scheduler run.
+- **audit_log**: Tracks who did what (uploads, generates, approves, overrides) with timestamps.
+
+### SQL Schema (PostgreSQL)
+```sql
+-- vehicles table
+CREATE TABLE vehicles (
+  vin TEXT PRIMARY KEY,
+  make TEXT NOT NULL,
+  model TEXT NOT NULL,
+  trim TEXT NOT NULL,
+  office TEXT NOT NULL,
+  available_from DATE NOT NULL,
+  available_to DATE NOT NULL,
+  status TEXT NOT NULL
+);
+
+-- media_partners table
+CREATE TABLE media_partners (
+  partner_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  office TEXT NOT NULL,
+  contact JSONB,
+  eligibility_flags TEXT[],
+  default_regions TEXT[]
+);
+
+-- partner_make_rank table
+CREATE TABLE partner_make_rank (
+  partner_id TEXT REFERENCES media_partners(partner_id),
+  make TEXT NOT NULL,
+  rank TEXT CHECK(rank IN ('A+','A','B','C')) NOT NULL,
+  PRIMARY KEY (partner_id, make)
+);
+
+-- loan_history table
+CREATE TABLE loan_history (
+  loan_id SERIAL PRIMARY KEY,
+  vin TEXT REFERENCES vehicles(vin),
+  partner_id TEXT REFERENCES media_partners(partner_id),
+  make TEXT,
+  model TEXT,
+  trim TEXT,
+  start_date DATE,
+  end_date DATE,
+  published_bool BOOLEAN
+);
+
+-- current_activity table
+CREATE TABLE current_activity (
+  activity_id SERIAL PRIMARY KEY,
+  vin TEXT REFERENCES vehicles(vin),
+  activity_type TEXT CHECK(activity_type IN ('loan','service','hold')),
+  start_date DATE,
+  end_date DATE
+);
+
+-- ops_capacity table
+CREATE TABLE ops_capacity (
+  office TEXT PRIMARY KEY,
+  drivers_per_day INTEGER NOT NULL
+);
+
+-- budgets table (optional)
+CREATE TABLE budgets (
+  office TEXT,
+  make TEXT,
+  year INTEGER,
+  quarter INTEGER,
+  budget_used NUMERIC,
+  budget_remaining NUMERIC,
+  PRIMARY KEY(office, make, year, quarter)
+);
+
+-- schedulers (run metadata)
+CREATE TABLE schedulers (
+  run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  office TEXT NOT NULL,
+  week_start DATE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- published_schedules table
+CREATE TABLE published_schedules (
+  id SERIAL PRIMARY KEY,
+  run_id UUID REFERENCES schedulers(run_id),
+  vin TEXT REFERENCES vehicles(vin),
+  partner_id TEXT REFERENCES media_partners(partner_id),
+  day DATE NOT NULL,
+  score INTEGER,
+  flags TEXT[],
+  approved_by TEXT,
+  approved_at TIMESTAMPTZ
+);
+
+-- audit_log table
+CREATE TABLE audit_log (
+  log_id SERIAL PRIMARY KEY,
+  user_id TEXT,
+  action TEXT,
+  details JSONB,
+  occurred_at TIMESTAMPTZ DEFAULT now()
+);
+``` 
+
+## 4. API Design and Endpoints
+
+We follow a **RESTful** style. All endpoints return JSON, and errors follow a standard format.
+
+- **POST /ingest/{table}**
+  - Upload CSV for a given table name (e.g., `vehicles`, `media_partners`).
+  - Validates each row, then inserts or updates.
+  - Returns count of rows processed or validation errors.
+
+- **POST /schedule/generate**
+  - Query params: `office`, `week` (Monday date).
+  - Triggers ETL transforms and runs the **greedy** solver by default.
+  - Returns an array of candidate assignments: vin, partner_id, day, score, flags.
+
+- **POST /schedule/publish**
+  - Body: list of approved assignment IDs or full objects.
+  - Persists selections in `published_schedules` and logs the action.
+
+- **GET /schedule/{run_id}**
+  - Fetches a prior run with final assignments and approval status.
+
+- **GET /explain/{vin}/{partner_id}/{day}**
+  - Returns the detailed rule‐by‐rule breakdown for that recommendation.
+
+- **POST /auth/exchange**
+  - Accepts a Rails‐issued JWT, validates against our secret, and starts a session.
+
+- **GET /healthz**
+  - Simple "ok" status to check service health.
+
+Each endpoint uses **JWT** in the header for authentication and market scope enforcement.
+
+## 5. Hosting Solutions
+
+- **Containerization**: We ship both backend and frontend as Docker images.
+- **Docker Compose** for local development: includes API, UI, and PostgreSQL.
+- **Production Deployment**: We recommend **Fly.io** or **Render** for Docker hosting.
+  - Auto‐scaling of containers based on CPU or requests.
+  - Built‐in TLS certificates for HTTPS.
+  - Easy rollback to a previous version.
+- **Supabase** manages PostgreSQL, so we offload database uptime, backups, and updates.
+
+Benefits:
+- Reliability through managed services and automatic restarts.
+- Scalability by adding more containers or database replicas.
+- Cost‐effectiveness by paying only for what we use.
+
+## 6. Infrastructure Components
+
+- **Load Balancer** (provided by Fly.io/Render): Distributes requests across backend instances.
+- **Reverse Proxy** (Nginx within Rails): Proxies `/scheduler/*` paths from Rails frontend to this service.
+- **CDN** (e.g., Cloudflare) for static assets (frontend build, CSV templates).
+- **Caching** (optional): We can add Redis for ephemeral caching of ETL results or solver inputs if needed.
+- **CI/CD**: GitHub Actions runs tests (`pytest`) and builds images on every push, deploying on merge.
+
+These pieces work together to deliver fast responses, keep the system available, and make deployments smooth.
+
+## 7. Security Measures
+
+- **Authentication & Authorization**
+  - JWT SSO exchanged via `/auth/exchange`.
+  - Role‐based scopes: Editor, Approver, Viewer, enforced per endpoint.
+  - Market‐level scoping via JWT claims (`markets[]`).
+
+- **Transport Security**
+  - HTTPS‐only for all endpoints.
+  - Secure, HttpOnly, SameSite=Lax cookies for session if used.
+
+- **Data Protection**
+  - Encryption at rest (handled by Supabase) and in transit (HTTPS/TLS).
+  - CSV validation to prevent injection.
+
+- **Regulatory Compliance**
+  - Audit logs capture who did what and when.
+  - Data retention policies configurable in Supabase.
+
+## 8. Monitoring and Maintenance
+
+- **Health Checks**: `/healthz` endpoint polled by uptime monitoring (e.g., Uptime Robot).
+- **Logs & Metrics**
+  - FastAPI logs requests, errors, and timing.
+  - Database performance metrics via Supabase dashboard.
+  - Optionally integrate **Datadog** or **Prometheus** for deeper metrics.
+- **Error Tracking**
+  - Integrate a service like **Sentry** for catching exceptions and performance issues.
+
+- **Maintenance Strategy**
+  - Run database migrations with a tool like Alembic.
+  - Regular dependency updates and vulnerability scans in CI.
+  - Review audit logs weekly.
+
+## 9. Conclusion and Overall Backend Summary
+
+Our backend uses FastAPI, PostgreSQL (Supabase), and Docker to deliver a reliable, scalable scheduling engine. It cleanly separates data ingest, transformation, solving, and API layers. Security is handled via JWT SSO, HTTPS, and audit logs. We deploy on managed platforms (Fly.io/Render + Supabase) for peace of mind, with CI/CD pipelines ensuring quality. The design meets DriveShop’s goals: fast CSV imports, clear rules enforcement, explainable recommendations, and seamless Rails integration.

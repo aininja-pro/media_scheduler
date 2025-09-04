@@ -1,0 +1,149 @@
+---
+description: Apply these rules when making changes to the project
+globs:
+alwaysApply: true
+---
+
+Update this rule if user requested changes to the project requirement, etc.
+## Project Overview
+
+*   **Type:** Web Scheduling Engine Service
+*   **Description:** Build a scheduling engine that automatically assigns vehicles to media partners each week across 17 markets, using rule-based logic and optimization, with a human-in-the-loop review UI embedded in the client’s existing Ruby on Rails FMS.
+*   **Primary Goal:** Automatically generate and publish weekly vehicle-to-partner schedules while enforcing hard constraints (tier caps, cooldowns, capacity, availability) and providing rationale for human approvals.
+
+## Project Structure
+
+### Framework-Specific Routing
+
+*   **Directory Rules:**
+
+    *   FastAPI 0.100.0: all API routes under `app/routers/[resource].py`, mounted in `app/main.py`.
+    *   React Router 6: route components under `src/routes/[route]/index.tsx` with `BrowserRouter` in `src/main.tsx`.
+
+    Example 1: FastAPI → `app/routers/ingest.py` defines `POST /ingest/{table}`
+    Example 2: React Router → `src/routes/schedule/[office]/[week]/index.tsx` for week view
+
+### Core Directories
+
+*   **Versioned Structure:**
+
+    *   app/routers: FastAPI route handlers (v0.100.0)
+    *   app/services: business logic & ETL transforms
+    *   app/models: Pydantic v2 data schemas
+    *   app/db: Supabase/Postgres client and migrations
+    *   app/utils: shared utilities (audit logging, JWT exchange)
+    *   src/routes: React Router v6 page components
+    *   src/components: reusable UI components (chips, tables)
+    *   src/hooks: custom React hooks for data fetching
+    *   src/styles: Tailwind CSS v3 base & overrides
+
+### Key Files
+
+*   **Stack-Versioned Patterns:**
+
+    *   app/main.py → FastAPI 0.100.0 app initialization & router inclusion
+    *   app/routers/ingest.py → CSV ingest endpoints
+    *   app/routers/schedule.py → `/schedule/generate`, `/schedule/publish`, `/schedule/{id}`
+    *   app/routers/explain.py → `/explain/{vin}/{partner_id}/{day}`
+    *   src/main.tsx → Vite 4 entry with `BrowserRouter`
+    *   src/routes/auth/index.tsx → login/logout UI
+    *   tailwind.config.js → Tailwind CSS v3 JIT mode config
+    *   vite.config.ts → React + environment variables setup
+
+## Tech Stack Rules
+
+*   **Version Enforcement:**
+
+    *   python@3.11: mandatory type hints, f-strings only
+    *   fastapi@0.100.0: async endpoints, Pydantic v2 models
+    *   pandas@2.x: vectorized ETL, no Python loops over rows
+    *   ortools@9.x: encapsulate CP-SAT solver in `app/services/optimizer/cp_sat.py`
+    *   supabase@latest: use schema `public.scheduler_*` for tables
+    *   react@18.x: functional components, hooks only
+    *   vite@4.x: ES module imports, `import.meta.env` for config
+    *   tailwindcss@3.x: JIT mode, use utility-first classes
+    *   docker-compose@3.8: define services `api`, `ui`, `db`
+    *   github-actions@v3: run `pytest -q` and `npm run build`
+
+## PRD Compliance
+
+*   “Enforce tier caps, cooldown, capacity, and availability in v1 (tested)”: must implement all hard constraints in both the greedy baseline and CP-SAT layers before merging.
+*   “Use config constants for weights and defaults so we can tune without redeploy”: weight values stored in `app/config/weights.py` and exposed via `/config` endpoint.
+
+## App Flow Integration
+
+*   **Stack-Aligned Flow:**
+    *   FastAPI ingest: `app/routers/ingest.py#upload_table(table)` → upsert to Postgres
+    *   FastAPI generate: `app/routers/schedule.py#generate_schedule(office, week)` → ETL → greedy solver
+    *   React route `/schedule/:office/:week` in `src/routes/schedule/[office]/[week]/index.tsx` → displays table with rationale chips
+    *   Approve/override UI toggles call `POST /schedule/publish` or inline PATCH
+    *   Explain view at `/explain/:vin/:partner_id/:day` uses `GET /explain/{vin}/{partner_id}/{day}`
+    *   Auth flow: `POST /auth/exchange` in `app/routers/auth.py`, React login in `src/routes/auth`
+
+## Best Practices
+
+*   Python 3.11
+    *   Use typing and dataclasses for all models
+    *   Prefer asyncio/`async` I/O for DB and HTTP calls
+    *   Lint with `flake8` and format with `black`
+
+*   FastAPI
+    *   Structure routers by resource, include version tags
+    *   Use dependency injection for DB sessions and auth
+    *   Add OpenAPI descriptions and response models
+
+*   Pandas
+    *   Perform bulk transformations, avoid row loops
+    *   Write unit tests for ETL functions with `pytest`
+
+*   OR-Tools CP-SAT
+    *   Encapsulate solver in a service class
+    *   Separate model building from solve invocation
+    *   Log infeasible or unbounded results
+
+*   Supabase/Postgres
+    *   Use SQLAlchemy or asyncpg with schema migrations via Alembic
+    *   Enforce constraints at the DB level (CHECK, FOREIGN KEY)
+
+*   React
+    *   Functional components with hooks only
+    *   Type-check with TypeScript and React Testing Library
+    *   Use React Query or SWR for data fetching
+
+*   Vite
+    *   Use ESM features, split code by route for lazy loading
+    *   Configure `define: {}` for environment variables
+
+*   Tailwind CSS
+    *   Use JIT mode, purge unused classes
+    *   Build color palette based on DriveShop black/white palette
+
+*   Docker & CI
+    *   One-stage builds for UI, multi-stage for API
+    *   Cache dependencies, run tests in CI with matrix for Python and Node
+
+## Rules
+
+*   Derive folder/file patterns directly from the versions in Tech Stack Rules.
+*   If FastAPI v0.100.0: all routes under `app/routers/`, `app/main.py` only mounts routers.
+*   If React Router 6: all page components under `src/routes/` with nested directories.
+*   Never mix routing patterns (e.g. no class-based views in FastAPI, no page files outside `src/routes`).
+
+## Rules Metrics
+
+Before starting the project development, create a metrics file in the root of the project called `cursor_metrics.md`.
+
+### Instructions:
+
+*   Each time a cursor rule is used as context, update `cursor_metrics.md`.
+
+*   Use the following format for `cursor_metrics.md`:
+
+    # Rules Metrics
+
+    ## Usage
+    The number of times rules is used as context
+
+    *   fastapi-routing.mdc: 0
+    *   react-router-structure.mdc: 0
+    *   ...other rules

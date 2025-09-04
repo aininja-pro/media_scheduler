@@ -1,0 +1,214 @@
+---
+description: Apply these rules when making changes to the project
+globs:
+alwaysApply: true
+---
+
+Update this rule if user requested changes to the project requirement, etc.
+# Implementation plan
+
+## Phase 1: Environment Setup
+
+1. **Prevalidation – check project directory**
+   - Action: Run `ls` or `dir` in the current shell to verify you are not already inside a `media_scheduler` project directory.  If you see existing `backend/` or `frontend/`, abort or change directory.
+   - Reference: Starter Task List (First 5 Steps)
+
+2. **Ensure Python 3.11.4 is installed**
+   - Action: Run `python3 --version` (macOS/Linux) or `python --version` (Windows). If the version is not exactly `3.11.4`, install it from https://www.python.org/downloads/release/python-3114/
+   - Validation: `python3 --version` should return `Python 3.11.4`
+   - Reference: Tech Stack: Backend
+
+3. **Ensure Node.js is installed**
+   - Action: Run `node --version`. If Node.js is missing or below v14, install the latest LTS from https://nodejs.org/
+   - Validation: `node --version` returns `v14.x` or above
+   - Reference: Tech Stack: Frontend
+
+4. **Initialize Git repository and root directory**
+   - Action: 
+     ```bash
+     mkdir media_scheduler && cd media_scheduler
+     git init
+     ```
+   - Validation: Ensure a `.git` folder appears in `media_scheduler`
+   - Reference: Starter Task List (First 5 Steps)
+
+5. **Set up Cursor metrics file**
+   - Action: 
+     ```bash
+     touch cursor_metrics.md
+     ```
+   - Note: Refer to `cursor_project_rules.mdc` to understand how to populate `cursor_metrics.md`.
+   - Reference: Instructions Phase 1 (Cursor)
+
+6. **Configure Supabase MCP for Cursor**
+   - Action: 
+     1. Create `.cursor` directory:
+        ```bash
+        mkdir -p .cursor
+        ```
+     2. Create and open `.cursor/mcp.json`:
+        ```bash
+        touch .cursor/mcp.json && code .cursor/mcp.json
+        ```
+     3. Add `.cursor/mcp.json` to `.gitignore`.
+     4. Paste the following (replace `<connection-string>` later):
+        ```json
+        {
+          "mcpServers": {
+            "supabase": {
+              "command": "npx",
+              "args": ["-y", "@modelcontextprotocol/server-postgres", "<connection-string>"]
+            }
+          }
+        }
+        ```
+   - Validation: File exists at `.cursor/mcp.json` and is listed in `.gitignore`
+   - Reference: Instructions Phase 1 (Cursor + Supabase)
+
+7. **Obtain Supabase MCP connection string**
+   - Action: Visit https://supabase.com/docs/guides/getting-started/mcp#connect-to-supabase-using-mcp to retrieve your project’s connection string. Replace `<connection-string>` in `.cursor/mcp.json` with the actual string. Save the file.
+   - Validation: In your IDE’s Cursor/MCP settings, confirm status shows green “active.”
+   - Reference: Instructions Phase 1 (Supabase MCP)
+
+## Phase 2: Project Scaffolding
+
+8. **Scaffold FastAPI backend**
+   - Action: 
+     ```bash
+     mkdir -p backend/app/{routers,schemas,services,etl,solver}
+     cd backend
+     python3 -m venv venv && source venv/bin/activate
+     pip install fastapi[all] pandas "ortools>=9.5"
+     ```
+   - Validation: `pip list` shows `fastapi`, `pandas`, `ortools`
+   - Reference: Starter Task List (Step 1), Tech Stack: Backend
+
+9. **Scaffold React + Vite + Tailwind frontend**
+   - Action: 
+     ```bash
+     cd ../media_scheduler
+     npm create vite@latest frontend -- --template react
+     cd frontend
+     npm install
+     npm install -D tailwindcss postcss autoprefixer
+     npx tailwindcss init -p
+     ```
+   - Validation: Running `npm run dev` serves at `http://localhost:5173`
+   - Reference: Tech Stack: Frontend
+
+10. **Create `docker-compose.yml` and `.env.example`**
+    - Action: In project root, create `docker-compose.yml` with services:
+      - **postgres**: image `postgres:15.3`, env `POSTGRES_PASSWORD`, `POSTGRES_DB`
+      - **backend**: build `./backend`, ports `8000:8000`, env from `.env`
+      - **frontend**: build `./frontend`, ports `5173:5173`
+    - Create `.env.example` with placeholders: `POSTGRES_URL`, `SCHEDULER_JWT_SECRET`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
+    - Reference: Starter Task List (Step 2), Tech Stack: Database
+
+11. **Validation – Docker Compose**
+    - Action: Run in project root:
+      ```bash
+      docker-compose up --build -d
+      ```
+    - Validation: 
+      - Postgres container is healthy
+      - Backend responds: `curl http://localhost:8000/healthz` → `ok`
+      - Frontend loads blank Vite React page at `http://localhost:5173`
+    - Reference: Starter Task List (Step 2)
+
+## Phase 3: Backend Development – CSV Ingest
+
+12. **Create FastAPI entrypoint**
+    - Action: Create `/backend/app/main.py` with:
+      ```python
+      from fastapi import FastAPI
+      app = FastAPI()
+
+      @app.get("/healthz")
+      def healthz():
+          return "ok"
+      ```
+    - Validation: `curl http://localhost:8000/healthz` → `ok`
+    - Reference: Key API Endpoints: GET /healthz
+
+13. **Implement `POST /ingest/{table}` route stub**
+    - Action: In `/backend/app/routers/ingest.py`, add:
+      ```python
+      from fastapi import APIRouter, UploadFile, HTTPException
+      router = APIRouter(prefix="/ingest")
+
+      @router.post("/{table}")
+      async def ingest_csv(table: str, file: UploadFile):
+          # TODO: validate schema, upsert to Postgres
+          return {"table": table, "rows_ingested": 0}
+      ```
+      Import this router in `main.py`.
+    - Validation: `curl -F file=@docs/csv_templates/vehicles.csv http://localhost:8000/ingest/vehicles` returns JSON with `rows_ingested` field
+    - Reference: Key API Endpoints: POST /ingest/{table}
+
+14. **Define Pydantic models for CSV schemas**
+    - Action: In `/backend/app/schemas/ingest.py`, create models for each table based on Data Inputs section:
+      - `VehicleIngest`: `vin`, `make`, `model`, `trim`, `office`, `current_location`, `available_from`, `available_to`, `status`
+      - `MediaPartnerIngest`, `PartnerMakeRankIngest`, etc.
+    - Validation: Write a quick script at `/backend/app/services/validate_csv.py` to parse CSV with pandas and validate each row against the Pydantic model without errors.
+    - Reference: Data Inputs (CSV Initially)
+
+15. **Implement upsert logic to Supabase (Postgres)**
+    - Action: In `/backend/app/services/db.py`, set up async SQLAlchemy using `POSTGRES_URL` from `.env`, and implement a generic `async def upsert(table: str, rows: List[BaseModel])` that uses `ON CONFLICT` upsert.
+    - Validation: After ingesting `vehicles.csv`, verify rows in Postgres:
+      ```bash
+      psql $POSTGRES_URL -c "SELECT COUNT(*) FROM vehicles;"
+      ```
+    - Reference: Tech Stack: Database, Key API Endpoints: POST /ingest/{table}
+
+## Phase 4: Backend Development – ETL Transforms
+
+16. **Implement ETL transform functions**
+    - Action: Create `/backend/app/etl/transforms.py` with functions:
+      - `compute_rolling_publication_rate_24m(loan_history_df)`
+      - `compute_recent_trim_flag(current_activity_df)`
+      - `compute_availability_by_day(vehicles_df)`
+    - Validation: Write unit tests in `/backend/app/tests/test_transforms.py` using sample CSVs in `docs/csv_templates/` to assert correct output columns and types.
+    - Reference: Derived ETL Fields
+
+17. **Integrate ETL into ingest pipeline**
+    - Action: After upserting raw tables in the `/ingest/{table}` route, call relevant transforms and store results in new tables (e.g., `vehicles_enriched`, `loan_history_enriched`).
+    - Validation: In Postgres, confirm `vehicles_enriched` has columns `rolling_publication_rate_24m`, `recent_trim_flag`, `availability_by_day`
+    - Reference: Derived ETL Fields
+
+## Phase 5: Backend Development – Greedy Solver
+
+18. **Create greedy solver module**
+    - Action: Create `/backend/app/solver/greedy.py` and define `def generate_schedule(week_start: date, office: str) -> List[Dict]:` stub.
+    - Validation: Import the module without errors in a Python REPL.
+    - Reference: Starter Task List (Step 5)
+
+19. **Implement candidate generation and scoring**
+    - Action: In `generate_schedule()`, load enriched tables from DB, iterate vehicles × partners × days, compute:
+      - `score = rank_weight + geo_bonus + history_bonus` using default weights
+    - Validation: Write unit tests in `/backend/app/tests/test_greedy.py` that assert known scores on sample data.
+    - Reference: Constraints and Objectives, Starter Task List (Step 5)
+
+20. **Apply hard rule filters**
+    - Action: In `/backend/app/solver/greedy.py`, for each candidate apply:
+      - Tier caps (A+, A, B, C)
+      - Cooldown (60 days)
+      - Office capacity ≤ `drivers_per_day`
+      - Availability by day
+      - Eligibility flags
+      Mark each candidate with `flags` indicating pass/fail per rule.
+    - Validation: Tests in `test_greedy.py` verify that blocked candidates contain the correct `flags`.
+    - Reference: Constraints and Objectives, Starter Task List (Step 5)
+
+21. **Expose greedy solver via API**
+    - Action: In `/backend/app/routers/schedule.py`, add:
+      ```python
+      @router.post("/generate")
+      async def generate(office: str, week: date):
+          return generate_schedule(week, office)
+      ```
+      Register router in `main.py` under `/schedule`.
+    - Validation: `curl -X POST "http://localhost:8000/schedule/generate?office=SEA&week=2025-09-08"` returns JSON array of recommendations.
+    - Reference: Key API Endpoints: POST /schedule/generate
+
+---
+*Up next:* implement `POST /schedule/publish`, UI scaffolding (Phase 2), OR-Tools layer, React review interface, Rails integration, CI/CD.

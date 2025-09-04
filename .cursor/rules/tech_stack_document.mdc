@@ -1,0 +1,147 @@
+---
+description: Apply these rules when making changes to the project
+globs:
+alwaysApply: true
+---
+
+Update this rule if user requested changes to the project requirement, etc.
+# Tech Stack Document
+
+This document explains the technology choices made for the DriveShop Media Scheduling Optimizer. It is written in everyday language so that non-technical readers can follow why each tool or framework was selected and how it supports the overall project.
+
+## Frontend Technologies
+
+We built the user interface as a single-page app that runs inside the DriveShop Rails FMS. Key technologies include:
+
+- **React**  
+  A popular JavaScript library for building dynamic user interfaces. We use React to render the weekly schedule table, handle user interactions (filtering, sorting, inline overrides), and manage application state.
+
+- **Vite**  
+  A fast build tool and development server. Vite provides near-instant hot module replacement so our developers can iterate quickly on UI changes.
+
+- **Tailwind CSS**  
+  A utility-first CSS framework. Tailwind lets us style components (buttons, tables, chips) using concise class names, ensuring a clean, consistent look that matches DriveShop’s black-and-white branding and makes responsive design (tablet/mobile) straightforward.
+
+- **TypeScript**  
+  An extension of JavaScript that adds static types. Using TypeScript in our React code helps catch mistakes early, improves editor auto-completion, and makes the UI code more self-documenting.
+
+- **Axios (or built-in fetch)**  
+  For calling backend API endpoints (`/ingest`, `/schedule/generate`, `/schedule/publish`, `/explain`). We handle file uploads, JSON requests, and streaming CSV exports using standard HTTP calls.
+
+- **React Table / Headless UI (optional)**  
+  Lightweight helpers for building sortable, filterable data tables. They power features like column sorting, global search, and sticky headers without locking us into a heavy component library.
+
+## Backend Technologies
+
+The backend is responsible for data ingestion, applying business rules, running the solver, and exposing REST APIs. Our choices:
+
+- **Python 3.11**  
+  A modern version of Python with performance and typing improvements. We use it for all server-side code, ETL transforms, and the greedy solver fallback.
+
+- **FastAPI**  
+  A high-performance Python web framework. FastAPI gives us automatic request validation (via Pydantic), interactive API docs (Swagger UI), and async endpoints to keep the service responsive under load.
+
+- **Pydantic**  
+  Defines strict schemas for each CSV table (vehicles, media partners, loan history, etc.). On `POST /ingest/{table}`, incoming CSV rows are parsed into Pydantic models, validated, and then upserted into Postgres or stored temporarily as Parquet.
+
+- **Pandas**  
+  A data analysis library used for our ETL pipeline. We transform raw CSV data into derived fields—rolling 24-month publication rates, cooldown flags, and a daily `availability_by_day` table.
+
+- **Google OR-Tools (CP-SAT)**  
+  An advanced solver for the final optimization layer. We represent each potential assignment as a binary decision variable and maximize total score under hard constraints. A greedy solver provides immediate results; OR-Tools runs in the background or as a fallback when time permits.
+
+- **Supabase (PostgreSQL)**  
+  A managed Postgres database. We store ingested tables, published schedules, and an append-only `audit_log`. Supabase gives us easy hosting, backups, and a familiar SQL interface.
+
+- **JWT SSO Integration**  
+  Authentication is handled by the DriveShop Rails FMS, which issues a short-lived JWT in the `X-DriveShop-Token` header. Our `POST /auth/exchange` endpoint validates that token, creates an HttpOnly session cookie, and makes the user’s markets and permissions available to the UI.
+
+- **Audit Logging**  
+  An `audit_log` table captures every user action (CSV uploads, schedule runs, approvals, overrides, publishes), recording user ID, timestamp, and change details to satisfy compliance and traceability.
+
+## Infrastructure and Deployment
+
+To ensure reliability, ease of deployment, and continuous delivery, we chose the following:
+
+- **Docker & Docker Compose**  
+  Containerized services for the backend API, frontend assets, and a local Postgres instance. Developers can run `docker-compose up --build` to launch everything, and the same containers run in staging and production.
+
+- **GitHub Actions**  
+  Continuous integration and delivery pipelines. On every push or pull request, we:
+  - Run **pytest** (backend unit tests)
+  - Build the React frontend and check for errors
+  - Lint and type-check code
+  - (Optional) Deploy to staging automatically on `main` branch merges
+
+- **Version Control (GitHub)**  
+  The single source of truth for code, configurations, and docs. Pull requests are peer-reviewed to maintain code quality.
+
+- **Hosting Platform (Fly.io / Render / AWS ECS, etc.)**  
+  We deploy Docker containers to a managed platform that handles SSL certificates (Let’s Encrypt), autoscaling, and health checks. The scheduler service lives behind the client’s existing Rails/Nginx proxy under `/scheduler/*`, avoiding CORS issues.
+
+## Third-Party Integrations
+
+To keep the system lean yet extendable, we integrate with a few external services:
+
+- **DriveShop Rails FMS**  
+  Reverse proxy and JWT issuer. All scheduler traffic is routed through Rails, so users stay under the same domain and experience seamless SSO.
+
+- **Email Notifications**  
+  On critical failures (CSV ingest errors, solver exceptions), the backend sends immediate alerts to a configurable Ops distribution list. Non-blocking warnings (schema warnings, minor data issues) are aggregated into daily digest emails.
+
+- **Slack Webhook (Future)**  
+  A stub is in place for Slack notifications, to be enabled in later phases if the team prefers Slack alerts over email.
+
+- **Airtable Export (Stubbed)**  
+  We include a placeholder `airtable_uploader.py` and environment variable for a future Airtable push. Phase 1 relies solely on CSV export.
+
+- **OpenAI / Anthropic API Keys**  
+  Environment placeholders exist for any future AI-assisted features (e.g., intelligent rule explanations), but they are not used in v1.
+
+## Security and Performance Considerations
+
+We designed the stack with both security and performance in mind:
+
+Security Measures:
+
+- **HTTPS Only**  
+  All traffic is encrypted (TLS 1.2+). If the scheduler is served on its own subdomain, Let’s Encrypt or existing client certificates are used.
+
+- **JWT Validation & Replay Protection**  
+  We verify the Rails JWT’s signature, expiration (`exp`), issuer/audience (`iss`/`aud`), and a unique JWT ID (`jti`) against a short-lived store to block replays.
+
+- **HttpOnly, Secure, SameSite Cookies**  
+  After `/auth/exchange`, we set a session cookie with those flags, preventing XSS/CSRF attacks and ensuring it only travels over HTTPS.
+
+- **Role & Market Scoping**  
+  The `markets[]` claim in the session determines which offices a user can view or manipulate. Unauthorized access is blocked at the API layer.
+
+- **Audit Logging**  
+  An immutable trail of who did what and when, retained for a minimum of 12 months.
+
+Performance Optimizations:
+
+- **Greedy Solver First**  
+  Users get a quick schedule via a lightweight greedy algorithm. The CP-SAT optimizer kicks in asynchronously or as a fallback if more time is available.
+
+- **In-Memory ETL with Pandas**  
+  Batch transforms run in memory for speed. Downstream queries (e.g., availability_by_day) are indexed in Postgres for fast lookups.
+
+- **Pagination & Lazy Loading**  
+  The UI loads only the visible rows by default and supports pagination or lazy scroll for up to ~500 records, ensuring smooth performance on tablet and desktop.
+
+- **Health Check Endpoint (`GET /healthz`)**  
+  Enables external monitoring to detect service outages and trigger alerts before users notice.
+
+## Conclusion and Overall Tech Stack Summary
+
+DriveShop’s Media Scheduling Optimizer combines modern, proven technologies to deliver a robust, secure, and user-friendly system:
+
+- **Frontend:** React + Vite + Tailwind CSS + TypeScript  
+- **Backend:** Python 3.11 + FastAPI + Pydantic + Pandas + Google OR-Tools  
+- **Database:** Supabase (PostgreSQL)  
+- **Auth & Integration:** JWT SSO via Rails reverse proxy  
+- **Infrastructure:** Docker + Docker Compose + GitHub Actions + Managed Container Hosting  
+- **Notifications & Auditing:** Email alerts, append-only audit logs, Slack stub  
+
+These choices ensure we can ingest CSVs, enforce hard and soft scheduling rules, provide immediate UI feedback, optimize with CP-SAT, and allow human‐in‐the‐loop approvals—all while maintaining security, scalability, and ease of future enhancements.

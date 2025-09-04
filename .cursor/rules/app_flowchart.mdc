@@ -1,0 +1,32 @@
+---
+description: Apply these rules when making changes to the project
+globs:
+alwaysApply: true
+---
+
+Update this rule if user requested changes to the project requirement, etc.
+flowchart LR
+U[User] --> F[Frontend UI]
+F --> RP[Reverse Proxy]
+RP --> AE[auth exchange]
+RP --> IG[ingest CSV]
+RP --> GS[generate schedule]
+RP --> PU[publish schedule]
+RP --> EX[explain reasons]
+RP --> HL[health check]
+RP --> LO[logout]
+AE --> Auth[validate JWT]
+Auth --> Cookie[issue session cookie]
+Cookie --> F
+IG --> DB[Supabase database]
+DB --> F
+GS --> ETL[run ETL transforms]
+ETL --> S[solver engine]
+S --> Score[compute scores]
+Score --> F
+PU --> DB
+DB --> F
+EX --> F
+HL --> F
+LO --> Clear[clear session cookie]
+Clear --> FMS[redirect to FMS sign out]

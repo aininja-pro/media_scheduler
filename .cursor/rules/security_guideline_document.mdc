@@ -1,0 +1,323 @@
+---
+description: Apply these rules when making changes to the project
+globs:
+alwaysApply: true
+---
+
+Update this rule if user requested changes to the project requirement, etc.
+# media_scheduler Project Scaffold
+Below is the initial scaffold and key files to kick off the first five tasks. We’ve embedded secure defaults, input validation, and environment-driven configuration.
+
+---
+
+## 1. Directory Structure
+
+```
+media_scheduler/
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   └── ingest.py
+│   │   ├── database.py
+│   │   ├── config.py
+│   │   ├── etl.py
+│   │   ├── solver/
+│   │   │   ├── __init__.py
+│   │   │   └── greedy.py
+│   │   ├── main.py
+│   │   └── models/
+│   │       └── schemas.py
+│   └── tests/
+│       └── test_ingest.py
+├── frontend/
+│   ├── public/
+│   └── src/
+│       └── App.jsx
+├── docs/
+│   ├── rails_proxy.md
+│   └── csv_templates/
+│       ├── vehicles.csv
+│       ├── media_partners.csv
+│       └── …
+├── .env.example
+├── docker-compose.yml
+└── README.md
+```
+
+---
+
+## 2. .env.example
+
+```dotenv
+# Postgres
+DATABASE_URL=postgresql://scheduler:password@postgres:5432/scheduler_db
+# JWT secret for Rails SSO exchange
+SCHEDULER_JWT_SECRET=replace-with-a-secure-random-string
+# FastAPI settings
+API_HOST=0.0.0.0
+API_PORT=8000
+# Limits
+MAX_CSV_SIZE=5242880  # 5 MB
+```
+
+---
+
+## 3. docker-compose.yml
+
+```yaml
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scheduler
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: scheduler_db
+    volumes:
+      - db_data:/var/lib/postgresql/data
+  backend:
+    build: ./backend
+    depends_on:
+      - postgres
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SCHEDULER_JWT_SECRET=${SCHEDULER_JWT_SECRET}
+      - MAX_CSV_SIZE=${MAX_CSV_SIZE}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/usr/src/app/src
+volumes:
+  db_data:
+```
+
+---
+
+## 4. Backend Core Files
+
+### 4.1 config.py
+```python
+from pydantic import BaseSettings, AnyUrl
+
+class Settings(BaseSettings):
+    DATABASE_URL: AnyUrl
+    SCHEDULER_JWT_SECRET: str
+    MAX_CSV_SIZE: int = 5 * 1024 * 1024  # default 5MB
+    class Config:
+        env_file = '.env'
+
+settings = Settings()
+```  
+
+### 4.2 database.py
+```python
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from .config import settings
+
+# Async engine + session for Postgres
+engine = create_async_engine(
+    settings.DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://'),
+    pool_size=10,
+    max_overflow=20,
+)
+AsyncSessionLocal = sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        yield session
+```  
+
+### 4.3 main.py
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.api.ingest import router as ingest_router
+from app.config import settings
+
+app = FastAPI(title='Media Scheduler API')
+
+# CORS - restrict to your Rails proxy origin
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://app.driveshop.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(ingest_router, prefix="/ingest", tags=["ingest"])
+
+@app.get('/healthz')
+async def healthz():
+    return {"status": "ok"}
+```  
+
+### 4.4 api/ingest.py
+```python
+import io
+import pandas as pd
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status
+from sqlalchemy import text
+from app.database import get_db, engine
+from app.config import settings
+
+router = APIRouter()
+
+# Define allowed tables and their expected columns
+ALLOWED_TABLES = {
+    'vehicles': [
+        'vin','make','model','trim','office',
+        'current_location','available_from','available_to','status'
+    ],
+    'media_partners': ['partner_id','name','office','contact','eligibility_flags','default_regions'],
+    'partner_make_rank': ['partner_id','make','rank'],
+    'loan_history': ['loan_id','vin','partner_id','make','model','trim','start_date','end_date','published_bool'],
+    'current_activity': ['activity_id','vin','activity_type','start_date','end_date'],
+    'ops_capacity': ['office','drivers_per_day'],
+    'budgets': ['office','make','year','quarter','budget_used','budget_remaining'],
+}
+
+@router.post('/{table_name}')
+async def ingest(
+    table_name: str,
+    file: UploadFile = File(...),
+    db=Depends(get_db),
+):
+    if table_name not in ALLOWED_TABLES:
+        raise HTTPException(status_code=404, detail='Unknown table')
+
+    # Enforce max size
+    contents = await file.read()
+    if len(contents) > settings.MAX_CSV_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail='File too large'
+        )
+
+    # Parse
+    try:
+        df = pd.read_csv(io.BytesIO(contents))
+    except Exception:
+        raise HTTPException(400, 'Unable to parse CSV')
+
+    expected = set(ALLOWED_TABLES[table_name])
+    incoming = set(df.columns.tolist())
+    if incoming != expected:
+        missing = expected - incoming
+        extra = incoming - expected
+        raise HTTPException(400, f'Schema mismatch. missing={missing}, extra={extra}')
+
+    # Upsert (simple replace) using text() to avoid SQL injection
+    async with engine.begin() as conn:
+        # delete old rows (v1 behavior)
+        await conn.execute(text(f'DELETE FROM {table_name}'))
+        # bulk copy via CSV
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False, header=False)
+        csv_buffer.seek(0)
+        await conn.execute(
+            text(f"""
+            COPY {table_name} ({', '.join(ALLOWED_TABLES[table_name])})
+            FROM STDIN WITH CSV
+            """),
+            stream=csv_buffer
+        )
+    return {'rows': len(df), 'table': table_name}
+```  
+
+### 4.5 etl.py (stubs)
+```python
+# TODO: implement ETL transforms
+# - compute rolling publication_rate_24m
+# - compute recent_trim_flag
+# - compute availability_by_day
+
+def compute_publication_rate_24m(df_loan_history, window_months=24):
+    # return a DataFrame with publication_rate_24m per vin/partner
+    pass
+
+
+def flag_recent_trim(df_loan_history, cooldown_days=60):
+    # return boolean flag if a vin/trim was used in last `cooldown_days`
+    pass
+
+
+def expand_availability(df_vehicles, week_start_date):
+    # map each vehicle to days it’s available in the target week
+    pass
+```  
+
+### 4.6 solver/greedy.py (stub)
+```python
+# TODO: flesh out greedy solver logic
+
+def greedy_assign(candidates, weights):
+    """
+    candidates: list of dicts {vin, partner_id, day, flags, score}
+    weights: config constants
+    Returns: list of assignments with rule chips
+    """
+    assignments = []
+    # 1. sort by score desc
+    # 2. enforce hard rules (tier caps, capacity, availability)
+    # 3. pick greedily
+    return assignments
+```  
+
+---
+
+## 5. Initial Test
+
+### test_ingest.py
+```python
+import pytest
+from fastapi.testclient import TestClient
+from app.main import app
+
+client = TestClient(app)
+
+def test_ingest_schema_mismatch():
+    csv = "a,b,c\n1,2,3"
+    files = {'file': ('test.csv', csv, 'text/csv')}
+    r = client.post('/ingest/vehicles', files=files)
+    assert r.status_code == 400
+    assert 'Schema mismatch' in r.json()['detail']
+
+def test_ingest_success(tmp_path, monkeypatch):
+    # Create a minimal valid CSV for vehicles
+    header = ','.join(["vin,make,model,trim,office,current_location,available_from,available_to,status".split(',')])
+    row = '1HGCM82633A004352,Honda,Accord,EX,SEA,SEA,2025-09-01,2025-09-07,active'
+    csv = header + '\n' + row
+    files = {'file': ('vehicles.csv', csv, 'text/csv')}
+    # Note: assumes Postgres is running and migrations applied.
+    r = client.post('/ingest/vehicles', files=files)
+    assert r.status_code == 200
+    data = r.json()
+    assert data['rows'] == 1
+    assert data['table'] == 'vehicles'
+```  
+
+---
+
+## Next Steps
+1.  Run `docker-compose up --build`
+2.  Apply database migrations (e.g., create tables for each CSV)
+3.  Verify `/ingest/{table}` with Postman or TestClient
+4.  Begin implementing ETL transforms in `etl.py`
+5.  Flesh out `solver/greedy.py` and hook up `/schedule/generate`
+
+All stubs include TODOs for OR-Tools integration, RBAC, JWT exchange, and Rails proxy. Security by design is embedded: strict schema checks, file size limits, parameterized copy, and CORS restrictions.
+
+Feel free to iterate on weight constants, add migrations, and expand tests.

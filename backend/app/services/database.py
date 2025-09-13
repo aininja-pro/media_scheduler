@@ -1,95 +1,42 @@
 """
-Database connection and operations service using SQLAlchemy with AsyncPG.
-Handles connections to Supabase PostgreSQL and provides upsert functionality.
+Database service using Supabase Python client.
 """
 import os
 import logging
-from typing import List, Dict, Any, Optional, Type
-from contextlib import asynccontextmanager
-
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import text, MetaData
+from typing import List, Dict, Any
 from pydantic import BaseModel
+from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
-
-class Base(DeclarativeBase):
-    """SQLAlchemy declarative base"""
-    pass
+# Supabase configuration
+SUPABASE_URL = "https://akhiqayfjmnrzsofmwrv.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFraGlxYXlmam1ucnpzb2Ztd3J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5OTI5NjcsImV4cCI6MjA3MjU2ODk2N30.nfKgjSQoJPWr2qn8LQyLF8QYMeOrxwkikBc3opKhY5Y"
 
 
 class DatabaseService:
-    """Async database service for Supabase PostgreSQL operations"""
+    """Database service using Supabase Python client"""
     
     def __init__(self):
-        self.engine = None
-        self.async_session_maker = None
-        self._initialized = False
+        self.client: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        self._initialized = True
+        logger.info("Supabase client initialized")
     
     async def initialize(self):
-        """Initialize database connection"""
-        if self._initialized:
-            return
-        
-        # Get database URL from environment
-        database_url = os.getenv("POSTGRES_URL")
-        if not database_url:
-            raise ValueError("POSTGRES_URL environment variable is required")
-        
-        # Convert to async URL if needed
-        if database_url.startswith("postgresql://"):
-            database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        elif not database_url.startswith("postgresql+asyncpg://"):
-            database_url = f"postgresql+asyncpg://{database_url}"
-        
-        # Create async engine
-        self.engine = create_async_engine(
-            database_url,
-            echo=False,  # Set to True for SQL debugging
-            pool_pre_ping=True,
-            pool_recycle=300,
-        )
-        
-        # Create session maker
-        self.async_session_maker = async_sessionmaker(
-            self.engine,
-            class_=AsyncSession,
-            expire_on_commit=False
-        )
-        
-        self._initialized = True
+        """No-op - client is ready immediately"""
         logger.info("Database service initialized")
     
     async def close(self):
-        """Close database connections"""
-        if self.engine:
-            await self.engine.dispose()
-        self._initialized = False
+        """No-op - Supabase client handles connections automatically"""
         logger.info("Database service closed")
     
-    @asynccontextmanager
-    async def get_session(self):
-        """Get async database session context manager"""
-        if not self._initialized:
-            await self.initialize()
-        
-        async with self.async_session_maker() as session:
-            try:
-                yield session
-            except Exception:
-                await session.rollback()
-                raise
-            finally:
-                await session.close()
-    
     async def test_connection(self) -> bool:
-        """Test database connection"""
+        """Test database connection using a simple query"""
         try:
-            async with self.get_session() as session:
-                result = await session.execute(text("SELECT 1"))
-                return result.scalar() == 1
+            # Test connection by querying the vehicles table (should exist)
+            response = self.client.table('vehicles').select('*').limit(1).execute()
+            logger.info(f"Database connection test: SUCCESS")
+            return True
         except Exception as e:
             logger.error(f"Database connection test failed: {e}")
             return False
@@ -101,94 +48,119 @@ class DatabaseService:
         primary_key: str = None,
         conflict_columns: List[str] = None
     ) -> Dict[str, Any]:
-        """
-        Upsert records into a table using PostgreSQL ON CONFLICT.
-        
-        Args:
-            table_name: Target table name
-            records: List of Pydantic models to upsert
-            primary_key: Primary key column name (optional)
-            conflict_columns: Columns to check for conflicts (optional)
-            
-        Returns:
-            Dict with operation results
-        """
+        """Upsert records using Supabase client"""
         if not records:
-            return {"rows_processed": 0, "rows_inserted": 0, "rows_updated": 0}
+            return {"rows_processed": 0, "rows_affected": 0}
         
         try:
-            async with self.get_session() as session:
-                # Convert Pydantic models to dicts
-                record_dicts = [record.model_dump() for record in records]
+            # Convert Pydantic models to dicts with date serialization
+            record_dicts = []
+            
+            # Get the upsert column 
+            upsert_column = self._get_upsert_column(table_name, primary_key, conflict_columns)
+            
+            # For approved_makes, we want ALL records but need to dedupe within batch
+            if table_name == "approved_makes":
+                seen_combinations = set()  # Track person_id + make combinations
                 
-                # Determine conflict columns based on table
-                if not conflict_columns:
-                    conflict_columns = self._get_default_conflict_columns(table_name, primary_key)
+                for record in records:
+                    record_dict = record.model_dump()
+                    # Convert date objects to strings for JSON serialization
+                    for key, value in record_dict.items():
+                        if hasattr(value, 'isoformat'):  # Check if it's a date/datetime object
+                            record_dict[key] = value.isoformat()
+                    
+                    # Create a unique key for person_id + make combination
+                    combo_key = f"{record_dict['person_id']}_{record_dict['make']}"
+                    
+                    if combo_key not in seen_combinations:
+                        seen_combinations.add(combo_key)
+                        record_dicts.append(record_dict)
+                    else:
+                        logger.warning(f"Skipping duplicate person_id+make: {record_dict['person_id']} + {record_dict['make']}")
+            else:
+                # For other tables, use duplicate detection
+                seen_keys = set()  # Track unique constraint values to avoid duplicates
                 
-                # Build the upsert query
-                columns = list(record_dicts[0].keys())
-                values_placeholder = ", ".join([f":{col}" for col in columns])
+                for record in records:
+                    record_dict = record.model_dump()
+                    # Convert date objects to strings for JSON serialization
+                    for key, value in record_dict.items():
+                        if hasattr(value, 'isoformat'):  # Check if it's a date/datetime object
+                            record_dict[key] = value.isoformat()
+                    
+                    # Check for duplicates based on upsert column
+                    upsert_value = record_dict.get(upsert_column)
+                    if upsert_value and upsert_value not in seen_keys:
+                        seen_keys.add(upsert_value)
+                        record_dicts.append(record_dict)
+                    elif upsert_value:
+                        logger.warning(f"Skipping duplicate {upsert_column}: {upsert_value}")
+            
+            
+            logger.info(f"Upserting {len(record_dicts)} records to {table_name} with upsert column: {upsert_column}")
+            
+            # Special handling for tables with composite keys
+            if table_name == "approved_makes":
+                # For approved_makes, delete all existing records for the person_ids first
+                person_ids = list(set([record['person_id'] for record in record_dicts]))
+                logger.info(f"Deleting existing records for {len(person_ids)} person_ids")
                 
-                # Handle different conflict resolution strategies per table
-                update_clause = self._build_update_clause(table_name, columns, conflict_columns)
+                # Delete existing records for these person_ids in one operation
+                if person_ids:
+                    self.client.table(table_name).delete().in_('person_id', person_ids).execute()
                 
-                upsert_query = f"""
-                INSERT INTO {table_name} ({", ".join(columns)})
-                VALUES ({values_placeholder})
-                ON CONFLICT ({", ".join(conflict_columns)})
-                {update_clause}
-                """
-                
-                # Execute the upsert for each record
-                rows_affected = 0
-                for record_dict in record_dicts:
-                    result = await session.execute(text(upsert_query), record_dict)
-                    rows_affected += result.rowcount
-                
-                await session.commit()
-                
-                logger.info(f"Upserted {rows_affected} records to {table_name}")
-                
-                return {
-                    "rows_processed": len(record_dicts),
-                    "rows_affected": rows_affected,
-                    "status": "success"
-                }
-                
+                # Insert all new records
+                logger.info(f"Inserting {len(record_dicts)} new approved_makes records")
+                response = self.client.table(table_name).insert(record_dicts, count='exact').execute()
+            else:
+                # Regular upsert for other tables
+                response = self.client.table(table_name).upsert(
+                    record_dicts,
+                    on_conflict=upsert_column,
+                    count='exact'
+                ).execute()
+            
+            rows_affected = len(response.data) if response.data else 0
+            
+            logger.info(f"Successfully upserted {rows_affected} records to {table_name}")
+            
+            return {
+                "rows_processed": len(record_dicts),
+                "rows_affected": rows_affected,
+                "status": "success"
+            }
+            
         except Exception as e:
             logger.error(f"Error upserting records to {table_name}: {e}")
             raise
     
-    def _get_default_conflict_columns(self, table_name: str, primary_key: str = None) -> List[str]:
-        """Get default conflict columns for each table"""
-        table_conflicts = {
-            "vehicles": ["vin"],
-            "media_partners": ["partner_id"],
-            "partner_make_rank": ["partner_id", "make"],
-            "loan_history": ["loan_id"] if not primary_key else [primary_key],
-            "current_activity": ["activity_id"] if not primary_key else [primary_key],
-            "ops_capacity": ["office"],
-            "budgets": ["office", "make", "year", "quarter"]
+    def _get_upsert_column(self, table_name: str, primary_key: str = None, conflict_columns: List[str] = None) -> str:
+        """Get the appropriate upsert column for each table"""
+        if conflict_columns:
+            return conflict_columns[0] if len(conflict_columns) == 1 else ",".join(conflict_columns)
+        
+        if primary_key:
+            return primary_key
+            
+        # Default upsert columns for each table - use lists for composite keys
+        table_upsert_columns = {
+            "vehicles": "vin",
+            "media_partners": "person_id",
+            "approved_makes": "person_id",  # Use person_id as primary upsert key
+            "partner_make_rank": ["partner_id", "make"], 
+            "loan_history": "loan_id",
+            "current_activity": "activity_id",
+            "ops_capacity": "office",
+            "budgets": ["office", "make", "year", "quarter"]  # Composite key as list
         }
         
-        return table_conflicts.get(table_name, [primary_key] if primary_key else ["id"])
-    
-    def _build_update_clause(self, table_name: str, columns: List[str], conflict_columns: List[str]) -> str:
-        """Build the DO UPDATE clause for upsert"""
-        # Exclude conflict columns and auto-generated columns from updates
-        exclude_columns = set(conflict_columns + ["created_at", "updated_at", "id", "loan_id", "activity_id", "log_id"])
-        update_columns = [col for col in columns if col not in exclude_columns]
+        upsert_col = table_upsert_columns.get(table_name, "id")
         
-        if not update_columns:
-            return "DO NOTHING"
-        
-        update_assignments = [f"{col} = EXCLUDED.{col}" for col in update_columns]
-        
-        # Add updated_at if the table has this column
-        if table_name not in ["schedulers", "published_schedules", "audit_log"]:
-            update_assignments.append("updated_at = now()")
-        
-        return f"DO UPDATE SET {', '.join(update_assignments)}"
+        # If it's a list (composite key), join with commas
+        if isinstance(upsert_col, list):
+            return ",".join(upsert_col)
+        return upsert_col
 
 
 # Global database service instance
@@ -197,6 +169,4 @@ db_service = DatabaseService()
 
 async def get_database() -> DatabaseService:
     """Dependency injection for database service"""
-    if not db_service._initialized:
-        await db_service.initialize()
     return db_service

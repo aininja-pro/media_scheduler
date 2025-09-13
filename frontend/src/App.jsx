@@ -6,13 +6,91 @@ function App() {
   const [selectedOffice, setSelectedOffice] = useState('')
   const [selectedWeek, setSelectedWeek] = useState('')
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [vehiclesUrl, setVehiclesUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/active_vehicles.rpt&init=csv')
+  const [mediaPartnersUrl, setMediaPartnersUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/media_partners.rpt&init=csv')
+  const [approvedRanksUrl, setApprovedRanksUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/approved_makes.rpt&init=csv')
+  const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingMediaPartners, setIsLoadingMediaPartners] = useState(false)
+  const [isLoadingApprovedRanks, setIsLoadingApprovedRanks] = useState(false)
 
   const offices = ['SEA', 'PDX', 'LAX', 'SFO', 'PHX', 'DEN', 'LAS']
   
+  const handleVehiclesUpdate = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch(`http://localhost:8081/ingest/vehicles/url?url=${encodeURIComponent(vehiclesUrl)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok) {
+        alert(`Success! Processed ${result.rows_processed} vehicles`)
+      } else {
+        alert(`Error: ${result.detail}`)
+      }
+    } catch (error) {
+      alert(`Network error: ${error.message}`)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleMediaPartnersUpdate = async () => {
+    setIsLoadingMediaPartners(true)
+    try {
+      const response = await fetch(`http://localhost:8081/ingest/media_partners/url?url=${encodeURIComponent(mediaPartnersUrl)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok) {
+        alert(`Success! Processed ${result.rows_processed} media partners`)
+      } else {
+        alert(`Error: ${result.detail}`)
+      }
+    } catch (error) {
+      alert(`Network error: ${error.message}`)
+    } finally {
+      setIsLoadingMediaPartners(false)
+    }
+  }
+
+  const handleApprovedRanksUpdate = async () => {
+    setIsLoadingApprovedRanks(true)
+    try {
+      const response = await fetch(`http://localhost:8081/ingest/approved_makes/url?url=${encodeURIComponent(approvedRanksUrl)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok) {
+        alert(`Success! Processed ${result.rows_processed} approved ranks`)
+      } else {
+        alert(`Error: ${result.detail}`)
+      }
+    } catch (error) {
+      alert(`Network error: ${error.message}`)
+    } finally {
+      setIsLoadingApprovedRanks(false)
+    }
+  }
+
   const csvTypes = [
-    { id: 'vehicles', name: 'Vehicles', description: 'VIN, make, model, office, availability', icon: '🚗' },
+    { id: 'vehicles', name: 'Vehicles', description: 'Year, make, model, VIN, fleet, dates', icon: '🚗' },
     { id: 'media_partners', name: 'Media Partners', description: 'Partner details, contact info, eligibility', icon: '📺' },
-    { id: 'partner_make_rank', name: 'Partner Rankings', description: 'A+/A/B/C rankings per partner/make', icon: '⭐' },
+    { id: 'approved_makes', name: 'Approved Ranks', description: 'A+/A/B/C rankings per partner/make', icon: '⭐' },
     { id: 'loan_history', name: 'Loan History', description: 'Historical assignment data', icon: '📊' },
     { id: 'current_activity', name: 'Current Activity', description: 'Active bookings and holds', icon: '📅' },
     { id: 'ops_capacity', name: 'Office Capacity', description: 'Driver capacity limits per office', icon: '👥' },
@@ -160,12 +238,84 @@ function App() {
                       <p className="text-xs text-gray-400">Max file size: 10MB</p>
                     </div>
                     
-                    <button 
-                      className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
-                      disabled={true}
-                    >
-                      Upload {csvType.name}
-                    </button>
+                    {/* Special handling for Vehicles - URL input */}
+                    {csvType.id === 'vehicles' ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Data Source URL:
+                          </label>
+                          <input
+                            type="text"
+                            value={vehiclesUrl}
+                            onChange={(e) => setVehiclesUrl(e.target.value)}
+                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            placeholder="Enter DriveShop reports URL..."
+                          />
+                        </div>
+                        <button 
+                          onClick={handleVehiclesUpdate}
+                          disabled={isLoading}
+                          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                        >
+                          {isLoading ? 'Fetching...' : 'Update Vehicles Data'}
+                        </button>
+                      </div>
+                    ) : csvType.id === 'media_partners' ? (
+                      /* Special handling for Media Partners - URL input */
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Data Source URL:
+                          </label>
+                          <input
+                            type="text"
+                            value={mediaPartnersUrl}
+                            onChange={(e) => setMediaPartnersUrl(e.target.value)}
+                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            placeholder="Enter DriveShop media partners URL..."
+                          />
+                        </div>
+                        <button 
+                          onClick={handleMediaPartnersUpdate}
+                          disabled={isLoadingMediaPartners}
+                          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                        >
+                          {isLoadingMediaPartners ? 'Fetching...' : 'Update Media Partners Data'}
+                        </button>
+                      </div>
+                    ) : csvType.id === 'approved_makes' ? (
+                      /* Special handling for Approved Ranks - URL input */
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Data Source URL:
+                          </label>
+                          <input
+                            type="text"
+                            value={approvedRanksUrl}
+                            onChange={(e) => setApprovedRanksUrl(e.target.value)}
+                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            placeholder="Enter DriveShop approved ranks URL..."
+                          />
+                        </div>
+                        <button 
+                          onClick={handleApprovedRanksUpdate}
+                          disabled={isLoadingApprovedRanks}
+                          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                        >
+                          {isLoadingApprovedRanks ? 'Fetching...' : 'Update Approved Ranks Data'}
+                        </button>
+                      </div>
+                    ) : (
+                      /* Regular file upload for other tables */
+                      <button 
+                        className="w-full mt-4 font-medium py-2 px-4 rounded-md transition-colors text-white border border-transparent bg-gray-600 hover:bg-white hover:text-black hover:border-black disabled:cursor-not-allowed shadow-sm"
+                        disabled={true}
+                      >
+                        Upload {csvType.name}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

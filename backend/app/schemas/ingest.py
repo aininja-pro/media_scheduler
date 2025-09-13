@@ -2,7 +2,7 @@
 Pydantic schemas for CSV data validation and ingestion.
 Each schema represents the expected structure for CSV uploads.
 """
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, field_validator
 from enum import Enum
@@ -19,18 +19,24 @@ class RankEnum(str, Enum):
     A = "A"
     B = "B"
     C = "C"
+    Pending = "Pending"
 
 
 class VehicleIngest(BaseModel):
     """Schema for vehicles CSV upload"""
-    vin: str
+    year: Optional[int] = None
     make: str
     model: str
-    trim: str
+    model_short_name: Optional[str] = None
     office: str
-    available_from: date
-    available_to: date
-    status: str
+    vin: str
+    fleet: Optional[str] = None
+    registration_exp: Optional[date] = None
+    insurance_exp: Optional[date] = None
+    current_mileage: Optional[int] = None
+    in_service_date: Optional[date] = None
+    expected_turn_in_date: Optional[date] = None
+    notes: Optional[str] = None
 
     @field_validator('vin')
     @classmethod
@@ -39,30 +45,101 @@ class VehicleIngest(BaseModel):
             raise ValueError("VIN cannot be empty")
         return v.strip().upper()
 
-    @field_validator('available_from', 'available_to')
+    @field_validator('current_mileage', mode='before')
     @classmethod
-    def validate_dates(cls, v: date) -> date:
-        if not v:
-            raise ValueError("Date fields cannot be empty")
+    def parse_mileage(cls, v):
+        if v and isinstance(v, str):
+            # Remove commas from mileage numbers like "2,151"
+            return int(v.replace(',', ''))
+        return v
+
+    @field_validator('registration_exp', 'insurance_exp', mode='before')
+    @classmethod
+    def parse_exp_dates(cls, v):
+        if v and isinstance(v, str) and v.strip():
+            try:
+                # Handle MM/DD/YY format
+                return datetime.strptime(v, '%m/%d/%y').date()
+            except ValueError:
+                try:
+                    # Fallback to MM/DD/YYYY format
+                    return datetime.strptime(v, '%m/%d/%Y').date()
+                except ValueError:
+                    raise ValueError(f"Invalid date format: {v}")
+        return v
+
+    @field_validator('in_service_date', mode='before')
+    @classmethod
+    def parse_service_date(cls, v):
+        if v and isinstance(v, str) and v.strip():
+            try:
+                # Handle M/YYYY format (like "2/2025")
+                month, year = v.split('/')
+                return datetime(int(year), int(month), 1).date()
+            except (ValueError, IndexError):
+                raise ValueError(f"Invalid service date format (expected M/YYYY): {v}")
+        return v
+
+    @field_validator('expected_turn_in_date', mode='before')
+    @classmethod
+    def parse_turn_in_date(cls, v):
+        if v and isinstance(v, str) and v.strip():
+            try:
+                # Handle MM-DD-YY format (like "11-01-25")
+                return datetime.strptime(v, '%m-%d-%y').date()
+            except ValueError:
+                try:
+                    # Fallback to MM/DD/YY format
+                    return datetime.strptime(v, '%m/%d/%y').date()
+                except ValueError:
+                    raise ValueError(f"Invalid turn-in date format: {v}")
         return v
 
 
 class MediaPartnerIngest(BaseModel):
     """Schema for media_partners CSV upload"""
-    partner_id: str
+    person_id: str
     name: str
     office: str
-    contact: Optional[Dict[str, Any]] = None
-    eligibility_flags: Optional[List[str]] = []
-    default_regions: Optional[List[str]] = []
+    default_loan_region: Optional[str] = None
+    notes_instructions: Optional[str] = None
 
-    @field_validator('partner_id')
+    @field_validator('person_id', mode='before')
     @classmethod
-    def validate_partner_id(cls, v: str) -> str:
-        if not v or len(v.strip()) == 0:
-            raise ValueError("Partner ID cannot be empty")
-        return v.strip()
+    def validate_person_id(cls, v) -> str:
+        if v is None:
+            raise ValueError("Person ID cannot be empty")
+        # Convert int to string if needed
+        v_str = str(v).strip()
+        if not v_str:
+            raise ValueError("Person ID cannot be empty")
+        return v_str
 
+
+class ApprovedMakesIngest(BaseModel):
+    """Schema for approved_makes CSV upload"""
+    person_id: str
+    name: str
+    make: str
+    rank: RankEnum
+
+    @field_validator('person_id', mode='before')
+    @classmethod
+    def validate_person_id(cls, v) -> str:
+        if v is None:
+            raise ValueError("Person ID cannot be empty")
+        # Convert int to string if needed
+        v_str = str(v).strip()
+        if not v_str:
+            raise ValueError("Person ID cannot be empty")
+        return v_str
+
+    @field_validator('name', 'make')
+    @classmethod
+    def validate_required_fields(cls, v: str) -> str:
+        if not v or len(v.strip()) == 0:
+            raise ValueError("Field cannot be empty")
+        return v.strip()
 
 class PartnerMakeRankIngest(BaseModel):
     """Schema for partner_make_rank CSV upload"""
@@ -160,6 +237,7 @@ class BudgetIngest(BaseModel):
 INGEST_SCHEMAS = {
     "vehicles": VehicleIngest,
     "media_partners": MediaPartnerIngest,
+    "approved_makes": ApprovedMakesIngest,
     "partner_make_rank": PartnerMakeRankIngest,
     "loan_history": LoanHistoryIngest,
     "current_activity": CurrentActivityIngest,

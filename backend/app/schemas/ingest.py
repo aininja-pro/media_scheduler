@@ -198,17 +198,38 @@ class LoanHistoryIngest(BaseModel):
 
 class CurrentActivityIngest(BaseModel):
     """Schema for current_activity CSV upload"""
-    vin: str
-    activity_type: ActivityTypeEnum
+    activity_id: str
+    vehicle_vin: str
+    activity_type: str
     start_date: date
     end_date: date
+    to_field: Optional[str] = None
 
-    @field_validator('vin')
+    @field_validator('activity_id', 'vehicle_vin', mode='before')
     @classmethod
-    def validate_vin(cls, v: str) -> str:
-        if not v or len(v.strip()) == 0:
-            raise ValueError("VIN cannot be empty")
-        return v.strip().upper()
+    def validate_required_fields(cls, v) -> str:
+        if v is None:
+            raise ValueError("Field cannot be empty")
+        # Convert to string and strip
+        v_str = str(v).strip()
+        if not v_str:
+            raise ValueError("Field cannot be empty")
+        return v_str
+
+    @field_validator('start_date', 'end_date', mode='before')
+    @classmethod
+    def parse_dates(cls, v):
+        if v and isinstance(v, str) and v.strip():
+            try:
+                # Handle MM-DD-YY format (like "09-26-25")
+                return datetime.strptime(v, '%m-%d-%y').date()
+            except ValueError:
+                try:
+                    # Fallback to MM/DD/YY format
+                    return datetime.strptime(v, '%m/%d/%y').date()
+                except ValueError:
+                    raise ValueError(f"Invalid date format: {v}")
+        return v
 
 
 class OpsCapacityIngest(BaseModel):

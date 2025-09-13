@@ -607,3 +607,62 @@ async def ingest_loan_history_from_url(url: str, db: DatabaseService = Depends(g
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@router.post("/current_activity/url")
+async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depends(get_database)):
+    """Fetch and ingest current activity data from URL."""
+    try:
+        logger.info(f"Fetching current activity data from URL...")
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.get(url, headers={'User-Agent': 'curl/8.7.1'})
+            response.raise_for_status()
+            logger.info(f"Download complete! Processing CSV data...")
+            
+        df = pd.read_csv(StringIO(response.text), header=None, names=[
+            'Activity_ID', 'Vehicle_VIN', 'Activity_Type', 'Start_Date', 'End_Date', 'To'
+        ])
+        
+        df = df.fillna('')  # Replace NaN with empty strings
+        records = df.to_dict('records')
+        validated_rows = []
+        skipped_count = 0
+        
+        logger.info(f"Processing {len(records)} current activity records...")
+        
+        for record in records:
+            try:
+                normalized_dict = {
+                    'activity_id': str(record['Activity_ID']).strip(),
+                    'vehicle_vin': str(record['Vehicle_VIN']).strip(),
+                    'activity_type': str(record['Activity_Type']).strip(),
+                    'start_date': str(record['Start_Date']).strip(),
+                    'end_date': str(record['End_Date']).strip(),
+                    'to_field': str(record['To']).strip() if record['To'] else None
+                }
+                
+                # Quick validation - skip if missing required fields
+                if not normalized_dict['activity_id'] or not normalized_dict['vehicle_vin']:
+                    skipped_count += 1
+                    continue
+                    
+                validated_row = INGEST_SCHEMAS["current_activity"](**normalized_dict)
+                validated_rows.append(validated_row)
+            except Exception:
+                skipped_count += 1
+                continue
+        
+        logger.info(f"Validation complete! {len(validated_rows)} valid records, {skipped_count} records skipped")
+        
+        upsert_result = await db.upsert_records(table_name="current_activity", records=validated_rows)
+        logger.info(f"Upload complete! {upsert_result.get('rows_affected', 0)} records affected.")
+        
+        return {
+            "table": "current_activity",
+            "rows_processed": len(validated_rows),
+            "rows_affected": upsert_result.get("rows_affected", 0),
+            "status": "success",
+            "message": f"Successfully processed {len(validated_rows)} current activity records"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

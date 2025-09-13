@@ -10,10 +10,12 @@ function App() {
   const [mediaPartnersUrl, setMediaPartnersUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/media_partners.rpt&init=csv')
   const [approvedRanksUrl, setApprovedRanksUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/approved_makes.rpt&init=csv')
   const [loanHistoryUrl, setLoanHistoryUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/loan_history.rpt&init=csv')
+  const [currentActivityUrl, setCurrentActivityUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/current_vehicle_activity.rpt&init=csv')
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingMediaPartners, setIsLoadingMediaPartners] = useState(false)
   const [isLoadingApprovedRanks, setIsLoadingApprovedRanks] = useState(false)
   const [isLoadingLoanHistory, setIsLoadingLoanHistory] = useState(false)
+  const [isLoadingCurrentActivity, setIsLoadingCurrentActivity] = useState(false)
 
   const offices = ['SEA', 'PDX', 'LAX', 'SFO', 'PHX', 'DEN', 'LAS']
   
@@ -110,6 +112,30 @@ function App() {
       alert(`Network error: ${error.message}`)
     } finally {
       setIsLoadingLoanHistory(false)
+    }
+  }
+
+  const handleCurrentActivityUpdate = async () => {
+    setIsLoadingCurrentActivity(true)
+    try {
+      const response = await fetch(`http://localhost:8081/ingest/current_activity/url?url=${encodeURIComponent(currentActivityUrl)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok) {
+        alert(`Success! Processed ${result.rows_processed} current activity records`)
+      } else {
+        alert(`Error: ${result.detail}`)
+      }
+    } catch (error) {
+      alert(`Network error: ${error.message}`)
+    } finally {
+      setIsLoadingCurrentActivity(false)
     }
   }
 
@@ -354,6 +380,29 @@ function App() {
                           className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
                         >
                           {isLoadingLoanHistory ? 'Fetching...' : 'Update Loan History Data'}
+                        </button>
+                      </div>
+                    ) : csvType.id === 'current_activity' ? (
+                      /* Special handling for Current Activity - URL input */
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Data Source URL:
+                          </label>
+                          <input
+                            type="text"
+                            value={currentActivityUrl}
+                            onChange={(e) => setCurrentActivityUrl(e.target.value)}
+                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            placeholder="Enter DriveShop current activity URL..."
+                          />
+                        </div>
+                        <button 
+                          onClick={handleCurrentActivityUpdate}
+                          disabled={isLoadingCurrentActivity}
+                          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                        >
+                          {isLoadingCurrentActivity ? 'Fetching...' : 'Update Current Activity Data'}
                         </button>
                       </div>
                     ) : (

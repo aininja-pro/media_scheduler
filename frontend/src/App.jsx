@@ -9,9 +9,11 @@ function App() {
   const [vehiclesUrl, setVehiclesUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/active_vehicles.rpt&init=csv')
   const [mediaPartnersUrl, setMediaPartnersUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/media_partners.rpt&init=csv')
   const [approvedRanksUrl, setApprovedRanksUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/approved_makes.rpt&init=csv')
+  const [loanHistoryUrl, setLoanHistoryUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/loan_history.rpt&init=csv')
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingMediaPartners, setIsLoadingMediaPartners] = useState(false)
   const [isLoadingApprovedRanks, setIsLoadingApprovedRanks] = useState(false)
+  const [isLoadingLoanHistory, setIsLoadingLoanHistory] = useState(false)
 
   const offices = ['SEA', 'PDX', 'LAX', 'SFO', 'PHX', 'DEN', 'LAS']
   
@@ -84,6 +86,30 @@ function App() {
       alert(`Network error: ${error.message}`)
     } finally {
       setIsLoadingApprovedRanks(false)
+    }
+  }
+
+  const handleLoanHistoryUpdate = async () => {
+    setIsLoadingLoanHistory(true)
+    try {
+      const response = await fetch(`http://localhost:8081/ingest/loan_history/url?url=${encodeURIComponent(loanHistoryUrl)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok) {
+        alert(`Success! Processed ${result.rows_processed} loan history records`)
+      } else {
+        alert(`Error: ${result.detail}`)
+      }
+    } catch (error) {
+      alert(`Network error: ${error.message}`)
+    } finally {
+      setIsLoadingLoanHistory(false)
     }
   }
 
@@ -305,6 +331,29 @@ function App() {
                           className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
                         >
                           {isLoadingApprovedRanks ? 'Fetching...' : 'Update Approved Ranks Data'}
+                        </button>
+                      </div>
+                    ) : csvType.id === 'loan_history' ? (
+                      /* Special handling for Loan History - URL input */
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Data Source URL:
+                          </label>
+                          <input
+                            type="text"
+                            value={loanHistoryUrl}
+                            onChange={(e) => setLoanHistoryUrl(e.target.value)}
+                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            placeholder="Enter DriveShop loan history URL..."
+                          />
+                        </div>
+                        <button 
+                          onClick={handleLoanHistoryUpdate}
+                          disabled={isLoadingLoanHistory}
+                          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                        >
+                          {isLoadingLoanHistory ? 'Fetching...' : 'Update Loan History Data'}
                         </button>
                       </div>
                     ) : (

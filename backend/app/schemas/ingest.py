@@ -157,21 +157,43 @@ class PartnerMakeRankIngest(BaseModel):
 
 class LoanHistoryIngest(BaseModel):
     """Schema for loan_history CSV upload"""
+    activity_id: str
     vin: str
-    partner_id: str
+    person_id: str
     make: str
     model: str
-    trim: str
+    year: Optional[int] = None
+    model_short_name: Optional[str] = None
     start_date: date
     end_date: date
-    published_bool: bool
+    office: str
+    name: str
 
-    @field_validator('vin', 'partner_id')
+    @field_validator('activity_id', 'vin', 'person_id', mode='before')
     @classmethod
-    def validate_required_fields(cls, v: str) -> str:
-        if not v or len(v.strip()) == 0:
+    def validate_required_fields(cls, v) -> str:
+        if v is None:
             raise ValueError("Field cannot be empty")
-        return v.strip()
+        # Convert to string and strip
+        v_str = str(v).strip()
+        if not v_str:
+            raise ValueError("Field cannot be empty")
+        return v_str
+
+    @field_validator('start_date', 'end_date', mode='before')
+    @classmethod
+    def parse_dates(cls, v):
+        if v and isinstance(v, str) and v.strip():
+            try:
+                # Handle MM-DD-YY format (like "08-11-25")
+                return datetime.strptime(v, '%m-%d-%y').date()
+            except ValueError:
+                try:
+                    # Fallback to MM/DD/YY format
+                    return datetime.strptime(v, '%m/%d/%y').date()
+                except ValueError:
+                    raise ValueError(f"Invalid date format: {v}")
+        return v
 
 
 class CurrentActivityIngest(BaseModel):

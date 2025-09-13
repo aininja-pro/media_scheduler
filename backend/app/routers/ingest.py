@@ -528,3 +528,82 @@ async def ingest_approved_makes_from_url(url: str, db: DatabaseService = Depends
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@router.post("/loan_history/url")
+async def ingest_loan_history_from_url(url: str, db: DatabaseService = Depends(get_database)):
+    """Fetch and ingest loan history data from URL."""
+    try:
+        logger.info(f"Fetching loan history data from URL (this may take several minutes for large files)...")
+        async with httpx.AsyncClient(timeout=300.0) as client:  # 5 minute timeout
+            response = await client.get(url, headers={'User-Agent': 'curl/8.7.1'})
+            response.raise_for_status()
+            logger.info(f"Download complete! Processing CSV data...")
+            
+        df = pd.read_csv(StringIO(response.text), header=None, names=[
+            'Activity_ID', 'VIN', 'Person_ID', 'Make', 'Model', 'Year', 'Model_Short_Name', 
+            'Start_Date', 'End_Date', 'Office', 'Name'
+        ])
+        
+        # Optimize: Process in chunks and use vectorized operations
+        df = df.fillna('')  # Replace NaN with empty strings for faster processing
+        
+        # Convert to records for faster batch processing
+        records = df.to_dict('records')
+        validated_rows = []
+        skipped_count = 0
+        
+        logger.info(f"Processing {len(records)} loan history records in batches...")
+        
+        # Process in smaller chunks for better memory management
+        chunk_size = 1000
+        total_chunks = (len(records) - 1) // chunk_size + 1
+        
+        for i in range(0, len(records), chunk_size):
+            chunk = records[i:i+chunk_size]
+            chunk_num = i//chunk_size + 1
+            logger.info(f"Processing chunk {chunk_num}/{total_chunks} ({len(validated_rows)} valid, {skipped_count} skipped so far)")
+            
+            for record in chunk:
+                try:
+                    normalized_dict = {
+                        'activity_id': str(record['Activity_ID']).strip(),
+                        'vin': str(record['VIN']).strip(),
+                        'person_id': str(record['Person_ID']).strip(),
+                        'make': str(record['Make']).strip(),
+                        'model': str(record['Model']).strip(),
+                        'year': record['Year'] if record['Year'] else None,
+                        'model_short_name': str(record['Model_Short_Name']).strip() if record['Model_Short_Name'] else None,
+                        'start_date': str(record['Start_Date']).strip(),
+                        'end_date': str(record['End_Date']).strip(),
+                        'office': str(record['Office']).strip(),
+                        'name': str(record['Name']).strip()
+                    }
+                    
+                    # Quick validation - skip if missing required fields
+                    if not normalized_dict['activity_id'] or not normalized_dict['vin'] or not normalized_dict['person_id']:
+                        skipped_count += 1
+                        continue
+                        
+                    validated_row = INGEST_SCHEMAS["loan_history"](**normalized_dict)
+                    validated_rows.append(validated_row)
+                except Exception:
+                    # Skip invalid records quietly to avoid spam
+                    skipped_count += 1
+                    continue
+        
+        logger.info(f"Validation complete! {len(validated_rows)} valid records, {skipped_count} records skipped due to missing data")
+        
+        logger.info(f"Validation complete! Uploading {len(validated_rows)} records to Supabase...")
+        upsert_result = await db.upsert_records(table_name="loan_history", records=validated_rows)
+        logger.info(f"Upload complete! {upsert_result.get('rows_affected', 0)} records affected.")
+        
+        return {
+            "table": "loan_history",
+            "rows_processed": len(validated_rows),
+            "rows_affected": upsert_result.get("rows_affected", 0),
+            "status": "success",
+            "message": f"Successfully processed {len(validated_rows)} loan history records"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

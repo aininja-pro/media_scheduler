@@ -23,7 +23,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Frontend URL
+    allow_origins=["http://localhost:3001", "http://localhost:5173"],  # Frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,3 +41,12 @@ def read_root():
 def health_check():
     """Health check endpoint"""
     return "ok"
+
+@app.get("/healthz/db")
+async def database_health_check():
+    """Database connection health check"""
+    try:
+        is_connected = await db_service.test_connection()
+        return {"database": "connected" if is_connected else "disconnected"}
+    except Exception as e:
+        return {"database": "error", "detail": str(e)}

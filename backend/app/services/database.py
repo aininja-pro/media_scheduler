@@ -149,7 +149,7 @@ class DatabaseService:
             "media_partners": "person_id",
             "approved_makes": "person_id",  # Use person_id as primary upsert key
             "partner_make_rank": ["partner_id", "make"], 
-            "loan_history": "loan_id",
+            "loan_history": "activity_id",
             "current_activity": "activity_id",
             "ops_capacity": "office",
             "budgets": ["office", "make", "year", "quarter"]  # Composite key as list

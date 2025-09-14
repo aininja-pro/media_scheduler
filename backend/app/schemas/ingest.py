@@ -169,6 +169,7 @@ class LoanHistoryIngest(BaseModel):
     end_date: date
     office: str
     name: str
+    clips_received: Optional[bool] = None
 
     @field_validator('activity_id', 'vin', 'person_id', mode='before')
     @classmethod
@@ -195,6 +196,24 @@ class LoanHistoryIngest(BaseModel):
                 except ValueError:
                     raise ValueError(f"Invalid date format: {v}")
         return v
+
+    @field_validator('clips_received', mode='before')
+    @classmethod
+    def parse_clips_received(cls, v):
+        """Parse clips_received field to boolean."""
+        if v is None or pd.isna(v):
+            return None
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            v_lower = v.lower().strip()
+            if v_lower in ['true', '1', 'yes', 'y']:
+                return True
+            elif v_lower in ['false', '0', 'no', 'n', '']:
+                return False
+        if isinstance(v, (int, float)):
+            return bool(v)
+        return None
 
 
 class CurrentActivityIngest(BaseModel):

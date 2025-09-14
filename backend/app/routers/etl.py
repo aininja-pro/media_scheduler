@@ -10,6 +10,7 @@ import logging
 from ..services.database import get_database, DatabaseService
 from ..etl.availability import build_availability_grid
 from ..etl.cooldown import compute_cooldown_flags
+from ..etl.publication import compute_publication_rate_24m
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/etl", tags=["etl"])
@@ -532,4 +533,173 @@ async def get_eligible_partners(
         raise HTTPException(
             status_code=500,
             detail=f"Error getting eligible partners: {str(e)}"
+        )
+
+
+@router.get("/publication_rates")
+async def get_publication_rates(
+    as_of_date: str = Query(None, description="As-of date in YYYY-MM-DD format (defaults to today)"),
+    window_months: int = Query(24, description="Rolling window in months (default: 24)"),
+    min_observed: int = Query(3, description="Minimum observed loans for supported flag (default: 3)"),
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Get 24-month rolling publication rates for all partner-make combinations.
+
+    Shows which partners have good publication rates (clips received) for each vehicle make
+    based on their loan history. Includes coverage and support flags for data quality.
+
+    Args:
+        as_of_date: End date for analysis window (optional, defaults to today)
+        window_months: Length of rolling window in months (default: 24)
+        min_observed: Minimum observed loans required for supported=True (default: 3)
+
+    Returns:
+        JSON object with publication rate analysis and summary statistics
+    """
+
+    try:
+        logger.info(f"Computing publication rates as of {as_of_date or 'today'}")
+
+        # Fetch ALL loan history records
+        all_loans = []
+        loan_response = db.client.table('loan_history').select('*').limit(1000).execute()
+        if loan_response.data:
+            all_loans.extend(loan_response.data)
+
+            while len(loan_response.data) == 1000:
+                offset = len(all_loans)
+                loan_response = db.client.table('loan_history').select('*').range(offset, offset + 999).execute()
+                if loan_response.data:
+                    all_loans.extend(loan_response.data)
+                else:
+                    break
+
+        loan_history_df = pd.DataFrame(all_loans) if all_loans else pd.DataFrame()
+
+        # Fetch partner names for display
+        all_partners = []
+        partners_response = db.client.table('media_partners').select('person_id', 'name').limit(1000).execute()
+        if partners_response.data:
+            all_partners.extend(partners_response.data)
+            while len(partners_response.data) == 1000:
+                offset = len(all_partners)
+                partners_response = db.client.table('media_partners').select('person_id', 'name').range(offset, offset + 999).execute()
+                if partners_response.data:
+                    all_partners.extend(partners_response.data)
+                else:
+                    break
+
+        partners_lookup = pd.DataFrame(all_partners) if all_partners else pd.DataFrame()
+        if not partners_lookup.empty:
+            partners_lookup['person_id'] = partners_lookup['person_id'].astype(str)
+            partners_dict = dict(zip(partners_lookup['person_id'], partners_lookup['name']))
+        else:
+            partners_dict = {}
+
+        if loan_history_df.empty:
+            raise HTTPException(
+                status_code=404,
+                detail="No loan history data found"
+            )
+
+        logger.info(f"Fetched {len(loan_history_df)} loan history records")
+
+        # Compute publication rates
+        result = compute_publication_rate_24m(
+            loan_history_df=loan_history_df,
+            as_of_date=as_of_date,
+            window_months=window_months,
+            min_observed=min_observed
+        )
+
+        if result.empty:
+            return {
+                "as_of_date": as_of_date,
+                "window_months": window_months,
+                "grains": [],
+                "summary": {
+                    "total_grains": 0,
+                    "unique_partners": 0,
+                    "unique_makes": 0,
+                    "total_loans": 0,
+                    "supported_grains": 0,
+                    "coverage_average": 0.0
+                }
+            }
+
+        # Convert result to JSON-friendly format
+        grains = []
+        for _, row in result.iterrows():
+            person_id_str = str(int(float(row['person_id'])))  # Remove decimal from partner ID
+            partner_name = partners_dict.get(person_id_str, f"Partner {person_id_str}")
+
+            grains.append({
+                "person_id": person_id_str,
+                "partner_name": partner_name,
+                "make": row['make'],
+                "publication_rate_observed": row['publication_rate_observed'],
+                "loans_total_24m": int(row['loans_total_24m']),
+                "loans_observed_24m": int(row['loans_observed_24m']),
+                "publications_observed_24m": int(row['publications_observed_24m']),
+                "coverage": round(row['coverage'], 3) if pd.notna(row['coverage']) else 0.0,
+                "supported": bool(row['supported']),
+                "window_start": row['window_start'].strftime('%Y-%m-%d'),
+                "window_end": row['window_end'].strftime('%Y-%m-%d')
+            })
+
+        # Calculate summary statistics
+        summary = {
+            "total_grains": len(result),
+            "unique_partners": result['person_id'].nunique(),
+            "unique_makes": result['make'].nunique(),
+            "total_loans": int(result['loans_total_24m'].sum()),
+            "total_observed": int(result['loans_observed_24m'].sum()),
+            "total_published": int(result['publications_observed_24m'].sum()),
+            "supported_grains": int(result['supported'].sum()),
+            "coverage_average": round(result['coverage'].mean(), 3),
+            "window_start": result['window_start'].iloc[0].strftime('%Y-%m-%d'),
+            "window_end": result['window_end'].iloc[0].strftime('%Y-%m-%d')
+        }
+
+        # Add make-level statistics
+        make_stats = result.groupby('make').agg({
+            'loans_total_24m': 'sum',
+            'loans_observed_24m': 'sum',
+            'publications_observed_24m': 'sum',
+            'person_id': 'nunique'
+        }).reset_index()
+
+        make_stats['overall_rate'] = make_stats.apply(
+            lambda r: r['publications_observed_24m'] / r['loans_observed_24m']
+                     if r['loans_observed_24m'] > 0 else None, axis=1
+        )
+
+        summary["by_make"] = []
+        for _, make_row in make_stats.iterrows():
+            summary["by_make"].append({
+                "make": make_row['make'],
+                "total_loans": int(make_row['loans_total_24m']),
+                "observed_loans": int(make_row['loans_observed_24m']),
+                "published_loans": int(make_row['publications_observed_24m']),
+                "partner_count": int(make_row['person_id']),
+                "overall_rate": round(make_row['overall_rate'], 3) if pd.notna(make_row['overall_rate']) else None
+            })
+
+        logger.info(f"Generated publication rates: {len(grains)} grains, {summary['supported_grains']} supported")
+
+        return {
+            "as_of_date": as_of_date,
+            "window_months": window_months,
+            "grains": grains,
+            "summary": summary
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error computing publication rates: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error computing publication rates: {str(e)}"
         )

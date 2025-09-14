@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import driveShopLogo from './assets/DriveShop_WebLogo.png'
 import Availability from './pages/Availability.jsx'
+import PublicationRates from './pages/PublicationRates.jsx'
 import './App.css'
 
 function App() {
@@ -215,22 +216,21 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header with DriveShop logo */}
-      <header className="bg-black shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" style={{ maxWidth: '1280px' }}>
-          <div className="flex justify-between items-center h-20 relative">
-            <div className="flex items-center space-x-4">
-              <img 
-                src={driveShopLogo} 
-                alt="DriveShop Logo" 
+      <header className="bg-black h-16 md:h-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between" style={{ maxWidth: '1280px' }}>
+          <div className="flex items-center space-x-4">
+              <img
+                src={driveShopLogo}
+                alt="DriveShop Logo"
                 className="h-10 w-auto"
                 onError={() => console.log('Logo failed to load')}
               />
-            </div>
-            <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', color: '#ffffff', fontSize: '16px', fontWeight: 500 }}>
-              Media Scheduler
-            </div>
-            
-            <nav className="flex space-x-2">
+              <span className="ml-3 text-white/90 text-lg md:text-xl lg:text-2xl font-semibold tracking-wide leading-none whitespace-nowrap">
+                Media Scheduler
+              </span>
+          </div>
+
+          <nav className="flex space-x-2">
               <button 
                 onClick={() => setActiveTab('dashboard')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -271,8 +271,17 @@ function App() {
               >
                 Availability
               </button>
-            </nav>
-          </div>
+              <button
+                onClick={() => setActiveTab('publication')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'publication'
+                    ? 'bg-white text-black'
+                    : 'bg-gray-600 text-white hover:bg-gray-500'
+                }`}
+              >
+                Publication Rates
+              </button>
+          </nav>
         </div>
       </header>
 
@@ -642,6 +651,11 @@ function App() {
         {/* Availability Tab */}
         {activeTab === 'availability' && (
           <Availability />
+        )}
+
+        {/* Publication Rates Tab */}
+        {activeTab === 'publication' && (
+          <PublicationRates />
         )}
         </div>
       </main>

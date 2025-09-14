@@ -6,6 +6,7 @@ from datetime import date, datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, field_validator
 from enum import Enum
+import pandas as pd
 
 
 class ActivityTypeEnum(str, Enum):
@@ -339,25 +340,44 @@ class RulesIngest(BaseModel):
 
 
 class BudgetIngest(BaseModel):
-    """Schema for budgets CSV upload (optional table)"""
+    """Schema for budgets Excel upload"""
     office: str
-    make: str
+    fleet: str  # Changed from 'make' to 'fleet'
     year: int
-    quarter: int
-    budget_used: float
-    budget_remaining: float
+    quarter: str  # Changed to string for "Q1", "Q2", etc.
+    budget_amount: Optional[float] = None  # Changed from budget_used/remaining
+    amount_used: Optional[float] = None
 
-    @field_validator('quarter')
+    @field_validator('office', 'fleet', 'quarter')
     @classmethod
-    def validate_quarter(cls, v: int) -> int:
-        if v not in [1, 2, 3, 4]:
-            raise ValueError("Quarter must be 1, 2, 3, or 4")
+    def validate_required_fields(cls, v: str) -> str:
+        if not v or len(v.strip()) == 0:
+            raise ValueError("Field cannot be empty")
+        return v.strip()
+
+    @field_validator('budget_amount', 'amount_used', mode='before')
+    @classmethod
+    def parse_currency(cls, v):
+        if v is None or pd.isna(v):
+            return None
+        if isinstance(v, str):
+            v_stripped = v.strip()
+            if not v_stripped:  # Empty string
+                return None
+            # Remove $ and commas from currency strings
+            cleaned = v_stripped.replace('$', '').replace(',', '')
+            try:
+                return float(cleaned)
+            except ValueError:
+                return None
+        if isinstance(v, (int, float)):
+            return float(v)
         return v
 
-    @field_validator('budget_used', 'budget_remaining')
+    @field_validator('budget_amount', 'amount_used')
     @classmethod
-    def validate_budget_amounts(cls, v: float) -> float:
-        if v < 0:
+    def validate_budget_amounts(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v < 0:
             raise ValueError("Budget amounts must be non-negative")
         return v
 

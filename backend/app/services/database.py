@@ -120,7 +120,7 @@ class DatabaseService:
                 # Insert all new records
                 logger.info(f"Inserting {len(record_dicts)} new approved_makes records")
                 response = self.client.table(table_name).insert(record_dicts, count='exact').execute()
-            elif table_name in ["holiday_blackout_dates", "rules"]:
+            elif table_name in ["holiday_blackout_dates", "rules", "budgets"]:
                 # Use proper upsert with composite keys
                 logger.info(f"Upserting {len(record_dicts)} records to {table_name} with composite key: {upsert_column}")
                 response = self.client.table(table_name).upsert(
@@ -172,7 +172,7 @@ class DatabaseService:
             "ops_capacity": "office",
             "holiday_blackout_dates": "office,date,holiday_name",  # Composite primary key
             "rules": "make,rank",  # Composite primary key  
-            "budgets": ["office", "make", "year", "quarter"]  # Composite key as list
+            "budgets": "office,fleet,year,quarter"  # Composite key matching new table structure
         }
         
         upsert_col = table_upsert_columns.get(table_name, "id")

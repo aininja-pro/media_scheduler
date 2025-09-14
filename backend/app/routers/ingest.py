@@ -186,6 +186,86 @@ async def ingest_operations_excel(
         )
 
 
+@router.post("/budgets")
+async def ingest_budgets_excel(
+    file: UploadFile,
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Ingest Budgets Excel file with office/fleet budget data.
+    
+    Args:
+        file: Excel file upload with budget data
+        
+    Returns:
+        Dict with ingestion results
+    """
+    # Validate file type
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(
+            status_code=400,
+            detail="File must be an Excel file (.xlsx or .xls)"
+        )
+    
+    try:
+        # Read Excel content
+        content = await file.read()
+        
+        # Wrap bytes in BytesIO for pandas
+        excel_buffer = BytesIO(content)
+        
+        # Read the first sheet (assuming budget data is on first sheet)
+        df = pd.read_excel(excel_buffer)
+        df = df.fillna('')
+        
+        logger.info(f"Processing budgets Excel with columns: {list(df.columns)}")
+        
+        validated_budgets = []
+        for index, row in df.iterrows():
+            try:
+                row_dict = {
+                    'office': str(row['Office']).strip(),
+                    'fleet': str(row['Fleet']).strip(),
+                    'year': int(row['Year']) if pd.notna(row['Year']) else None,
+                    'quarter': str(row['Quarter']).strip(),
+                    'budget_amount': row['Budget #'] if pd.notna(row['Budget #']) else None,
+                    'amount_used': row['Amount Used'] if pd.notna(row['Amount Used']) else None
+                }
+                validated_row = INGEST_SCHEMAS["budgets"](**row_dict)
+                validated_budgets.append(validated_row)
+            except Exception as e:
+                logger.warning(f"Skipping budgets row {index + 2}: {str(e)}")
+        
+        if not validated_budgets:
+            logger.error("No valid budget rows after validation. Check column headers & schema.")
+            raise HTTPException(
+                status_code=422,
+                detail="No valid budget records found. Check Excel column headers."
+            )
+        
+        # Upload to database
+        logger.info("Upserting budget data to database...")
+        result = await db.upsert_records(table_name="budgets", records=validated_budgets)
+        
+        logger.info(f"Successfully processed {len(validated_budgets)} budget records")
+        
+        return {
+            "status": "success",
+            "message": f"Successfully processed budget data from Excel file",
+            "total_rows_processed": len(validated_budgets),
+            "rows_affected": result.get("rows_affected", 0)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing budgets Excel file: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing Excel file: {str(e)}"
+        )
+
+
 @router.post("/{table}")
 async def ingest_csv(
     table: str, 

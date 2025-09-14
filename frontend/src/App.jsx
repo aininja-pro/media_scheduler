@@ -16,6 +16,7 @@ function App() {
   const [isLoadingApprovedRanks, setIsLoadingApprovedRanks] = useState(false)
   const [isLoadingLoanHistory, setIsLoadingLoanHistory] = useState(false)
   const [isLoadingCurrentActivity, setIsLoadingCurrentActivity] = useState(false)
+  const [isLoadingOperationsData, setIsLoadingOperationsData] = useState(false)
 
   const offices = ['SEA', 'PDX', 'LAX', 'SFO', 'PHX', 'DEN', 'LAS']
   
@@ -139,14 +140,43 @@ function App() {
     }
   }
 
+  const handleOperationsDataUpload = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    setIsLoadingOperationsData(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch(`http://localhost:8081/ingest/operations_data`, {
+        method: 'POST',
+        body: formData,
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok) {
+        alert(`Success! Processed ${result.tables_processed} tables: ${result.summary}`)
+      } else {
+        alert(`Error: ${result.detail}`)
+      }
+    } catch (error) {
+      alert(`Network error: ${error.message}`)
+    } finally {
+      setIsLoadingOperationsData(false)
+      // Reset file input
+      event.target.value = ''
+    }
+  }
+
   const csvTypes = [
     { id: 'vehicles', name: 'Vehicles', description: 'Year, make, model, VIN, fleet, dates', icon: '🚗' },
     { id: 'media_partners', name: 'Media Partners', description: 'Partner details, contact info, eligibility', icon: '📺' },
     { id: 'approved_makes', name: 'Approved Ranks', description: 'A+/A/B/C rankings per partner/make', icon: '⭐' },
     { id: 'loan_history', name: 'Loan History', description: 'Historical assignment data', icon: '📊' },
     { id: 'current_activity', name: 'Current Activity', description: 'Active bookings and holds', icon: '📅' },
-    { id: 'ops_capacity', name: 'Office Capacity', description: 'Driver capacity limits per office', icon: '👥' },
-    { id: 'budgets', name: 'Budgets (Optional)', description: 'Quarterly budget tracking', icon: '💰' }
+    { id: 'operations_data', name: 'Operations Data', description: 'Rules, capacity limits, holiday dates', icon: '📊' }
   ]
   
   return (
@@ -278,17 +308,20 @@ function App() {
                       </div>
                     </div>
                     
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors cursor-pointer">
-                      <div className="text-gray-400 mb-2">
-                        <svg className="mx-auto h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
+                    {/* CSV drop area for non-operations tables */}
+                    {csvType.id !== 'operations_data' && (
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors cursor-pointer mb-4">
+                        <div className="text-gray-400 mb-2">
+                          <svg className="mx-auto h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-2">
+                          Drop CSV file or <span className="text-blue-600 font-medium">browse</span>
+                        </p>
+                        <p className="text-xs text-gray-400">Max file size: 10MB</p>
                       </div>
-                      <p className="text-sm text-gray-600 mb-2">
-                        Drop CSV file or <span className="text-blue-600 font-medium">browse</span>
-                      </p>
-                      <p className="text-xs text-gray-400">Max file size: 10MB</p>
-                    </div>
+                    )}
                     
                     {/* Special handling for Vehicles - URL input */}
                     {csvType.id === 'vehicles' ? (
@@ -404,6 +437,46 @@ function App() {
                         >
                           {isLoadingCurrentActivity ? 'Fetching...' : 'Update Current Activity Data'}
                         </button>
+                      </div>
+                    ) : csvType.id === 'operations_data' ? (
+                      /* Special handling for Operations Data - Excel file upload */
+                      <div className="space-y-3">
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-green-400 transition-colors">
+                          <input
+                            type="file"
+                            accept=".xlsx,.xls"
+                            onChange={handleOperationsDataUpload}
+                            className="hidden"
+                            id={`file-input-${csvType.id}`}
+                          />
+                          <label
+                            htmlFor={`file-input-${csvType.id}`}
+                            className="cursor-pointer"
+                          >
+                            <div className="text-gray-400 mb-2">
+                              <svg className="mx-auto h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                              </svg>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-2">
+                              Drop Excel file or <span className="text-green-600 font-medium">browse</span>
+                            </p>
+                            <p className="text-xs text-gray-400">Max file size: 10MB | .xlsx, .xls</p>
+                          </label>
+                        </div>
+                        <div className="text-xs text-gray-500 space-y-1 mb-4">
+                          <div>✅ Sheet 1: Rules</div>
+                          <div>✅ Sheet 2: Ops Capacity</div>
+                          <div>✅ Sheet 3: Holiday/Blackout Dates</div>
+                        </div>
+                        <div className="mt-auto">
+                          <button 
+                            disabled={isLoadingOperationsData}
+                            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                          >
+                            {isLoadingOperationsData ? 'Processing...' : 'Ready for Excel Upload'}
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       /* Regular file upload for other tables */

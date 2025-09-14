@@ -5,7 +5,7 @@ import pandas as pd
 import httpx
 from fastapi import APIRouter, UploadFile, HTTPException, Depends
 from typing import Dict, Any, List
-from io import StringIO
+from io import StringIO, BytesIO
 import logging
 
 from ..schemas.ingest import INGEST_SCHEMAS
@@ -13,6 +13,177 @@ from ..services.database import get_database, DatabaseService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+
+
+@router.post("/operations_data")
+async def ingest_operations_excel(
+    file: UploadFile,
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Ingest Operations Data Excel file with three tabs:
+    - ops_capacity: Office capacity data
+    - holiday_blackout_dates: Holiday and blackout dates
+    - rules: Make/rank rules and constraints
+    
+    Args:
+        file: Excel file upload with three tabs
+        
+    Returns:
+        Dict with ingestion results for all three tables
+    """
+    # Validate file type
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(
+            status_code=400,
+            detail="File must be an Excel file (.xlsx or .xls)"
+        )
+    
+    try:
+        # Read Excel content
+        content = await file.read()
+        
+        # Wrap bytes in BytesIO for pandas
+        excel_buffer = BytesIO(content)
+        
+        # Read all sheets from Excel file
+        excel_file = pd.ExcelFile(excel_buffer)
+        
+        # Expected sheet names
+        expected_sheets = ['ops_capacity', 'holiday_blackout_dates', 'rules']
+        
+        # Verify all required sheets exist
+        missing_sheets = [sheet for sheet in expected_sheets if sheet not in excel_file.sheet_names]
+        if missing_sheets:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing required sheets: {missing_sheets}. Found sheets: {excel_file.sheet_names}"
+            )
+        
+        results = {}
+        total_processed = 0
+        
+        # Process ops_capacity sheet
+        logger.info("Processing ops_capacity sheet...")
+        ops_df = pd.read_excel(excel_buffer, sheet_name='ops_capacity')
+        ops_df = ops_df.fillna('')
+        
+        validated_ops = []
+        for index, row in ops_df.iterrows():
+            try:
+                row_dict = {
+                    'office': str(row['Office']).strip(),
+                    'drivers_per_day': int(row['Drivers Per Day']) if pd.notna(row['Drivers Per Day']) else 0,
+                    'notes': str(row['Notes']).strip() if pd.notna(row['Notes']) and str(row['Notes']).strip() else None
+                }
+                validated_row = INGEST_SCHEMAS["ops_capacity"](**row_dict)
+                validated_ops.append(validated_row)
+            except Exception as e:
+                logger.warning(f"Skipping ops_capacity row {index + 2}: {str(e)}")
+        
+        # Process holiday_blackout_dates sheet
+        logger.info("Processing holiday_blackout_dates sheet...")
+        # Reset buffer position for next read
+        excel_buffer.seek(0)
+        holiday_df = pd.read_excel(excel_buffer, sheet_name='holiday_blackout_dates')
+        holiday_df = holiday_df.fillna('')
+        
+        validated_holidays = []
+        for index, row in holiday_df.iterrows():
+            try:
+                row_dict = {
+                    'office': str(row['Office']).strip(),
+                    'date': row['Date'],
+                    'holiday_name': str(row['Holiday Name']).strip(),
+                    'type': str(row['Type']).strip(),
+                    'all_day': str(row['All_Day']).strip() if pd.notna(row['All_Day']) and str(row['All_Day']).strip() else None,
+                    'start_time': str(row['Start_Time']).strip() if pd.notna(row['Start_Time']) and str(row['Start_Time']).strip() else None,
+                    'end_time': str(row['End_Time']).strip() if pd.notna(row['End_Time']) and str(row['End_Time']).strip() else None,
+                    'notes': str(row['Notea']).strip() if pd.notna(row['Notea']) and str(row['Notea']).strip() else None
+                }
+                validated_row = INGEST_SCHEMAS["holiday_blackout_dates"](**row_dict)
+                validated_holidays.append(validated_row)
+            except Exception as e:
+                logger.warning(f"Skipping holiday_blackout_dates row {index + 2}: {str(e)}")
+        
+        if not validated_holidays:
+            logger.error("No valid holiday_blackout_dates rows after validation. Check column headers & schema.")
+        
+        # Process rules sheet
+        logger.info("Processing rules sheet...")
+        # Reset buffer position for next read
+        excel_buffer.seek(0)
+        rules_df = pd.read_excel(excel_buffer, sheet_name='rules')
+        rules_df = rules_df.fillna('')
+        
+        validated_rules = []
+        for index, row in rules_df.iterrows():
+            try:
+                row_dict = {
+                    'make': str(row['Make']).strip(),
+                    'rank': str(row['Rank']).strip(),
+                    'loan_cap_per_year': int(row['Loan Cap Per Year']) if pd.notna(row['Loan Cap Per Year']) else None,
+                    'publication_rate_requirement': str(row[':ub Rate Requirement']).strip() if pd.notna(row[':ub Rate Requirement']) and str(row[':ub Rate Requirement']).strip() else None,
+                    'cooldown_period': int(row['Cooldown Period']) if pd.notna(row['Cooldown Period']) and str(row['Cooldown Period']).strip().isdigit() else None,
+                    'soft_vs_hard_constraint': str(row['Soft vs. Hard Contraint']).strip() if pd.notna(row['Soft vs. Hard Contraint']) and str(row['Soft vs. Hard Contraint']).strip() else None,
+                    'rule_description': str(row['Rule Description']).strip() if pd.notna(row['Rule Description']) and str(row['Rule Description']).strip() else None,
+                    'notes': str(row['Notes']).strip() if pd.notna(row['Notes']) and str(row['Notes']).strip() else None
+                }
+                validated_row = INGEST_SCHEMAS["rules"](**row_dict)
+                validated_rules.append(validated_row)
+            except Exception as e:
+                logger.warning(f"Skipping rules row {index + 2}: {str(e)}")
+        
+        if not validated_rules:
+            logger.error("No valid rules rows after validation. Check column headers & schema.")
+        
+        # Perform database upserts for all three tables
+        logger.info("Upserting data to database...")
+        
+        # Upsert ops_capacity
+        if validated_ops:
+            ops_result = await db.upsert_records(table_name="ops_capacity", records=validated_ops)
+            results["ops_capacity"] = {
+                "rows_processed": len(validated_ops),
+                "rows_affected": ops_result.get("rows_affected", 0)
+            }
+            total_processed += len(validated_ops)
+        
+        # Upsert holiday_blackout_dates
+        if validated_holidays:
+            holiday_result = await db.upsert_records(table_name="holiday_blackout_dates", records=validated_holidays)
+            results["holiday_blackout_dates"] = {
+                "rows_processed": len(validated_holidays),
+                "rows_affected": holiday_result.get("rows_affected", 0)
+            }
+            total_processed += len(validated_holidays)
+        
+        # Upsert rules
+        if validated_rules:
+            rules_result = await db.upsert_records(table_name="rules", records=validated_rules)
+            results["rules"] = {
+                "rows_processed": len(validated_rules),
+                "rows_affected": rules_result.get("rows_affected", 0)
+            }
+            total_processed += len(validated_rules)
+        
+        logger.info(f"Successfully processed {total_processed} total records from operations Excel file")
+        
+        return {
+            "status": "success",
+            "message": f"Successfully processed operations data from Excel file",
+            "total_rows_processed": total_processed,
+            "results": results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing operations Excel file: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing Excel file: {str(e)}"
+        )
 
 
 @router.post("/{table}")

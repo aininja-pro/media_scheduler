@@ -59,46 +59,53 @@ class DatabaseService:
             # Get the upsert column 
             upsert_column = self._get_upsert_column(table_name, primary_key, conflict_columns)
             
-            # For approved_makes, we want ALL records but need to dedupe within batch
-            if table_name == "approved_makes":
-                seen_combinations = set()  # Track person_id + make combinations
-                
-                for record in records:
-                    record_dict = record.model_dump()
-                    # Convert date objects to strings for JSON serialization
-                    for key, value in record_dict.items():
-                        if hasattr(value, 'isoformat'):  # Check if it's a date/datetime object
-                            record_dict[key] = value.isoformat()
-                    
-                    # Create a unique key for person_id + make combination
-                    combo_key = f"{record_dict['person_id']}_{record_dict['make']}"
-                    
-                    if combo_key not in seen_combinations:
-                        seen_combinations.add(combo_key)
-                        record_dicts.append(record_dict)
-                    else:
-                        logger.warning(f"Skipping duplicate person_id+make: {record_dict['person_id']} + {record_dict['make']}")
-            else:
-                # For other tables, use duplicate detection
-                seen_keys = set()  # Track unique constraint values to avoid duplicates
-                
-                for record in records:
-                    record_dict = record.model_dump()
-                    # Convert date objects to strings for JSON serialization
-                    for key, value in record_dict.items():
-                        if hasattr(value, 'isoformat'):  # Check if it's a date/datetime object
-                            record_dict[key] = value.isoformat()
-                    
-                    # Check for duplicates based on upsert column
-                    upsert_value = record_dict.get(upsert_column)
-                    if upsert_value and upsert_value not in seen_keys:
-                        seen_keys.add(upsert_value)
-                        record_dicts.append(record_dict)
-                    elif upsert_value:
-                        logger.warning(f"Skipping duplicate {upsert_column}: {upsert_value}")
+            # Detect composite vs single key
+            is_composite = ',' in upsert_column
+            seen_keys = set()
             
+            for record in records:
+                record_dict = record.model_dump()
+                # Convert date objects to strings for JSON serialization
+                for key, value in record_dict.items():
+                    if hasattr(value, 'isoformat'):  # Check if it's a date/datetime object
+                        record_dict[key] = value.isoformat()
+                
+                # Build dedupe key for composite or single columns
+                if table_name == "approved_makes":
+                    # Special handling for approved_makes
+                    combo_key = f"{record_dict['person_id']}_{record_dict['make']}"
+                    dedupe_key = combo_key
+                elif is_composite:
+                    key_parts = self._split_composite_columns(upsert_column)
+                    try:
+                        dedupe_key = tuple(record_dict[k] for k in key_parts)
+                    except KeyError as e:
+                        # If mapping is wrong, keep the record and log to avoid dropping all rows
+                        logger.warning(f"Missing composite key fields for {table_name}: needed {key_parts}, got keys {list(record_dict.keys())}, error: {e}")
+                        dedupe_key = None
+                else:
+                    dedupe_key = record_dict.get(upsert_column)
+                
+                # Add record if not duplicate
+                if dedupe_key is None:
+                    # No dedupe key → still include the row (better to insert than to drop everything)
+                    record_dicts.append(record_dict)
+                elif dedupe_key not in seen_keys:
+                    seen_keys.add(dedupe_key)
+                    record_dicts.append(record_dict)
+                else:
+                    logger.warning(f"Skipping duplicate key for {table_name}: {dedupe_key}")
+            
+            # Safety check - never call insert/upsert with empty payload
+            if not record_dicts:
+                logger.error(f"Refusing to call insert/upsert with empty payload for {table_name}. Check upstream validation/dedupe.")
+                return {"rows_processed": 0, "rows_affected": 0, "status": "noop"}
             
             logger.info(f"Upserting {len(record_dicts)} records to {table_name} with upsert column: {upsert_column}")
+            
+            # Defensive check - never call DB with empty payload
+            if not record_dicts:
+                raise ValueError(f"No records to write for {table_name}")
             
             # Special handling for tables with composite keys
             if table_name == "approved_makes":
@@ -113,6 +120,13 @@ class DatabaseService:
                 # Insert all new records
                 logger.info(f"Inserting {len(record_dicts)} new approved_makes records")
                 response = self.client.table(table_name).insert(record_dicts, count='exact').execute()
+            elif table_name in ["holiday_blackout_dates", "rules"]:
+                # Use proper upsert with composite keys
+                logger.info(f"Upserting {len(record_dicts)} records to {table_name} with composite key: {upsert_column}")
+                response = self.client.table(table_name).upsert(
+                    record_dicts,
+                    on_conflict=upsert_column
+                ).execute()
             else:
                 # Regular upsert for other tables
                 response = self.client.table(table_name).upsert(
@@ -135,6 +149,10 @@ class DatabaseService:
             logger.error(f"Error upserting records to {table_name}: {e}")
             raise
     
+    def _split_composite_columns(self, upsert_column: str) -> List[str]:
+        """Split composite column string into individual column names"""
+        return [c.strip() for c in upsert_column.split(',') if c.strip()]
+    
     def _get_upsert_column(self, table_name: str, primary_key: str = None, conflict_columns: List[str] = None) -> str:
         """Get the appropriate upsert column for each table"""
         if conflict_columns:
@@ -152,6 +170,8 @@ class DatabaseService:
             "loan_history": "activity_id",
             "current_activity": "activity_id",
             "ops_capacity": "office",
+            "holiday_blackout_dates": "office,date,holiday_name",  # Composite primary key
+            "rules": "make,rank",  # Composite primary key  
             "budgets": ["office", "make", "year", "quarter"]  # Composite key as list
         }
         

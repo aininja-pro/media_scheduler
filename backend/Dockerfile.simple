@@ -6,7 +6,8 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies (most packages have pre-compiled wheels)
+# Install Python dependencies with explicit psycopg requirements
+RUN pip install --no-cache-dir "SQLAlchemy>=2.0" "psycopg[binary]>=3.2"
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code

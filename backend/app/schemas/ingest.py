@@ -236,6 +236,7 @@ class OpsCapacityIngest(BaseModel):
     """Schema for ops_capacity CSV upload"""
     office: str
     drivers_per_day: int
+    notes: Optional[str] = None
 
     @field_validator('office')
     @classmethod
@@ -249,6 +250,91 @@ class OpsCapacityIngest(BaseModel):
     def validate_capacity(cls, v: int) -> int:
         if v < 0:
             raise ValueError("Drivers per day must be non-negative")
+        return v
+
+
+class HolidayBlackoutDatesIngest(BaseModel):
+    """Schema for holiday_blackout_dates CSV upload"""
+    office: str
+    date: date
+    holiday_name: str
+    type: str
+    all_day: Optional[str] = None  # Changed to text to match table
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    notes: Optional[str] = None  # Changed from 'notea' to 'notes'
+
+    @field_validator('office', 'holiday_name', 'type')
+    @classmethod
+    def validate_required_fields(cls, v: str) -> str:
+        if not v or len(v.strip()) == 0:
+            raise ValueError("Field cannot be empty")
+        return v.strip()
+
+    @field_validator('date', mode='before')
+    @classmethod
+    def parse_date(cls, v):
+        if v and isinstance(v, str) and v.strip():
+            try:
+                # Handle YYYY-MM-DD format
+                return datetime.strptime(v, '%Y-%m-%d').date()
+            except ValueError:
+                try:
+                    # Handle MM/DD/YYYY format
+                    return datetime.strptime(v, '%m/%d/%Y').date()
+                except ValueError:
+                    try:
+                        # Handle MM-DD-YY format
+                        return datetime.strptime(v, '%m-%d-%y').date()
+                    except ValueError:
+                        raise ValueError(f"Invalid date format: {v}")
+        return v
+
+    @field_validator('all_day', mode='before')
+    @classmethod
+    def parse_all_day(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            v_lower = v.lower().strip()
+            if v_lower in ['true', '1', 'yes', 'y']:
+                return True
+            elif v_lower in ['false', '0', 'no', 'n']:
+                return False
+        return None
+
+
+class RulesIngest(BaseModel):
+    """Schema for rules CSV upload"""
+    make: str
+    rank: str
+    loan_cap_per_year: Optional[int] = None
+    publication_rate_requirement: Optional[str] = None  # Fixed column name
+    cooldown_period: Optional[int] = None  # Changed to int to match table
+    soft_vs_hard_constraint: Optional[str] = None
+    rule_description: Optional[str] = None
+    notes: Optional[str] = None
+
+    @field_validator('make', 'rank')
+    @classmethod
+    def validate_required_fields(cls, v: str) -> str:
+        if not v or len(v.strip()) == 0:
+            raise ValueError("Field cannot be empty")
+        return v.strip()
+
+    @field_validator('loan_cap_per_year', mode='before')
+    @classmethod
+    def parse_loan_cap(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str) and v.strip():
+            try:
+                return int(v.strip())
+            except ValueError:
+                # If it's not a number, store as None
+                return None
         return v
 
 
@@ -285,5 +371,7 @@ INGEST_SCHEMAS = {
     "loan_history": LoanHistoryIngest,
     "current_activity": CurrentActivityIngest,
     "ops_capacity": OpsCapacityIngest,
+    "holiday_blackout_dates": HolidayBlackoutDatesIngest,
+    "rules": RulesIngest,
     "budgets": BudgetIngest,
 }

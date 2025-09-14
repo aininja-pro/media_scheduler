@@ -129,6 +129,19 @@ function Availability() {
     return availabilityData.rows
   }
 
+  // Group partners by rank for display
+  const groupPartnersByRank = (partners) => {
+    const grouped = {}
+    partners.forEach(partner => {
+      const rank = partner.rank || 'A'
+      if (!grouped[rank]) {
+        grouped[rank] = []
+      }
+      grouped[rank].push(partner)
+    })
+    return grouped
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-8">
@@ -252,6 +265,12 @@ function Availability() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                         VIN
                       </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+                        Make
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[140px]">
+                        Model
+                      </th>
                       {availabilityData.days.map((day, index) => (
                         <th key={day} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                           <div>{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index]}</div>
@@ -267,6 +286,12 @@ function Availability() {
                       <tr key={row.vin} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-4 py-3 text-sm font-mono text-gray-900">
                           {row.vin.slice(-8)} {/* Show last 8 characters of VIN */}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                          {row.make}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-700">
+                          {row.model || '—'}
                         </td>
                         {row.availability.map((isAvailable, dayIndex) => {
                           const partnerCount = row.eligible_partner_counts ? row.eligible_partner_counts[dayIndex] : 0;
@@ -344,6 +369,11 @@ function Availability() {
                   <p className="text-sm text-gray-600 mt-1">
                     VIN: {selectedCell.vin.slice(-8)} • {formatDate(selectedCell.day)}
                   </p>
+                  {partnerDetails && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      {partnerDetails.make} {partnerDetails.model || ''} • {partnerDetails.office}
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={closeModal}
@@ -368,7 +398,13 @@ function Availability() {
                         <span className="font-medium text-gray-700">Make:</span> {partnerDetails.make}
                       </div>
                       <div>
+                        <span className="font-medium text-gray-700">Model:</span> {partnerDetails.model || '—'}
+                      </div>
+                      <div>
                         <span className="font-medium text-gray-700">Office:</span> {partnerDetails.office}
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-700">VIN:</span> {selectedCell.vin.slice(-8)}
                       </div>
                     </div>
                   </div>
@@ -379,20 +415,26 @@ function Availability() {
                       <h4 className="text-md font-medium text-green-800 mb-3">
                         ✅ Eligible Partners ({partnerDetails.eligible.length})
                       </h4>
-                      <div className="space-y-2">
-                        {partnerDetails.eligible.map((partner, index) => (
-                          <div key={index} className="bg-green-50 border border-green-200 rounded-lg p-3">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <div className="font-medium text-green-900">{partner.name}</div>
-                                <div className="text-sm text-green-700">ID: {partner.partner_id}</div>
+                      <div className="space-y-4">
+                        {Object.entries(groupPartnersByRank(partnerDetails.eligible))
+                          .sort(([a], [b]) => {
+                            // Sort ranks: A+, A, B, C
+                            const rankOrder = { 'A+': 0, 'A': 1, 'B': 2, 'C': 3 }
+                            return (rankOrder[a] || 99) - (rankOrder[b] || 99)
+                          })
+                          .map(([rank, partners]) => (
+                            <div key={rank} className="bg-green-50 border border-green-200 rounded-lg p-4">
+                              <h5 className="font-semibold text-green-900 mb-2">
+                                Rank {rank} ({partners.length}):
+                              </h5>
+                              <div className="text-sm text-green-800">
+                                {partners.map(partner => partner.name).join(', ')}
                               </div>
-                              <div className="text-xs text-green-600">
-                                {partner.why.join(', ')}
+                              <div className="text-xs text-green-600 mt-1">
+                                IDs: {partners.map(partner => partner.partner_id).join(', ')}
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
                       </div>
                     </div>
                   )}
@@ -403,20 +445,27 @@ function Availability() {
                       <h4 className="text-md font-medium text-red-800 mb-3">
                         ❌ Blocked Partners ({partnerDetails.blocked.length})
                       </h4>
-                      <div className="space-y-2">
-                        {partnerDetails.blocked.map((partner, index) => (
-                          <div key={index} className="bg-red-50 border border-red-200 rounded-lg p-3">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <div className="font-medium text-red-900">{partner.name}</div>
-                                <div className="text-sm text-red-700">ID: {partner.partner_id}</div>
-                              </div>
-                              <div className="text-xs text-red-600">
-                                {partner.why.join(', ')}
+                      <div className="space-y-4">
+                        {Object.entries(groupPartnersByRank(partnerDetails.blocked))
+                          .sort(([a], [b]) => {
+                            const rankOrder = { 'A+': 0, 'A': 1, 'B': 2, 'C': 3 }
+                            return (rankOrder[a] || 99) - (rankOrder[b] || 99)
+                          })
+                          .map(([rank, partners]) => (
+                            <div key={rank} className="bg-red-50 border border-red-200 rounded-lg p-4">
+                              <h5 className="font-semibold text-red-900 mb-2">
+                                Rank {rank} ({partners.length}):
+                              </h5>
+                              <div className="space-y-1">
+                                {partners.map((partner, index) => (
+                                  <div key={index} className="text-sm">
+                                    <span className="text-red-800 font-medium">{partner.name}</span>
+                                    <span className="text-red-600 ml-2">({partner.why.join(', ')})</span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
                       </div>
                     </div>
                   )}

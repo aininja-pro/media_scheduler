@@ -161,21 +161,49 @@ async def get_availability_grid(
         else:
             activity_df = pd.DataFrame()
 
-        # Fetch partner data for eligibility calculations
-        partners_response = db.client.table('media_partners').select('*').execute()
-        partners_df = pd.DataFrame(partners_response.data) if partners_response.data else pd.DataFrame()
+        # Fetch partner data for eligibility calculations (get ALL records)
+        all_partners = []
+        partners_response = db.client.table('media_partners').select('*').limit(1000).execute()
+        if partners_response.data:
+            all_partners.extend(partners_response.data)
 
-        # Fetch approved makes
-        approved_makes_response = db.client.table('approved_makes').select('*').execute()
-        approved_makes_df = pd.DataFrame(approved_makes_response.data) if approved_makes_response.data else pd.DataFrame()
+            # Fetch remaining records if there are more
+            while len(partners_response.data) == 1000:
+                offset = len(all_partners)
+                partners_response = db.client.table('media_partners').select('*').range(offset, offset + 999).execute()
+                if partners_response.data:
+                    all_partners.extend(partners_response.data)
+                else:
+                    break
 
-        # Fetch loan history for cooldown calculation
-        loan_history_response = db.client.table('loan_history').select('*').execute()
+        partners_df = pd.DataFrame(all_partners) if all_partners else pd.DataFrame()
+
+        # Fetch approved makes (get ALL records)
+        all_approved = []
+        approved_response = db.client.table('approved_makes').select('*').limit(1000).execute()
+        if approved_response.data:
+            all_approved.extend(approved_response.data)
+
+            # Fetch remaining records if there are more
+            while len(approved_response.data) == 1000:
+                offset = len(all_approved)
+                approved_response = db.client.table('approved_makes').select('*').range(offset, offset + 999).execute()
+                if approved_response.data:
+                    all_approved.extend(approved_response.data)
+                else:
+                    break
+
+        approved_makes_df = pd.DataFrame(all_approved) if all_approved else pd.DataFrame()
+
+        # Fetch loan history for cooldown calculation (limit to recent records for performance)
+        loan_history_response = db.client.table('loan_history').select('*').limit(2000).execute()
         loan_history_df = pd.DataFrame(loan_history_response.data) if loan_history_response.data else pd.DataFrame()
 
         # Fetch rules for cooldown calculation
         rules_response = db.client.table('rules').select('*').execute()
         rules_df = pd.DataFrame(rules_response.data) if rules_response.data else pd.DataFrame()
+
+        logger.info(f"Fetched {len(partners_df)} partners, {len(approved_makes_df)} approved makes, {len(loan_history_df)} loan history records")
 
         # Convert date columns
         for date_col in ['in_service_date', 'expected_turn_in_date']:
@@ -260,8 +288,13 @@ async def get_availability_grid(
             else:
                 partner_counts = [0] * 7
 
+            # Get vehicle make and model info
+            vehicle_info = vehicles_df[vehicles_df['vin'] == vin].iloc[0]
+
             rows.append({
                 "vin": vin,
+                "make": vehicle_info['make'],
+                "model": vehicle_info.get('model', ''),
                 "office": office,
                 "availability": availability_array,
                 "eligible_partner_counts": partner_counts
@@ -375,18 +408,43 @@ async def get_eligible_partners(
 
         vehicle = vehicle_response.data[0]
         make = vehicle['make']
+        model = vehicle.get('model', '')
         office = vehicle['office']
 
-        # Fetch all required data
-        partners_response = db.client.table('media_partners').select('*').execute()
-        partners_df = pd.DataFrame(partners_response.data) if partners_response.data else pd.DataFrame()
+        # Fetch all required data (get ALL records for accurate eligibility)
+        # Partners - get all
+        all_partners = []
+        partners_response = db.client.table('media_partners').select('*').limit(1000).execute()
+        if partners_response.data:
+            all_partners.extend(partners_response.data)
+            while len(partners_response.data) == 1000:
+                offset = len(all_partners)
+                partners_response = db.client.table('media_partners').select('*').range(offset, offset + 999).execute()
+                if partners_response.data:
+                    all_partners.extend(partners_response.data)
+                else:
+                    break
+        partners_df = pd.DataFrame(all_partners) if all_partners else pd.DataFrame()
 
-        approved_makes_response = db.client.table('approved_makes').select('*').execute()
-        approved_makes_df = pd.DataFrame(approved_makes_response.data) if approved_makes_response.data else pd.DataFrame()
+        # Approved makes - get all
+        all_approved = []
+        approved_response = db.client.table('approved_makes').select('*').limit(1000).execute()
+        if approved_response.data:
+            all_approved.extend(approved_response.data)
+            while len(approved_response.data) == 1000:
+                offset = len(all_approved)
+                approved_response = db.client.table('approved_makes').select('*').range(offset, offset + 999).execute()
+                if approved_response.data:
+                    all_approved.extend(approved_response.data)
+                else:
+                    break
+        approved_makes_df = pd.DataFrame(all_approved) if all_approved else pd.DataFrame()
 
-        loan_history_response = db.client.table('loan_history').select('*').execute()
+        # Loan history - limit for performance
+        loan_history_response = db.client.table('loan_history').select('*').limit(2000).execute()
         loan_history_df = pd.DataFrame(loan_history_response.data) if loan_history_response.data else pd.DataFrame()
 
+        # Rules
         rules_response = db.client.table('rules').select('*').execute()
         rules_df = pd.DataFrame(rules_response.data) if rules_response.data else pd.DataFrame()
 
@@ -419,10 +477,20 @@ async def get_eligible_partners(
 
             for _, partner in office_partners.iterrows():
                 person_id = str(partner['person_id'])
+
+                # Get the partner's rank for this make from approved_makes
+                partner_approvals = approved_makes_df[
+                    (approved_makes_df['person_id'].astype(str) == person_id) &
+                    (approved_makes_df['make'] == make)
+                ]
+
+                # Get the rank (there might be multiple, take the first one)
+                rank = partner_approvals['rank'].iloc[0] if not partner_approvals.empty else "A"
+
                 partner_info = {
                     "partner_id": person_id,
                     "name": partner.get('name', f"Partner {person_id}"),
-                    "tier": "A",  # Default tier - could be enhanced based on schema
+                    "rank": rank,
                     "why": ["eligible"]  # Base eligibility
                 }
 
@@ -451,6 +519,7 @@ async def get_eligible_partners(
             "vin": vin,
             "day": day,
             "make": make,
+            "model": model,
             "office": office,
             "eligible": eligible_partners,
             "blocked": blocked_partners

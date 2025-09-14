@@ -32,6 +32,10 @@ app.add_middleware(
 # Include routers
 app.include_router(ingest.router)
 
+# Import and include ETL router
+from .routers import etl
+app.include_router(etl.router, prefix="/api")
+
 @app.get("/")
 def read_root():
     """Root endpoint"""

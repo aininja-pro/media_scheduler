@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import driveShopLogo from './assets/DriveShop_WebLogo.png'
+import Availability from './pages/Availability.jsx'
 import './App.css'
 
 function App() {
@@ -250,15 +251,25 @@ function App() {
               >
                 Upload Data
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab('schedule')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'schedule' 
-                    ? 'bg-white text-black' 
+                  activeTab === 'schedule'
+                    ? 'bg-white text-black'
                     : 'bg-gray-600 text-white hover:bg-gray-500'
                 }`}
               >
                 Schedule
+              </button>
+              <button
+                onClick={() => setActiveTab('availability')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'availability'
+                    ? 'bg-white text-black'
+                    : 'bg-gray-600 text-white hover:bg-gray-500'
+                }`}
+              >
+                Availability
               </button>
             </nav>
           </div>
@@ -626,6 +637,11 @@ function App() {
               </div>
             </div>
           </>
+        )}
+
+        {/* Availability Tab */}
+        {activeTab === 'availability' && (
+          <Availability />
         )}
         </div>
       </main>

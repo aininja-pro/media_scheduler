@@ -638,12 +638,10 @@ async def get_publication_rates(
                 "person_id": person_id_str,
                 "partner_name": partner_name,
                 "make": row['make'],
-                "publication_rate_observed": row['publication_rate_observed'],
                 "loans_total_24m": int(row['loans_total_24m']),
-                "loans_observed_24m": int(row['loans_observed_24m']),
-                "publications_observed_24m": int(row['publications_observed_24m']),
-                "coverage": round(row['coverage'], 3) if pd.notna(row['coverage']) else 0.0,
-                "supported": bool(row['supported']),
+                "publications_24m": int(row['publications_24m']),
+                "publication_rate": row['publication_rate'],
+                "has_clip_data": bool(row['has_clip_data']),
                 "window_start": row['window_start'].strftime('%Y-%m-%d'),
                 "window_end": row['window_end'].strftime('%Y-%m-%d')
             })
@@ -654,10 +652,8 @@ async def get_publication_rates(
             "unique_partners": result['person_id'].nunique(),
             "unique_makes": result['make'].nunique(),
             "total_loans": int(result['loans_total_24m'].sum()),
-            "total_observed": int(result['loans_observed_24m'].sum()),
-            "total_published": int(result['publications_observed_24m'].sum()),
-            "supported_grains": int(result['supported'].sum()),
-            "coverage_average": round(result['coverage'].mean(), 3),
+            "total_published": int(result['publications_24m'].sum()),
+            "grains_with_data": int(result['has_clip_data'].sum()),
             "window_start": result['window_start'].iloc[0].strftime('%Y-%m-%d'),
             "window_end": result['window_end'].iloc[0].strftime('%Y-%m-%d')
         }
@@ -665,14 +661,13 @@ async def get_publication_rates(
         # Add make-level statistics
         make_stats = result.groupby('make').agg({
             'loans_total_24m': 'sum',
-            'loans_observed_24m': 'sum',
-            'publications_observed_24m': 'sum',
+            'publications_24m': 'sum',
             'person_id': 'nunique'
         }).reset_index()
 
         make_stats['overall_rate'] = make_stats.apply(
-            lambda r: r['publications_observed_24m'] / r['loans_observed_24m']
-                     if r['loans_observed_24m'] > 0 else None, axis=1
+            lambda r: r['publications_24m'] / r['loans_total_24m']
+                     if r['loans_total_24m'] > 0 else None, axis=1
         )
 
         summary["by_make"] = []
@@ -680,13 +675,12 @@ async def get_publication_rates(
             summary["by_make"].append({
                 "make": make_row['make'],
                 "total_loans": int(make_row['loans_total_24m']),
-                "observed_loans": int(make_row['loans_observed_24m']),
-                "published_loans": int(make_row['publications_observed_24m']),
+                "published_loans": int(make_row['publications_24m']),
                 "partner_count": int(make_row['person_id']),
                 "overall_rate": round(make_row['overall_rate'], 3) if pd.notna(make_row['overall_rate']) else None
             })
 
-        logger.info(f"Generated publication rates: {len(grains)} grains, {summary['supported_grains']} supported")
+        logger.info(f"Generated publication rates: {len(grains)} grains, {summary['grains_with_data']} with data")
 
         return {
             "as_of_date": as_of_date,

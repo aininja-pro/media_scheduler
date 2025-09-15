@@ -39,11 +39,9 @@ def compute_publication_rate_24m(
         - person_id: Partner identifier
         - make: Vehicle make
         - loans_total_24m: All loans in window
-        - loans_observed_24m: Loans with clips_received not NULL
-        - publications_observed_24m: Loans with clips_received = TRUE
-        - publication_rate_observed: Rate based on observed data only (None if no observed)
-        - coverage: loans_observed / loans_total (0-1)
-        - supported: True if loans_observed >= min_observed
+        - publications_24m: Loans with clips_received = TRUE
+        - publication_rate: publications_24m / loans_total_24m (None if no clip data)
+        - has_clip_data: True if any loans have clips_received not NULL
         - window_start: Start of analysis window
         - window_end: End of analysis window
 
@@ -67,8 +65,7 @@ def compute_publication_rate_24m(
 
     if df.empty:
         return pd.DataFrame(columns=[
-            'person_id', 'make', 'loans_total_24m', 'loans_observed_24m', 'publications_observed_24m',
-            'publication_rate_observed', 'coverage', 'supported', 'window_start', 'window_end'
+            'person_id', 'make', 'loans_total_24m', 'publications_24m', 'publication_rate', 'has_clip_data', 'window_start', 'window_end'
         ])
 
     # normalize clips tri-state without forcing NULL->False
@@ -81,42 +78,44 @@ def compute_publication_rate_24m(
                        False if str(x).strip().lower() in {"false","0","no"} else pd.NA)
     )
 
-    group_cols = [c for c in ["person_id","make"] if c in df.columns]  # preserve grain
+    group_cols = [c for c in ["person_id","make"] if c in df.columns]
 
-    # totals in window
-    totals = df.groupby(group_cols, dropna=False).agg(
-        loans_total_24m=("activity_id","count")
-    )
+    # Group by (person_id, make) and compute simple metrics
+    grouped = df.groupby(group_cols, dropna=False)
 
-    # observed subset (clips not null)
-    obs = df[df["clips_received_norm"].notna()].assign(
-        published=lambda x: x["clips_received_norm"].astype(bool)
-    ).groupby(group_cols, dropna=False).agg(
-        loans_observed_24m=("activity_id","count"),
-        publications_observed_24m=("published","sum")
-    )
+    results = []
+    for name, group in grouped:
+        person_id, make = name if isinstance(name, tuple) else (name, '')
 
-    out = totals.join(obs, how="left").fillna(
-        {"loans_observed_24m":0, "publications_observed_24m":0}
-    ).reset_index()
+        loans_total = len(group)
 
-    # metrics
-    out["publication_rate_observed"] = out.apply(
-        lambda r: (r["publications_observed_24m"] / r["loans_observed_24m"])
-                  if r["loans_observed_24m"] > 0 else None, axis=1
-    )
-    out["coverage"] = out.apply(
-        lambda r: (r["loans_observed_24m"] / r["loans_total_24m"])
-                  if r["loans_total_24m"] > 0 else None, axis=1
-    )
-    out["supported"] = out["loans_observed_24m"] >= min_observed
-    out["window_start"] = window_start.date()
-    out["window_end"] = as_of.date()
+        # Count publications (TRUE values only)
+        publications = group["clips_received_norm"].sum() if group["clips_received_norm"].notna().any() else 0
+
+        # Check if we have any clip data
+        has_clip_data = group["clips_received_norm"].notna().any()
+
+        # Publication rate (None if no clip data available)
+        if has_clip_data:
+            publication_rate = publications / loans_total
+        else:
+            publication_rate = None
+
+        results.append({
+            'person_id': person_id,
+            'make': make,
+            'loans_total_24m': loans_total,
+            'publications_24m': int(publications),
+            'publication_rate': publication_rate,
+            'has_clip_data': has_clip_data,
+            'window_start': window_start.date(),
+            'window_end': as_of.date()
+        })
+
+    out = pd.DataFrame(results)
 
     return out[
-        group_cols
-        + ["loans_total_24m","loans_observed_24m","publications_observed_24m",
-           "publication_rate_observed","coverage","supported","window_start","window_end"]
+        group_cols + ["loans_total_24m", "publications_24m", "publication_rate", "has_clip_data", "window_start", "window_end"]
     ]
 
 

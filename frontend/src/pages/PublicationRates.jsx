@@ -290,9 +290,9 @@ function PublicationRates() {
                     </th>
                     <th
                       className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleMakeSort('observed_loans')}
+                      onClick={() => handleMakeSort('published_loans')}
                     >
-                      Observed Loans {makeSortField === 'observed_loans' && (makeSortDirection === 'asc' ? '↑' : '↓')}
+                      Published Loans {makeSortField === 'published_loans' && (makeSortDirection === 'asc' ? '↑' : '↓')}
                     </th>
                     <th
                       className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
@@ -308,7 +308,7 @@ function PublicationRates() {
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">{make.make}</td>
                       <td className="px-4 py-3 text-sm text-center text-gray-600">{make.partner_count}</td>
                       <td className="px-4 py-3 text-sm text-center text-gray-600">{make.total_loans.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-600">{make.observed_loans.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-600">{make.published_loans.toLocaleString()}</td>
                       <td className="px-4 py-3 text-sm text-center">{formatRate(make.overall_rate)}</td>
                     </tr>
                   ))}
@@ -352,33 +352,21 @@ function PublicationRates() {
                     </th>
                     <th
                       className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('loans_observed_24m')}
+                      onClick={() => handleSort('publications_24m')}
                     >
-                      Observed {sortField === 'loans_observed_24m' && (sortDirection === 'asc' ? '↑' : '↓')}
+                      Published {sortField === 'publications_24m' && (sortDirection === 'asc' ? '↑' : '↓')}
                     </th>
                     <th
                       className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('publications_observed_24m')}
+                      onClick={() => handleSort('publication_rate')}
                     >
-                      Published {sortField === 'publications_observed_24m' && (sortDirection === 'asc' ? '↑' : '↓')}
+                      Pub Rate {sortField === 'publication_rate' && (sortDirection === 'asc' ? '↑' : '↓')}
                     </th>
                     <th
                       className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('publication_rate_observed')}
+                      onClick={() => handleSort('has_clip_data')}
                     >
-                      Pub Rate {sortField === 'publication_rate_observed' && (sortDirection === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th
-                      className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('coverage')}
-                    >
-                      Coverage {sortField === 'coverage' && (sortDirection === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th
-                      className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('supported')}
-                    >
-                      Supported {sortField === 'supported' && (sortDirection === 'asc' ? '↑' : '↓')}
+                      Has Data {sortField === 'has_clip_data' && (sortDirection === 'asc' ? '↑' : '↓')}
                     </th>
                   </tr>
                 </thead>
@@ -391,22 +379,16 @@ function PublicationRates() {
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">{grain.make}</td>
                       <td className="px-4 py-3 text-sm text-center text-gray-600">{grain.loans_total_24m}</td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-600">{grain.loans_observed_24m}</td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-600">{grain.publications_observed_24m}</td>
-                      <td className="px-4 py-3 text-sm text-center">{formatRate(grain.publication_rate_observed)}</td>
-                      <td className="px-4 py-3 text-sm text-center">
-                        <span className={getCoverageColor(grain.coverage)}>
-                          {(grain.coverage * 100).toFixed(0)}%
-                        </span>
-                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-600">{grain.publications_24m}</td>
+                      <td className="px-4 py-3 text-sm text-center">{formatRate(grain.publication_rate)}</td>
                       <td className="px-4 py-3 text-center">
-                        {grain.supported ? (
+                        {grain.has_clip_data ? (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             ✓ Yes
                           </span>
                         ) : (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                            Insufficient
+                            No Data
                           </span>
                         )}
                       </td>

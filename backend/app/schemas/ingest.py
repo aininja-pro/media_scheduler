@@ -101,6 +101,7 @@ class MediaPartnerIngest(BaseModel):
     """Schema for media_partners CSV upload"""
     person_id: str
     name: str
+    address: Optional[str] = None
     office: str
     default_loan_region: Optional[str] = None
     notes_instructions: Optional[str] = None
@@ -169,7 +170,7 @@ class LoanHistoryIngest(BaseModel):
     end_date: date
     office: str
     name: str
-    clips_received: Optional[bool] = None
+    clips_received: Optional[str] = None
 
     @field_validator('activity_id', 'vin', 'person_id', mode='before')
     @classmethod
@@ -200,20 +201,11 @@ class LoanHistoryIngest(BaseModel):
     @field_validator('clips_received', mode='before')
     @classmethod
     def parse_clips_received(cls, v):
-        """Parse clips_received field to boolean."""
+        """Parse clips_received field to text (preserve original value)."""
         if v is None or pd.isna(v):
             return None
-        if isinstance(v, bool):
-            return v
-        if isinstance(v, str):
-            v_lower = v.lower().strip()
-            if v_lower in ['true', '1', 'yes', 'y']:
-                return True
-            elif v_lower in ['false', '0', 'no', 'n', '']:
-                return False
-        if isinstance(v, (int, float)):
-            return bool(v)
-        return None
+        # Convert to string and strip whitespace
+        return str(v).strip() if str(v).strip() else None
 
 
 class CurrentActivityIngest(BaseModel):

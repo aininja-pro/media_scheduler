@@ -561,15 +561,15 @@ async def get_publication_rates(
     try:
         logger.info(f"Computing publication rates as of {as_of_date or 'today'}")
 
-        # Fetch ALL loan history records
+        # Fetch ALL loan history records (ordered by created_at DESC to prioritize recent data with clips_received)
         all_loans = []
-        loan_response = db.client.table('loan_history').select('*').limit(1000).execute()
+        loan_response = db.client.table('loan_history').select('*').order('created_at', desc=True).limit(1000).execute()
         if loan_response.data:
             all_loans.extend(loan_response.data)
 
             while len(loan_response.data) == 1000:
                 offset = len(all_loans)
-                loan_response = db.client.table('loan_history').select('*').range(offset, offset + 999).execute()
+                loan_response = db.client.table('loan_history').select('*').order('created_at', desc=True).range(offset, offset + 999).execute()
                 if loan_response.data:
                     all_loans.extend(loan_response.data)
                 else:

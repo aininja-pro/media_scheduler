@@ -72,11 +72,29 @@ def compute_publication_rate_24m(
     if "clips_received" not in df.columns:
         df["clips_received"] = pd.NA
     # map common string/number forms; keep NA as NA
-    df["clips_received_norm"] = (
-        df["clips_received"]
-        .map(lambda x: True if str(x).strip().lower() in {"true","1","yes"} else
-                       False if str(x).strip().lower() in {"false","0","no"} else pd.NA)
-    )
+    def _normalize_clips_value(x):
+        if x is None or pd.isna(x):
+            return pd.NA
+
+        x_str = str(x).strip().lower()
+
+        # Handle explicit text values
+        if x_str in {"true", "yes"}:
+            return True
+        if x_str in {"false", "no"}:
+            return False
+        if x_str in {"", "none", "null", "nan"}:
+            return pd.NA
+
+        # Handle numeric values - any non-zero number is published
+        try:
+            numeric_val = float(x_str)
+            return numeric_val != 0.0  # True if non-zero, False if exactly 0
+        except (ValueError, TypeError):
+            # If not numeric, treat as unknown
+            return pd.NA
+
+    df["clips_received_norm"] = df["clips_received"].map(_normalize_clips_value)
 
     group_cols = [c for c in ["person_id","make"] if c in df.columns]
 
@@ -123,8 +141,8 @@ def _normalize_clips_received(value) -> bool:
     """
     Normalize clips_received values to boolean.
 
-    Accepts various truthy/falsy representations and converts to bool.
-    Returns False for None/NaN/empty values.
+    Treats any non-zero number as published content.
+    Returns False for None/NaN/empty/zero values.
 
     Args:
         value: Input value to normalize
@@ -140,16 +158,22 @@ def _normalize_clips_received(value) -> bool:
 
     if isinstance(value, str):
         v_lower = value.lower().strip()
-        if v_lower in ['true', '1', 'yes', 'y']:
+
+        # Handle explicit text values
+        if v_lower in ['true', 'yes', 'y']:
             return True
-        elif v_lower in ['false', '0', 'no', 'n', '']:
+        elif v_lower in ['false', 'no', 'n', '', 'none', 'null']:
             return False
-        else:
-            # For other strings, treat as falsy to be conservative
+
+        # Try to parse as number
+        try:
+            numeric_val = float(v_lower)
+            return numeric_val != 0.0
+        except (ValueError, TypeError):
             return False
 
     if isinstance(value, (int, float)):
-        return bool(value)
+        return value != 0
 
     # For any other type, treat as falsy
     return False

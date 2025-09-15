@@ -620,9 +620,9 @@ async def ingest_media_partners_from_url(
             logger.info(f"Fetched CSV: {response.status_code}, {len(csv_content)} chars, content-type: {response.headers.get('content-type')}")
         
         # Parse CSV without headers since client data doesn't have them
-        # Add the correct column headers manually for media partners
+        # Add the correct column headers manually for media partners (updated format with address)
         expected_headers = [
-            'Person_ID', 'Name', 'Office', 'Default loan region', 'Notes / Instructions'
+            'Person_ID', 'Name', 'Address', 'Office', 'Default loan region', 'Notes / Instructions'
         ]
         
         df = pd.read_csv(StringIO(csv_content), header=None, names=expected_headers)
@@ -656,6 +656,7 @@ async def ingest_media_partners_from_url(
                 csv_header_mapping = {
                     'Person_ID': 'person_id',
                     'Name': 'name',
+                    'Address': 'address',
                     'Office': 'office',
                     'Default loan region': 'default_loan_region',
                     'Notes / Instructions': 'notes_instructions'
@@ -791,8 +792,8 @@ async def ingest_loan_history_from_url(url: str, db: DatabaseService = Depends(g
             logger.info(f"Download complete! Processing CSV data...")
             
         df = pd.read_csv(StringIO(response.text), header=None, names=[
-            'Activity_ID', 'VIN', 'Person_ID', 'Make', 'Model', 'Year', 'Model_Short_Name', 
-            'Start_Date', 'End_Date', 'Office', 'Name'
+            'Activity_ID', 'VIN', 'Person_ID', 'Make', 'Model', 'Year', 'Model_Short_Name',
+            'Start_Date', 'End_Date', 'Clips_Received', 'Office', 'Name'
         ])
         
         # Optimize: Process in chunks and use vectorized operations
@@ -826,6 +827,7 @@ async def ingest_loan_history_from_url(url: str, db: DatabaseService = Depends(g
                         'model_short_name': str(record['Model_Short_Name']).strip() if record['Model_Short_Name'] else None,
                         'start_date': str(record['Start_Date']).strip(),
                         'end_date': str(record['End_Date']).strip(),
+                        'clips_received': str(record['Clips_Received']).strip() if record['Clips_Received'] else None,
                         'office': str(record['Office']).strip(),
                         'name': str(record['Name']).strip()
                     }

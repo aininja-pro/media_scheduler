@@ -20,6 +20,274 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/solver", tags=["solver"])
 
 
+@router.get("/assignment_options")
+async def get_assignment_options(
+    office: str = Query(..., description="Office name"),
+    week_start: str = Query(..., description="Week start date (YYYY-MM-DD)"),
+    min_available_days: int = Query(5, description="Minimum available days"),
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Get all possible assignment options for Phase 6 UI.
+    Returns partner-centric view with all eligible vehicles per partner.
+    """
+
+    try:
+        logger.info(f"Getting assignment options for {office}, week {week_start}")
+
+        # Load data (same as generate_schedule)
+        vehicles_response = db.client.table('vehicles').select('*').eq('office', office).execute()
+        vehicles_df = pd.DataFrame(vehicles_response.data) if vehicles_response.data else pd.DataFrame()
+
+        if vehicles_df.empty:
+            return {
+                'office': office,
+                'week_start': week_start,
+                'eligible_partners': [],
+                'available_vehicles': [],
+                'message': f'No vehicles found for {office}'
+            }
+
+        # Current activity
+        activity_response = db.client.table('current_activity').select('*').execute()
+        activity_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
+
+        if 'vehicle_vin' in activity_df.columns:
+            activity_df['vin'] = activity_df['vehicle_vin']
+
+        # Get media partners for this office ONLY
+        office_partners_response = db.client.table('media_partners').select('*').eq('office', office).execute()
+        office_partners = pd.DataFrame(office_partners_response.data) if office_partners_response.data else pd.DataFrame()
+        office_partner_ids = set(office_partners['person_id'].tolist()) if not office_partners.empty else set()
+
+        # Get approved makes
+        all_approved = []
+        limit = 1000
+        offset = 0
+        while True:
+            approved_response = db.client.table('approved_makes').select('person_id, make, rank').range(offset, offset + limit - 1).execute()
+            if not approved_response.data:
+                break
+            all_approved.extend(approved_response.data)
+            offset += limit
+            if len(approved_response.data) < limit:
+                break
+
+        approved_makes_df = pd.DataFrame(all_approved)
+        approved_makes_df = approved_makes_df[approved_makes_df['person_id'].isin(office_partner_ids)]
+
+        # Get loan history
+        loan_history_response = db.client.table('loan_history').select('*').execute()
+        loan_history_df = pd.DataFrame(loan_history_response.data) if loan_history_response.data else pd.DataFrame()
+
+        # Get rules
+        rules_response = db.client.table('rules').select('*').execute()
+        rules_df = pd.DataFrame(rules_response.data) if rules_response.data else pd.DataFrame()
+
+        # Convert dates
+        for date_col in ['in_service_date', 'expected_turn_in_date']:
+            if date_col in vehicles_df.columns:
+                vehicles_df[date_col] = pd.to_datetime(vehicles_df[date_col], errors='coerce').dt.date
+
+        if not activity_df.empty:
+            for date_col in ['start_date', 'end_date']:
+                if date_col in activity_df.columns:
+                    activity_df[date_col] = pd.to_datetime(activity_df[date_col], errors='coerce').dt.date
+
+        if not loan_history_df.empty:
+            for date_col in ['start_date', 'end_date']:
+                if date_col in loan_history_df.columns:
+                    loan_history_df[date_col] = pd.to_datetime(loan_history_df[date_col], errors='coerce').dt.date
+
+        # Build availability grid
+        availability_grid_df = build_availability_grid(
+            vehicles_df=vehicles_df,
+            activity_df=activity_df,
+            week_start=week_start,
+            office=office
+        )
+
+        # Convert to availability format
+        availability_records = []
+        if not availability_grid_df.empty:
+            # Get available columns for vehicle lookup
+            lookup_cols = ['make', 'model']
+            if 'year' in vehicles_df.columns:
+                lookup_cols.append('year')
+            if 'trim' in vehicles_df.columns:
+                lookup_cols.append('trim')
+
+            vehicle_lookup = vehicles_df.set_index('vin')[lookup_cols].to_dict('index')
+
+            for _, row in availability_grid_df.iterrows():
+                vin = row['vin']
+                vehicle_info = vehicle_lookup.get(vin, {'make': '', 'model': '', 'year': '', 'trim': ''})
+
+                availability_records.append({
+                    'vin': vin,
+                    'date': row['day'].strftime('%Y-%m-%d'),
+                    'market': office,
+                    'make': vehicle_info.get('make', ''),
+                    'model': vehicle_info.get('model', ''),
+                    'available': row['available']
+                })
+
+        availability_df = pd.DataFrame(availability_records)
+
+        # Compute cooldown
+        cooldown_df = compute_cooldown_flags(
+            loan_history_df=loan_history_df,
+            rules_df=rules_df,
+            week_start=week_start,
+            default_days=30
+        )
+
+        # Build candidates (same as before)
+        office_vehicle_makes = set(vehicles_df['make'].unique())
+        office_approved = approved_makes_df[approved_makes_df['make'].isin(office_vehicle_makes)]
+
+        partners_with_approvals = set(office_approved['person_id'].unique())
+        partners_without_approvals = office_partner_ids - partners_with_approvals
+
+        publication_records = [
+            {'person_id': pid, 'make': make, 'rank': rank, 'publication_rate_observed': None, 'supported': False, 'coverage': 0.0}
+            for pid, make, rank in office_approved[['person_id', 'make', 'rank']].drop_duplicates().values
+        ]
+
+        # Add partners WITHOUT approved_makes (get C rank)
+        for partner_id in partners_without_approvals:
+            for make in office_vehicle_makes:
+                publication_records.append({
+                    'person_id': partner_id,
+                    'make': make,
+                    'rank': 'C',
+                    'publication_rate_observed': None,
+                    'supported': False,
+                    'coverage': 0.0
+                })
+
+        publication_df = pd.DataFrame(publication_records)
+        eligibility_df = publication_df[['person_id', 'make', 'rank']].drop_duplicates()
+
+        # Build candidates
+        candidates_df = build_weekly_candidates(
+            availability_df=availability_df,
+            cooldown_df=cooldown_df,
+            publication_df=publication_df,
+            week_start=week_start,
+            eligibility_df=eligibility_df,
+            min_available_days=min_available_days
+        )
+
+        # Score candidates
+        scored_candidates = pd.DataFrame()
+        if not candidates_df.empty:
+            scored_candidates = compute_candidate_scores(
+                candidates_df=candidates_df,
+                partner_rank_df=eligibility_df,
+                partners_df=office_partners,
+                publication_df=publication_df
+            )
+
+        # Build partner-centric response
+        partner_options = []
+
+        for partner_id in office_partner_ids:
+            partner_row = office_partners[office_partners['person_id'] == partner_id]
+            if not partner_row.empty:
+                partner_name = str(partner_row.iloc[0]['name'])
+            else:
+                partner_name = f'Partner {partner_id}'
+
+            # Get this partner's candidates
+            partner_candidates = scored_candidates[scored_candidates['person_id'] == partner_id] if not scored_candidates.empty else pd.DataFrame()
+
+            if not partner_candidates.empty:
+                # Get available vehicles for this partner
+                available_vehicles = []
+                for _, cand in partner_candidates.iterrows():
+                    vehicle_row = vehicles_df[vehicles_df['vin'] == cand['vin']]
+                    year = ''
+                    if not vehicle_row.empty and 'year' in vehicle_row.columns:
+                        year = str(vehicle_row.iloc[0].get('year', ''))
+
+                    available_vehicles.append({
+                        'vin': str(cand['vin']),
+                        'make': str(cand['make']),
+                        'model': str(cand.get('model', '')),
+                        'year': year,
+                        'score': int(cand['score']),
+                        'rank': str(cand.get('rank', 'C'))
+                    })
+
+                # Get rank distribution for this partner
+                partner_ranks = eligibility_df[eligibility_df['person_id'] == partner_id]['rank'].value_counts().to_dict() if not eligibility_df[eligibility_df['person_id'] == partner_id].empty else {}
+
+                # Check last assignment from loan history
+                last_assignment = None
+                if not loan_history_df.empty:
+                    partner_history = loan_history_df[loan_history_df['person_id'] == partner_id]
+                    if not partner_history.empty:
+                        latest = partner_history.nlargest(1, 'end_date')
+                        if not latest.empty:
+                            last_date = latest['end_date'].iloc[0]
+                            last_make = latest['make'].iloc[0]
+                            last_assignment = {
+                                'date': last_date.isoformat() if hasattr(last_date, 'isoformat') else str(last_date),
+                                'make': last_make
+                            }
+
+                partner_options.append({
+                    'person_id': int(partner_id),
+                    'name': str(partner_name),
+                    'rank_summary': {str(k): int(v) for k, v in partner_ranks.items()},
+                    'available_vehicles': available_vehicles,
+                    'vehicle_count': len(available_vehicles),
+                    'last_assignment': last_assignment,
+                    'max_score': max([v['score'] for v in available_vehicles]) if available_vehicles else 0
+                })
+
+        # Sort partners by max score and vehicle count
+        partner_options.sort(key=lambda x: (-x['max_score'], -x['vehicle_count']))
+
+        # Get available vehicles summary
+        available_vins = set()
+        if not availability_grid_df.empty:
+            for vin in availability_grid_df['vin'].unique():
+                vin_days = availability_grid_df[availability_grid_df['vin'] == vin]
+                if vin_days['available'].sum() >= min_available_days:
+                    available_vins.add(vin)
+
+        vehicle_summary = []
+        for vin in available_vins:
+            vehicle_row = vehicles_df[vehicles_df['vin'] == vin]
+            if not vehicle_row.empty:
+                vinfo = vehicle_row.iloc[0]
+                vehicle_summary.append({
+                    'vin': str(vin),
+                    'make': str(vinfo.get('make', '')),
+                    'model': str(vinfo.get('model', '')),
+                    'year': str(vinfo.get('year', '')) if 'year' in vehicle_row.columns else ''
+                })
+
+        return {
+            'office': office,
+            'week_start': week_start,
+            'eligible_partners': partner_options,
+            'available_vehicles': vehicle_summary,
+            'stats': {
+                'total_partners': len(partner_options),
+                'partners_with_options': len([p for p in partner_options if p['vehicle_count'] > 0]),
+                'total_vehicles': len(available_vins),
+                'total_candidates': len(scored_candidates) if not scored_candidates.empty else 0
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting assignment options: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/generate_schedule")
 async def generate_schedule(
     office: str = Query(..., description="Office name"),

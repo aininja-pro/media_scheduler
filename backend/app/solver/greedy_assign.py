@@ -11,7 +11,63 @@ from dateutil.relativedelta import relativedelta
 from typing import Dict, List, Tuple
 
 
-DEFAULT_TIER_CAPS: Dict[str, int] = {"A+": 999, "A": 6, "B": 2, "C": 0}  # hard caps per 12 months
+DEFAULT_TIER_CAPS: Dict[str, int] = {"A+": 999, "A": 6, "B": 2, "C": 0}  # hard caps per 12 months (legacy)
+
+# Fallback caps when no rules exist for a make
+FALLBACK_RANK_CAPS = {"A+": 12, "A": 6, "B": 4, "C": 1}
+FALLBACK_UNRANKED_CAP = 3
+
+
+def _norm_rank(x) -> str:
+    """Normalize rank, treating missing/pending as UNRANKED."""
+    if x is None:
+        return "UNRANKED"
+    s = str(x).strip().upper().replace("PLUS", "+").replace(" ", "")
+    return "UNRANKED" if s in {"", "PENDING", "UNKNOWN", "NA", "NONE"} else s
+
+
+def _parse_rule_cap(v) -> int:
+    """Parse rule cap: 0/NULL means block (cap=0), positive means allow."""
+    if v is None:
+        return 0
+    try:
+        iv = int(v)
+        return iv if iv > 0 else 0
+    except Exception:
+        return 0
+
+
+def _resolve_pair_cap(make: str, rank: str, rules_df) -> int:
+    """
+    Cap precedence:
+      1) RULES(make, rank) -> parse
+      2) RULES(make)       -> parse
+      3) No rule row:
+         a) if rank known -> FALLBACK_RANK_CAPS[rank] (or fallback to C if unknown rank key)
+         b) if rank UNRANKED -> FALLBACK_UNRANKED_CAP
+    """
+    m = (make or "").strip()
+    r = _norm_rank(rank)
+
+    if rules_df is not None and not rules_df.empty:
+        rules = rules_df.copy()
+        rules["make"] = rules["make"].astype(str).str.strip()
+        has_rank = "rank" in rules.columns
+
+        if has_rank:
+            rules["rank"] = rules["rank"].astype(str).str.upper().str.replace("PLUS", "+").str.replace(" ", "", regex=False)
+            row = rules[(rules["make"] == m) & (rules["rank"] == r)]
+            if not row.empty:
+                return _parse_rule_cap(row["loan_cap_per_year"].iloc[0])
+
+        row2 = rules[rules["make"] == m]
+        if not row2.empty and "loan_cap_per_year" in row2.columns:
+            return _parse_rule_cap(row2["loan_cap_per_year"].iloc[0])
+
+    # No rule row for this make -> fallbacks
+    if r == "UNRANKED":
+        return int(FALLBACK_UNRANKED_CAP)
+    return int(FALLBACK_RANK_CAPS.get(r, FALLBACK_RANK_CAPS["C"]))
 
 
 def _week_days(week_start: str) -> List[pd.Timestamp]:
@@ -94,16 +150,6 @@ def _loans_12m_by_pair(loan_history_df: pd.DataFrame, as_of: str) -> dict[tuple,
     )
 
 
-def _cap_from_rules(value):
-    """Convert rule value: 0 or NULL => block (cap = 0), positive => that many allowed."""
-    # 0 or NULL => block (cap = 0)
-    if pd.isna(value):
-        return 0
-    try:
-        iv = int(value)
-        return max(iv, 0)  # negative -> 0
-    except Exception:
-        return 0  # unparseable -> block
 
 
 def generate_week_schedule(
@@ -163,41 +209,11 @@ def generate_week_schedule(
     days = _week_days(week_start)
     capacity_used = {d.date(): 0 for d in days}
 
-    # Build dynamic cap lookup per (person_id, make)
-    # Derive (person_id, make, rank) universe from candidates (already has rank from Approved Makes join).
-    pair_rank = (
-        cand[["person_id", "make", "rank"]]
-        .drop_duplicates()
-        .assign(
-            rank=lambda x: x["rank"].astype(str).str.upper().str.replace("PLUS", "+").str.replace(" ", "", regex=False)
-        )
-    )
-
-    # Prepare rules caps: supports either (make, rank, loan_cap_per_year) OR (make, loan_cap_per_year)
-    caps_by_pair: dict[tuple, int | None] = {}
-    if rules_df is not None and not rules_df.empty:
-        rules = rules_df.copy()
-        rules["make"] = rules["make"].astype(str).str.strip()
-
-        if "rank" in rules.columns:
-            rules["rank"] = rules["rank"].astype(str).str.upper().str.replace("PLUS", "+").str.replace(" ", "", regex=False)
-            merged = pair_rank.merge(
-                rules[["make", "rank", "loan_cap_per_year"]],
-                on=["make", "rank"], how="left"
-            )
-        else:
-            # Same cap for all ranks of a make
-            merged = pair_rank.merge(
-                rules[["make", "loan_cap_per_year"]],
-                on="make", how="left"
-            )
-
-        merged["cap_dyn"] = merged["loan_cap_per_year"].map(_cap_from_rules)
-        caps_by_pair = {(r.person_id, r.make): int(r.cap_dyn) for r in merged.itertuples(index=False)}
-    else:
-        # no rules provided => use legacy DEFAULT_TIER_CAPS for backward compatibility
-        legacy_caps = rank_caps or DEFAULT_TIER_CAPS
-        caps_by_pair = {(r.person_id, r.make): legacy_caps.get(r.rank, 0) for r in pair_rank.itertuples(index=False)}
+    # Build cap cache using the scored candidates with fallback logic
+    pair_caps_cache = {}
+    for t in cand[["person_id", "make", "rank"]].drop_duplicates().itertuples(index=False):
+        cap = _resolve_pair_cap(make=t.make, rank=getattr(t, "rank", None), rules_df=rules_df)
+        pair_caps_cache[(t.person_id, t.make)] = cap
 
     # Count trailing-12m usage per (person_id, make)
     pair_used = _loans_12m_by_pair(loan_history_df, week_start)
@@ -217,11 +233,11 @@ def generate_week_schedule(
         if vin in assigned_vins:
             continue
 
-        # Rule: dynamic tier cap per (person_id, make)
-        cap_dyn = int(caps_by_pair.get((pid, make), 0))  # default 0 => block
+        # Rule: dynamic tier cap with fallbacks
+        cap_dyn = int(pair_caps_cache.get((pid, make), FALLBACK_UNRANKED_CAP))  # should be present
         used_pair = int(pair_used.get((pid, make), 0))
 
-        # HARD BLOCK when used >= cap (cap==0 blocks always)
+        # HARD BLOCK when used >= cap
         if used_pair >= cap_dyn:
             continue
 

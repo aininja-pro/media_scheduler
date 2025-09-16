@@ -66,12 +66,13 @@ function ScheduleGeneration() {
       })
 
       // Simulate progress stages based on expected timing
+      // Most time is spent in the final optimization stage
       const progressUpdates = [
-        { delay: 500, stage: 2, message: 'Building vehicle availability grid...' },
-        { delay: 2000, stage: 3, message: 'Computing cooldown periods and constraints...' },
-        { delay: 4000, stage: 4, message: 'Generating feasible vehicle-partner pairings...' },
-        { delay: 6000, stage: 5, message: 'Scoring candidate assignments...' },
-        { delay: 8000, stage: 6, message: 'Optimizing final schedule...' }
+        { delay: 1000, stage: 2, message: 'Building vehicle availability grid...' },
+        { delay: 3000, stage: 3, message: 'Computing cooldown periods and constraints...' },
+        { delay: 6000, stage: 4, message: 'Generating feasible vehicle-partner pairings...' },
+        { delay: 10000, stage: 5, message: 'Scoring candidate assignments...' },
+        { delay: 15000, stage: 6, message: 'Optimizing final schedule (this may take 20-30 seconds)...' }
       ]
 
       // Start progress updates
@@ -279,14 +280,28 @@ function ScheduleGeneration() {
             <div className="space-y-3">
               {/* Progress Bar */}
               <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                <div
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${(progressStage / 6) * 100}%` }}
-                />
+                {progressStage === 6 && isGenerating ? (
+                  // Indeterminate progress bar for optimization stage
+                  <div className="h-2 bg-blue-600 rounded-full animate-pulse" style={{ width: '100%' }}>
+                    <div className="h-full bg-gradient-to-r from-blue-400 via-blue-600 to-blue-400 animate-shimmer" />
+                  </div>
+                ) : (
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${(progressStage / 6) * 100}%` }}
+                  />
+                )}
               </div>
 
               {/* Current Stage Message */}
-              <p className="text-sm text-gray-600">{progressMessage}</p>
+              <p className="text-sm text-gray-600">
+                {progressMessage}
+                {progressStage === 6 && isGenerating && (
+                  <span className="text-xs text-gray-500 ml-2">
+                    (This is the longest step - please be patient)
+                  </span>
+                )}
+              </p>
 
               {/* Stage List */}
               <div className="grid grid-cols-2 gap-2 text-xs">
@@ -311,14 +326,14 @@ function ScheduleGeneration() {
                   <span>Scoring candidates</span>
                 </div>
                 <div className={`flex items-center space-x-2 ${progressStage >= 6 ? 'text-blue-600' : 'text-gray-400'}`}>
-                  <span>{progressStage >= 6 ? '✓' : '○'}</span>
-                  <span>Optimizing schedule</span>
+                  <span>{progressStage >= 6 ? (isGenerating ? '⏳' : '✓') : '○'}</span>
+                  <span>Optimizing schedule {progressStage === 6 && isGenerating && '(~20-30s)'}</span>
                 </div>
               </div>
             </div>
 
             <p className="text-xs text-gray-500 italic">
-              This process typically takes 10-20 seconds depending on data volume.
+              This process typically takes 30-45 seconds depending on data volume.
             </p>
           </div>
         </div>

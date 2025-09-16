@@ -164,7 +164,7 @@ async def get_availability_grid(
 
         # Fetch partner data for eligibility calculations (get ALL records)
         all_partners = []
-        partners_response = db.client.table('media_partners').select('*').limit(1000).execute()
+        partners_response = db.client.table('media_partners').select('*').execute()
         if partners_response.data:
             all_partners.extend(partners_response.data)
 
@@ -181,7 +181,7 @@ async def get_availability_grid(
 
         # Fetch approved makes (get ALL records)
         all_approved = []
-        approved_response = db.client.table('approved_makes').select('*').limit(1000).execute()
+        approved_response = db.client.table('approved_makes').select('*').execute()
         if approved_response.data:
             all_approved.extend(approved_response.data)
 
@@ -197,7 +197,7 @@ async def get_availability_grid(
         approved_makes_df = pd.DataFrame(all_approved) if all_approved else pd.DataFrame()
 
         # Fetch loan history for cooldown calculation (limit to recent records for performance)
-        loan_history_response = db.client.table('loan_history').select('*').limit(2000).execute()
+        loan_history_response = db.client.table('loan_history').select('*').execute()
         loan_history_df = pd.DataFrame(loan_history_response.data) if loan_history_response.data else pd.DataFrame()
 
         # Fetch rules for cooldown calculation
@@ -415,7 +415,7 @@ async def get_eligible_partners(
         # Fetch all required data (get ALL records for accurate eligibility)
         # Partners - get all
         all_partners = []
-        partners_response = db.client.table('media_partners').select('*').limit(1000).execute()
+        partners_response = db.client.table('media_partners').select('*').execute()
         if partners_response.data:
             all_partners.extend(partners_response.data)
             while len(partners_response.data) == 1000:
@@ -427,23 +427,43 @@ async def get_eligible_partners(
                     break
         partners_df = pd.DataFrame(all_partners) if all_partners else pd.DataFrame()
 
-        # Approved makes - get all
+        # Fetch ALL approved_makes records with pagination
         all_approved = []
-        approved_response = db.client.table('approved_makes').select('*').limit(1000).execute()
-        if approved_response.data:
+        limit = 1000
+        offset = 0
+
+        while True:
+            approved_response = db.client.table('approved_makes').select('*').range(offset, offset + limit - 1).execute()
+
+            if not approved_response.data:
+                break
+
             all_approved.extend(approved_response.data)
-            while len(approved_response.data) == 1000:
-                offset = len(all_approved)
-                approved_response = db.client.table('approved_makes').select('*').range(offset, offset + 999).execute()
-                if approved_response.data:
-                    all_approved.extend(approved_response.data)
-                else:
-                    break
+            offset += limit
+
+            if len(approved_response.data) < limit:
+                break
+
         approved_makes_df = pd.DataFrame(all_approved) if all_approved else pd.DataFrame()
 
-        # Loan history - limit for performance
-        loan_history_response = db.client.table('loan_history').select('*').limit(2000).execute()
-        loan_history_df = pd.DataFrame(loan_history_response.data) if loan_history_response.data else pd.DataFrame()
+        # Fetch ALL loan history records with pagination
+        all_loan_history = []
+        limit = 1000
+        offset = 0
+
+        while True:
+            loan_history_response = db.client.table('loan_history').select('*').range(offset, offset + limit - 1).execute()
+
+            if not loan_history_response.data:
+                break
+
+            all_loan_history.extend(loan_history_response.data)
+            offset += limit
+
+            if len(loan_history_response.data) < limit:
+                break
+
+        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
 
         # Rules
         rules_response = db.client.table('rules').select('*').execute()
@@ -561,7 +581,7 @@ async def get_publication_rates(
     try:
         logger.info(f"Computing publication rates as of {as_of_date or 'today'}")
 
-        # Fetch ALL loan history records (ordered by created_at DESC to prioritize recent data with clips_received)
+        # Fetch ALL loan history records with pagination (ordered by created_at DESC to prioritize recent data with clips_received)
         all_loans = []
         loan_response = db.client.table('loan_history').select('*').order('created_at', desc=True).limit(1000).execute()
         if loan_response.data:
@@ -579,7 +599,7 @@ async def get_publication_rates(
 
         # Fetch partner names for display
         all_partners = []
-        partners_response = db.client.table('media_partners').select('person_id', 'name').limit(1000).execute()
+        partners_response = db.client.table('media_partners').select('person_id', 'name').execute()
         if partners_response.data:
             all_partners.extend(partners_response.data)
             while len(partners_response.data) == 1000:

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import driveShopLogo from './assets/DriveShop_WebLogo.png'
 import Availability from './pages/Availability.jsx'
 import PublicationRates from './pages/PublicationRates.jsx'
+import ScheduleGeneration from './pages/ScheduleGeneration.jsx'
 import './App.css'
 
 function App() {
@@ -280,6 +281,16 @@ function App() {
                 }`}
               >
                 Publication Rates
+              </button>
+              <button
+                onClick={() => setActiveTab('scheduler')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'scheduler'
+                    ? 'bg-white text-black'
+                    : 'bg-gray-600 text-white hover:bg-gray-500'
+                }`}
+              >
+                Schedule Generation
               </button>
           </nav>
         </div>
@@ -656,6 +667,11 @@ function App() {
         {/* Publication Rates Tab */}
         {activeTab === 'publication' && (
           <PublicationRates />
+        )}
+
+        {/* Schedule Generation Tab */}
+        {activeTab === 'scheduler' && (
+          <ScheduleGeneration />
         )}
         </div>
       </main>

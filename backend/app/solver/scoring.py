@@ -11,7 +11,7 @@ import pandas as pd
 from typing import Dict
 
 
-DEFAULT_RANK_WEIGHTS: Dict[str, int] = {"A+": 100, "A": 70, "B": 40, "C": 10}
+DEFAULT_RANK_WEIGHTS: Dict[str, int] = {"A+": 100, "A": 70, "B": 40, "C": 10, "UNRANKED": 5}
 
 
 def compute_candidate_scores(
@@ -64,8 +64,11 @@ def compute_candidate_scores(
         merged = candidates_df.copy()
         merged["rank"] = None
 
-    merged["rank"] = merged["rank"].fillna("C")
-    merged["rank_weight"] = merged["rank"].map(lambda x: rank_weights.get(x, 10)).astype(int)
+    # Import rank normalization from greedy_assign
+    from .greedy_assign import _norm_rank
+
+    merged["rank"] = merged["rank"].apply(_norm_rank)
+    merged["rank_weight"] = merged["rank"].map(lambda x: rank_weights.get(x, rank_weights.get("UNRANKED", 5))).astype(int)
 
     # Geo bonus
     mp = p[["person_id", "office", "region_set"]]

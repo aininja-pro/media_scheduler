@@ -36,6 +36,10 @@ app.include_router(ingest.router)
 from .routers import etl
 app.include_router(etl.router, prefix="/api")
 
+# Import and include Solver router
+from .routers import solver
+app.include_router(solver.router, prefix="/api")
+
 @app.get("/")
 def read_root():
     """Root endpoint"""

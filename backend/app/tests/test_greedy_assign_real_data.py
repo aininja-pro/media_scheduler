@@ -48,7 +48,7 @@ async def fetch_loan_history_for_tier_caps() -> pd.DataFrame:
         # Get recent loan history (last 18 months to ensure 12-month window coverage)
         loan_response = db_service.client.table('loan_history').select(
             'person_id, make, start_date, end_date'
-        ).order('end_date', desc=True).limit(5000).execute()
+        ).order('end_date', desc=True).execute()
 
         loan_df = pd.DataFrame(loan_response.data) if loan_response.data else pd.DataFrame()
         print(f"✅ Loan history: {len(loan_df)} records for tier cap calculation")

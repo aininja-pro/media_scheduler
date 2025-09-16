@@ -189,6 +189,12 @@ async def get_assignment_options(
                 publication_df=publication_df
             )
 
+        # Calculate tier cap usage for each partner-make combo
+        from ..solver.greedy_assign import _loans_12m_by_pair, _resolve_pair_cap
+
+        # Get 12-month usage counts
+        pair_used = _loans_12m_by_pair(loan_history_df, week_start)
+
         # Build partner-centric response
         partner_options = []
 
@@ -237,14 +243,57 @@ async def get_assignment_options(
                                 'make': last_make
                             }
 
+                # Calculate tier cap usage per make
+                tier_cap_usage = {}
+                for make in set([v['make'] for v in available_vehicles]):
+                    used = int(pair_used.get((partner_id, make), 0))
+                    # Get rank for this make
+                    partner_make_rank = eligibility_df[
+                        (eligibility_df['person_id'] == partner_id) &
+                        (eligibility_df['make'] == make)
+                    ]['rank'].iloc[0] if not eligibility_df[
+                        (eligibility_df['person_id'] == partner_id) &
+                        (eligibility_df['make'] == make)
+                    ].empty else 'C'
+
+                    cap = _resolve_pair_cap(make=make, rank=partner_make_rank, rules_df=rules_df)
+                    tier_cap_usage[make] = {
+                        'used': used,
+                        'cap': cap,
+                        'remaining': max(0, cap - used),
+                        'rank': str(partner_make_rank)
+                    }
+
+                # Check cooldown status for each make
+                cooldown_status = {}
+                if not cooldown_df.empty:
+                    partner_cooldowns = cooldown_df[cooldown_df['person_id'] == partner_id]
+                    for make in set([v['make'] for v in available_vehicles]):
+                        make_cooldown = partner_cooldowns[partner_cooldowns['make'] == make]
+                        if not make_cooldown.empty:
+                            cooldown_status[make] = bool(make_cooldown.iloc[0]['cooldown_ok'])
+                        else:
+                            cooldown_status[make] = True
+
+                # Group available vehicles by make for better UI display
+                vehicles_by_make = {}
+                for vehicle in available_vehicles:
+                    make = vehicle['make']
+                    if make not in vehicles_by_make:
+                        vehicles_by_make[make] = []
+                    vehicles_by_make[make].append(vehicle)
+
                 partner_options.append({
                     'person_id': int(partner_id),
                     'name': str(partner_name),
                     'rank_summary': {str(k): int(v) for k, v in partner_ranks.items()},
                     'available_vehicles': available_vehicles,
+                    'vehicles_by_make': vehicles_by_make,
                     'vehicle_count': len(available_vehicles),
                     'last_assignment': last_assignment,
-                    'max_score': max([v['score'] for v in available_vehicles]) if available_vehicles else 0
+                    'max_score': max([v['score'] for v in available_vehicles]) if available_vehicles else 0,
+                    'tier_cap_usage': tier_cap_usage,
+                    'cooldown_status': cooldown_status
                 })
 
         # Sort partners by max score and vehicle count
@@ -270,6 +319,35 @@ async def get_assignment_options(
                     'year': str(vinfo.get('year', '')) if 'year' in vehicle_row.columns else ''
                 })
 
+        # Calculate constraint summary
+        constraint_summary = {
+            'partners_at_tier_cap': 0,
+            'partners_in_cooldown': 0,
+            'total_tier_cap_blocks': 0,
+            'total_cooldown_blocks': 0
+        }
+
+        for partner in partner_options:
+            # Check if any make is at tier cap
+            at_cap = False
+            for make, usage in partner.get('tier_cap_usage', {}).items():
+                if usage['remaining'] == 0:
+                    at_cap = True
+                    constraint_summary['total_tier_cap_blocks'] += 1
+
+            if at_cap:
+                constraint_summary['partners_at_tier_cap'] += 1
+
+            # Check if any make is in cooldown
+            in_cooldown = False
+            for make, ok in partner.get('cooldown_status', {}).items():
+                if not ok:
+                    in_cooldown = True
+                    constraint_summary['total_cooldown_blocks'] += 1
+
+            if in_cooldown:
+                constraint_summary['partners_in_cooldown'] += 1
+
         return {
             'office': office,
             'week_start': week_start,
@@ -280,6 +358,11 @@ async def get_assignment_options(
                 'partners_with_options': len([p for p in partner_options if p['vehicle_count'] > 0]),
                 'total_vehicles': len(available_vins),
                 'total_candidates': len(scored_candidates) if not scored_candidates.empty else 0
+            },
+            'constraint_summary': constraint_summary,
+            'greedy_solution': {
+                'message': 'Use /generate_schedule endpoint for greedy solution',
+                'explanation': 'The greedy algorithm would pick highest scoring partners first, which may not be optimal for distribution'
             }
         }
 

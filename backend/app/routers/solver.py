@@ -348,6 +348,82 @@ async def get_assignment_options(
             if in_cooldown:
                 constraint_summary['partners_in_cooldown'] += 1
 
+        # Run greedy algorithm to get actual assignments
+        greedy_assignments = []
+        assigned_vins = set()
+        assigned_partners = set()
+
+        if not scored_candidates.empty:
+            # Get ops capacity for the office
+            ops_response = db.client.table('ops_capacity').select('*').execute()
+            ops_capacity_df = pd.DataFrame(ops_response.data) if ops_response.data else pd.DataFrame()
+
+            # Run greedy assignment
+            schedule_df = generate_week_schedule(
+                candidates_scored_df=scored_candidates,
+                loan_history_df=loan_history_df,
+                ops_capacity_df=ops_capacity_df,
+                office=office,
+                week_start=week_start,
+                rules_df=rules_df
+            )
+
+            logger.info(f"Greedy algorithm returned {len(schedule_df)} rows")
+
+            if not schedule_df.empty:
+                # Get unique assignments (one per VIN-partner pair)
+                unique_assignments = schedule_df.drop_duplicates(['vin', 'person_id'])
+                logger.info(f"Found {len(unique_assignments)} unique assignments")
+
+                for _, row in unique_assignments.iterrows():
+                    assigned_vins.add(row['vin'])
+                    assigned_partners.add(row['person_id'])
+
+                    # Find partner info - need to match on person_id
+                    # Convert both to string for comparison
+                    row_person_id = str(row['person_id'])
+                    partner_match = [p for p in partner_options if str(p['person_id']) == row_person_id]
+
+                    if partner_match:
+                        partner_info = partner_match[0]
+                        greedy_assignments.append({
+                            'vin': str(row['vin']),
+                            'person_id': str(row['person_id']),
+                            'partner_name': partner_info['name'],
+                            'make': str(row['make']),
+                            'model': str(row['model']),
+                            'score': int(row['score'])
+                        })
+                    else:
+                        # If partner not found in options, still add the assignment with basic info
+                        logger.warning(f"Partner {row_person_id} not found in partner_options")
+                        greedy_assignments.append({
+                            'vin': str(row['vin']),
+                            'person_id': str(row['person_id']),
+                            'partner_name': f"Partner {row['person_id']}",
+                            'make': str(row['make']),
+                            'model': str(row.get('model', '')),
+                            'score': int(row['score'])
+                        })
+
+        # Mark which partners got assignments in the partner_options list
+        for partner in partner_options:
+            partner['assigned'] = partner['person_id'] in assigned_partners
+            partner['assigned_vehicle'] = None
+            if partner['assigned']:
+                for assignment in greedy_assignments:
+                    if assignment['person_id'] == partner['person_id']:
+                        partner['assigned_vehicle'] = {
+                            'vin': assignment['vin'],
+                            'make': assignment['make'],
+                            'model': assignment['model']
+                        }
+                        break
+
+        # Calculate possibilities (all valid pairings) vs assignments (what greedy selected)
+        total_possibilities = len(scored_candidates) if not scored_candidates.empty else 0
+        total_assignments = len(greedy_assignments)
+
         return {
             'office': office,
             'week_start': week_start,
@@ -356,13 +432,18 @@ async def get_assignment_options(
             'stats': {
                 'total_partners': len(partner_options),
                 'partners_with_options': len([p for p in partner_options if p['vehicle_count'] > 0]),
+                'partners_assigned': len(assigned_partners),
                 'total_vehicles': len(available_vins),
-                'total_candidates': len(scored_candidates) if not scored_candidates.empty else 0
+                'vehicles_assigned': len(assigned_vins),
+                'total_possibilities': total_possibilities,  # All valid pairings
+                'total_assignments': total_assignments      # What greedy selected
             },
             'constraint_summary': constraint_summary,
-            'greedy_solution': {
-                'message': 'Use /generate_schedule endpoint for greedy solution',
-                'explanation': 'The greedy algorithm would pick highest scoring partners first, which may not be optimal for distribution'
+            'greedy_assignments': greedy_assignments,
+            'assignment_explanation': {
+                'possibilities': f'{total_possibilities} valid vehicle-partner pairings exist',
+                'assignments': f'{total_assignments} assignments made by greedy algorithm',
+                'reason': 'Limited by: 1 vehicle per partner max, 15 deliveries on Monday, tier caps, cooldown'
             }
         }
 

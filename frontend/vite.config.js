@@ -9,8 +9,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     hmr: {
-      // Browser connects on the published port (3001)
-      clientPort: 3001,
+      // Browser connects on the published port (5173)
+      clientPort: 5173,
     },
     watch: {
       // Help file change detection on some Docker/macOS setups

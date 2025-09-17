@@ -174,9 +174,10 @@ def generate_week_schedule(
     Rules enforced:
       - Only consider candidates where market == office and cooldown_ok=True.
       - No double-booking: a VIN can be assigned at most once for the week.
+      - One vehicle per partner: each partner can only receive ONE vehicle per week.
       - Tier caps: (# loans in trailing 12m for (person_id,make)) < CAP[rank].
-      - Daily ops capacity: assigned rows per day ≤ drivers_per_day for office.
-      - Expand each chosen (vin,person) to 7 daily rows (Mon–Sun).
+      - Daily ops capacity: deliveries on Monday ≤ drivers_per_day for office.
+      - Each assignment is for delivery on Monday only (not all 7 days).
 
     Returns DataFrame with columns:
       ["vin","person_id","day","office","make","model","score",
@@ -207,7 +208,9 @@ def generate_week_schedule(
         drivers_per_day = int(cap_row["drivers_per_day"].iloc[0]) if not cap_row.empty else 999  # default open
 
     days = _week_days(week_start)
-    capacity_used = {d.date(): 0 for d in days}
+    # For now, we'll deliver all vehicles on Monday (first day of week)
+    delivery_day = days[0].date()
+    capacity_used_monday = 0
 
     # Build cap cache using the scored candidates with fallback logic
     pair_caps_cache = {}
@@ -222,6 +225,7 @@ def generate_week_schedule(
     cand = cand.sort_values(by=["score", "vin", "person_id"], ascending=[False, True, True])
 
     assigned_vins = set()
+    assigned_partners = set()  # Track partners who already have a vehicle
     out_rows: List[Dict] = []
 
     for row in cand.itertuples(index=False):
@@ -229,8 +233,12 @@ def generate_week_schedule(
         pid = row.person_id
         make = row.make
 
-        # Rule: no double-booking
+        # Rule: no double-booking (vehicle already assigned)
         if vin in assigned_vins:
+            continue
+
+        # Rule: one vehicle per partner maximum
+        if pid in assigned_partners:
             continue
 
         # Rule: dynamic tier cap with fallbacks
@@ -241,25 +249,25 @@ def generate_week_schedule(
         if used_pair >= cap_dyn:
             continue
 
-        # Rule: capacity check (all 7 days must fit)
-        if any(capacity_used[d.date()] + 1 > drivers_per_day for d in days):
+        # Rule: capacity check (only for Monday delivery day)
+        if capacity_used_monday + 1 > drivers_per_day:
             continue
 
-        # Assign across all 7 days
-        for d in days:
-            capacity_used[d.date()] += 1
-            out_rows.append({
-                "vin": vin,
-                "person_id": pid,
-                "day": d.date().isoformat(),
-                "office": office,
-                "make": make,
-                "model": row.model,
-                "score": int(row.score),
-                "flags": "tier_ok|capacity_ok|cooldown_ok|availability_ok"
-            })
+        # Assign for Monday delivery only
+        capacity_used_monday += 1
+        out_rows.append({
+            "vin": vin,
+            "person_id": pid,
+            "day": delivery_day.isoformat(),
+            "office": office,
+            "make": make,
+            "model": row.model,
+            "score": int(row.score),
+            "flags": "tier_ok|capacity_ok|cooldown_ok|availability_ok"
+        })
 
         assigned_vins.add(vin)
+        assigned_partners.add(pid)  # Mark partner as having received a vehicle
         pair_used[(pid, make)] = used_pair + 1  # increment usage for dynamic tier cap tracking
 
     return pd.DataFrame(out_rows)

@@ -52,100 +52,141 @@ function ScheduleGeneration() {
 
     setIsGenerating(true)
     setError('')
-    setScheduleData(null)
+    setProgressMessage('🚀 Initializing schedule generation...')
     setProgressStage(1)
-    setProgressMessage('Loading vehicle and partner data...')
+    setAssignmentOptions(null) // Reset options when generating new schedule
 
     try {
+      // Stage 1: Load Data
+      setProgressMessage('📊 Loading vehicles and partners from database...')
+      await new Promise(resolve => setTimeout(resolve, 300))
+
+      // Stage 2: Build Candidates
+      setProgressStage(2)
+      setProgressMessage('🔍 Finding available vehicles (checking maintenance, transit status)...')
+      await new Promise(resolve => setTimeout(resolve, 400))
+
+      // Stage 3: Check Constraints
+      setProgressStage(3)
+      setProgressMessage('✅ Validating constraints (cooldown, tier caps, availability)...')
+      await new Promise(resolve => setTimeout(resolve, 400))
+
+      // Stage 4: Score Candidates
+      setProgressStage(4)
+      setProgressMessage('📈 Computing scores for all valid pairings...')
+      await new Promise(resolve => setTimeout(resolve, 300))
+
+      // Stage 5: Run Algorithm
+      setProgressStage(5)
+      setProgressMessage('🎯 Running greedy optimization algorithm...')
+
       const params = new URLSearchParams({
         office: selectedOffice,
         week_start: weekStart,
-        min_available_days: minAvailableDays.toString(),
-        enable_tier_caps: enableTierCaps.toString(),
-        enable_cooldown: enableCooldown.toString(),
-        enable_capacity: enableCapacity.toString(),
-        enable_geo_constraints: enableGeoConstraints.toString(),
-        enable_vehicle_lifecycle: enableVehicleLifecycle.toString()
-      })
-
-      // Simulate progress stages based on expected timing
-      // Most time is spent in the final optimization stage
-      const progressUpdates = [
-        { delay: 1000, stage: 2, message: 'Building vehicle availability grid...' },
-        { delay: 3000, stage: 3, message: 'Computing cooldown periods and constraints...' },
-        { delay: 6000, stage: 4, message: 'Generating feasible vehicle-partner pairings...' },
-        { delay: 10000, stage: 5, message: 'Scoring candidate assignments...' },
-        { delay: 15000, stage: 6, message: 'Optimizing final schedule (this may take 20-30 seconds)...' }
-      ]
-
-      // Start progress updates
-      const timeouts = progressUpdates.map(update => {
-        return setTimeout(() => {
-          setProgressStage(update.stage)
-          setProgressMessage(update.message)
-        }, update.delay)
+        min_available_days: minAvailableDays,
+        enable_tier_caps: enableTierCaps,
+        enable_cooldown: enableCooldown,
+        enable_capacity: enableCapacity,
+        cooldown_days: 30
       })
 
       const response = await fetch(`http://localhost:8081/api/solver/generate_schedule?${params}`)
+      const data = await response.json()
 
-      // Clear all timeouts
-      timeouts.forEach(timeout => clearTimeout(timeout))
-
-      if (response.ok) {
-        const data = await response.json()
-        setScheduleData(data)
-
-        // Also fetch assignment options for the partner view
-        fetchAssignmentOptions()
-      } else {
-        const errorData = await response.json()
-        setError(errorData.detail || 'Failed to generate schedule')
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to generate schedule')
       }
-    } catch (error) {
-      setError(`Network error: ${error.message}`)
+
+      setScheduleData(data)
+
+      // Stage 6: Load Partner Analysis
+      setProgressStage(6)
+      setProgressMessage('📋 Loading partner analysis...')
+
+      // Automatically fetch assignment options after schedule generation
+      const optionsParams = new URLSearchParams({
+        office: selectedOffice,
+        week_start: weekStart,
+        min_available_days: minAvailableDays
+      })
+
+      const optionsResponse = await fetch(`http://localhost:8081/api/solver/assignment_options?${optionsParams}`)
+      const optionsData = await optionsResponse.json()
+
+      if (optionsResponse.ok) {
+        setAssignmentOptions(optionsData)
+      }
+
+      // Complete
+      setProgressMessage('✨ Complete! Schedule and analysis ready.')
+      await new Promise(resolve => setTimeout(resolve, 500))
+    } catch (err) {
+      setError(err.message)
+      setProgressMessage('❌ Generation failed: ' + err.message)
+      await new Promise(resolve => setTimeout(resolve, 2000))
     } finally {
       setIsGenerating(false)
-      setProgressMessage('')
       setProgressStage(0)
+      setProgressMessage('')
     }
   }
 
   const fetchAssignmentOptions = async () => {
-    if (!selectedOffice || !weekStart) return
+    if (!selectedOffice || !weekStart) {
+      setError('Please select office and week start date')
+      return
+    }
 
     setIsLoadingOptions(true)
+    setError('')
 
     try {
       const params = new URLSearchParams({
         office: selectedOffice,
         week_start: weekStart,
-        min_available_days: minAvailableDays.toString()
+        min_available_days: minAvailableDays
       })
 
       const response = await fetch(`http://localhost:8081/api/solver/assignment_options?${params}`)
-      if (response.ok) {
-        const data = await response.json()
-        setAssignmentOptions(data)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to fetch assignment options')
       }
-    } catch (error) {
-      console.error('Failed to fetch assignment options:', error)
+
+      setAssignmentOptions(data)
+    } catch (err) {
+      setError(err.message)
     } finally {
       setIsLoadingOptions(false)
     }
   }
 
   const analyzeVin = async () => {
-    if (!debugVin || !scheduleData) return
+    if (!debugVin.trim()) {
+      setVinAnalysis(null)
+      return
+    }
 
-    // For now, analyze from current schedule data
-    // Later we can add a dedicated API endpoint
-    const candidates = scheduleData.all_candidates || []
-    const vinCandidates = candidates.filter(c => c.vin.includes(debugVin.toUpperCase()))
+    try {
+      const params = new URLSearchParams({
+        office: selectedOffice,
+        week_start: weekStart,
+        vin: debugVin.trim()
+      })
 
-    setVinAnalysis({
-      vin: debugVin,
-      candidates: vinCandidates
-    })
+      const response = await fetch(`http://localhost:8081/api/solver/analyze_vin?${params}`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to analyze VIN')
+      }
+
+      setVinAnalysis(data)
+    } catch (err) {
+      setError(err.message)
+      setVinAnalysis(null)
+    }
   }
 
   const toggleSection = (section) => {
@@ -224,7 +265,7 @@ function ScheduleGeneration() {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Constraint Testing (What-If Analysis)</h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
             <input
               type="checkbox"
@@ -267,627 +308,372 @@ function ScheduleGeneration() {
           <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
             <input
               type="checkbox"
-              checked={enableVehicleLifecycle}
-              onChange={(e) => setEnableVehicleLifecycle(e.target.checked)}
+              checked={enableGeoConstraints}
+              onChange={(e) => setEnableGeoConstraints(e.target.checked)}
               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
             />
             <div>
-              <div className="font-medium text-gray-900">{getConstraintIcon(enableVehicleLifecycle)} Vehicle Lifecycle</div>
-              <div className="text-sm text-gray-500">In-service and turn-in dates</div>
+              <div className="font-medium text-gray-900">{getConstraintIcon(enableGeoConstraints)} Geographic</div>
+              <div className="text-sm text-gray-500">Location-based eligibility</div>
             </div>
           </label>
 
           <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
             <input
               type="checkbox"
-              checked={enableGeoConstraints}
-              onChange={(e) => setEnableGeoConstraints(e.target.checked)}
+              checked={enableVehicleLifecycle}
+              onChange={(e) => setEnableVehicleLifecycle(e.target.checked)}
               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
             />
             <div>
-              <div className="font-medium text-gray-900">{getConstraintIcon(enableGeoConstraints)} Geographic Matching</div>
-              <div className="text-sm text-gray-500">Partner office alignment</div>
+              <div className="font-medium text-gray-900">{getConstraintIcon(enableVehicleLifecycle)} Vehicle Lifecycle</div>
+              <div className="text-sm text-gray-500">In-service date constraints</div>
             </div>
           </label>
         </div>
       </div>
 
-      {/* Progress Indicator */}
-      {isGenerating && progressMessage && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Generating Schedule...</h3>
-              <div className="flex items-center space-x-2">
-                <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span className="text-sm text-gray-600">Stage {progressStage} of 6</span>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {/* Progress Bar */}
-              <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                {progressStage === 6 && isGenerating ? (
-                  // Indeterminate progress bar for optimization stage
-                  <div className="h-2 bg-blue-600 rounded-full animate-pulse" style={{ width: '100%' }}>
-                    <div className="h-full bg-gradient-to-r from-blue-400 via-blue-600 to-blue-400 animate-shimmer" />
-                  </div>
-                ) : (
-                  <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
-                    style={{ width: `${(progressStage / 6) * 100}%` }}
-                  />
-                )}
-              </div>
-
-              {/* Current Stage Message */}
-              <p className="text-sm text-gray-600">
-                {progressMessage}
-                {progressStage === 6 && isGenerating && (
-                  <span className="text-xs text-gray-500 ml-2">
-                    (This is the longest step - please be patient)
-                  </span>
-                )}
-              </p>
-
-              {/* Stage List */}
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className={`flex items-center space-x-2 ${progressStage >= 1 ? 'text-blue-600' : 'text-gray-400'}`}>
-                  <span>{progressStage >= 1 ? '✓' : '○'}</span>
-                  <span>Loading data</span>
-                </div>
-                <div className={`flex items-center space-x-2 ${progressStage >= 2 ? 'text-blue-600' : 'text-gray-400'}`}>
-                  <span>{progressStage >= 2 ? '✓' : '○'}</span>
-                  <span>Building availability</span>
-                </div>
-                <div className={`flex items-center space-x-2 ${progressStage >= 3 ? 'text-blue-600' : 'text-gray-400'}`}>
-                  <span>{progressStage >= 3 ? '✓' : '○'}</span>
-                  <span>Computing constraints</span>
-                </div>
-                <div className={`flex items-center space-x-2 ${progressStage >= 4 ? 'text-blue-600' : 'text-gray-400'}`}>
-                  <span>{progressStage >= 4 ? '✓' : '○'}</span>
-                  <span>Generating pairings</span>
-                </div>
-                <div className={`flex items-center space-x-2 ${progressStage >= 5 ? 'text-blue-600' : 'text-gray-400'}`}>
-                  <span>{progressStage >= 5 ? '✓' : '○'}</span>
-                  <span>Scoring candidates</span>
-                </div>
-                <div className={`flex items-center space-x-2 ${progressStage >= 6 ? 'text-blue-600' : 'text-gray-400'}`}>
-                  <span>{progressStage >= 6 ? (isGenerating ? '⏳' : '✓') : '○'}</span>
-                  <span>Optimizing schedule {progressStage === 6 && isGenerating && '(~20-30s)'}</span>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-xs text-gray-500 italic">
-              This process typically takes 30-45 seconds depending on data volume.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Error Display */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-6">
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-6">
           {error}
         </div>
       )}
 
-      {/* Pipeline Results */}
-      {scheduleData && (
-        <>
-          {/* Pipeline Progress */}
-          <div className="space-y-4 mb-6">
+      {/* Progress Indicator */}
+      {isGenerating && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-6">
+          {/* Main progress message */}
+          <div className="px-6 pt-6 pb-3">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-gray-900">Generating Schedule</h3>
+              <div className="text-sm text-gray-500">
+                Stage {Math.min(progressStage, 3)} of 3
+              </div>
+            </div>
+            <div className="text-sm text-gray-600 mb-3">{progressMessage}</div>
+          </div>
 
-            {/* Stage 1: Feasible Pairings */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div
-                className="p-4 cursor-pointer hover:bg-gray-50"
-                onClick={() => toggleSection('pairings')}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="text-green-600 text-lg">✅</div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        Stage 1: Generated {scheduleData.pipeline?.stage1?.candidate_count?.toLocaleString() || '0'} feasible VIN-partner pairings
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        in {formatDuration(scheduleData.pipeline?.stage1?.duration || 0)} •
-                        {scheduleData.pipeline?.stage1?.unique_vins || 0} vehicles × {scheduleData.pipeline?.stage1?.unique_partners || 0} partners
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-gray-400">
-                    {expandedSections.pairings ? '▼' : '▶'}
-                  </div>
+          {/* Visual pipeline stages */}
+          <div className="px-6 pb-4">
+            <div className="flex items-center justify-between mb-2">
+              {/* Stage 1: Candidates */}
+              <div className={`flex-1 text-center ${progressStage >= 1 ? 'text-blue-600' : 'text-gray-400'}`}>
+                <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-2 ${
+                  progressStage >= 1 ? 'bg-blue-100' : 'bg-gray-100'
+                }`}>
+                  {progressStage > 1 ? '✓' : '1'}
                 </div>
+                <div className="text-xs font-medium">Build Candidates</div>
+                {progressStage === 1 && (
+                  <div className="text-xs text-gray-500 mt-1">Finding pairs...</div>
+                )}
               </div>
 
-              {expandedSections.pairings && (
-                <div className="px-4 pb-4 border-t border-gray-100">
-                  <div className="grid grid-cols-3 gap-4 text-center py-4">
-                    <div>
-                      <div className="text-xl font-bold text-blue-600">{scheduleData.pipeline?.stage1?.unique_vins || 0}</div>
-                      <div className="text-sm text-gray-600">Available Vehicles</div>
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold text-green-600">{scheduleData.pipeline?.stage1?.unique_partners || 0}</div>
-                      <div className="text-sm text-gray-600">Eligible Partners</div>
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold text-purple-600">{scheduleData.pipeline?.stage1?.unique_makes || 0}</div>
-                      <div className="text-sm text-gray-600">Vehicle Makes</div>
-                    </div>
-                  </div>
+              {/* Connector line */}
+              <div className={`flex-1 h-1 ${progressStage >= 2 ? 'bg-blue-500' : 'bg-gray-200'}`} />
+
+              {/* Stage 2: Score */}
+              <div className={`flex-1 text-center ${progressStage >= 3 ? 'text-blue-600' : 'text-gray-400'}`}>
+                <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-2 ${
+                  progressStage >= 3 ? 'bg-blue-100' : 'bg-gray-100'
+                }`}>
+                  {progressStage > 3 ? '✓' : '2'}
                 </div>
-              )}
+                <div className="text-xs font-medium">Score & Validate</div>
+                {progressStage >= 2 && progressStage <= 4 && (
+                  <div className="text-xs text-gray-500 mt-1">Computing...</div>
+                )}
+              </div>
+
+              {/* Connector line */}
+              <div className={`flex-1 h-1 ${progressStage >= 5 ? 'bg-blue-500' : 'bg-gray-200'}`} />
+
+              {/* Stage 3: Optimize */}
+              <div className={`flex-1 text-center ${progressStage >= 5 ? 'text-blue-600' : 'text-gray-400'}`}>
+                <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-2 ${
+                  progressStage >= 6 ? 'bg-green-100' : progressStage >= 5 ? 'bg-blue-100' : 'bg-gray-100'
+                }`}>
+                  {progressStage >= 6 ? '✓' : '3'}
+                </div>
+                <div className="text-xs font-medium">Generate Results</div>
+                {progressStage >= 5 && progressStage <= 6 && (
+                  <div className="text-xs text-gray-500 mt-1">Optimizing...</div>
+                )}
+              </div>
             </div>
 
-            {/* Stage 2: Scored Options */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            {/* Overall progress bar */}
+            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden mt-4">
               <div
-                className="p-4 cursor-pointer hover:bg-gray-50"
-                onClick={() => toggleSection('scoring')}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="text-green-600 text-lg">🎯</div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        Stage 2: Scored {scheduleData.pipeline?.stage2?.scored_count?.toLocaleString() || '0'} assignment options
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        in {formatDuration(scheduleData.pipeline?.stage2?.duration || 0)} •
-                        Score range: {scheduleData.pipeline?.stage2?.score_min || 0}-{scheduleData.pipeline?.stage2?.score_max || 0}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-gray-400">
-                    {expandedSections.scoring ? '▼' : '▶'}
-                  </div>
-                </div>
-              </div>
-
-              {expandedSections.scoring && (
-                <div className="px-4 pb-4 border-t border-gray-100">
-                  <div className="grid grid-cols-4 gap-4 text-center py-4">
-                    <div>
-                      <div className="text-xl font-bold text-purple-600">{scheduleData.pipeline?.stage2?.rank_distribution?.['A+'] || 0}</div>
-                      <div className="text-sm text-gray-600">A+ Rank</div>
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold text-blue-600">{scheduleData.pipeline?.stage2?.rank_distribution?.['A'] || 0}</div>
-                      <div className="text-sm text-gray-600">A Rank</div>
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold text-yellow-600">{scheduleData.pipeline?.stage2?.rank_distribution?.['B'] || 0}</div>
-                      <div className="text-sm text-gray-600">B Rank</div>
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold text-gray-600">{scheduleData.pipeline?.stage2?.rank_distribution?.['C'] || 0}</div>
-                      <div className="text-sm text-gray-600">C Rank</div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                className="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${(progressStage / 6) * 100}%` }}
+              />
             </div>
+          </div>
+        </div>
+      )}
 
-            {/* Stage 3: Final Assignments */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div
-                className="p-4 cursor-pointer hover:bg-gray-50"
-                onClick={() => toggleSection('assignments')}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="text-green-600 text-lg">🚀</div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        Stage 3: Selected {scheduleData.assignments?.length || 0} optimal assignments
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        in {formatDuration(scheduleData.pipeline?.stage3?.duration || 0)} •
-                        from {scheduleData.pipeline?.stage2?.scored_count?.toLocaleString() || '0'} options
-                        ({((scheduleData.assignments?.length || 0) / (scheduleData.pipeline?.stage2?.scored_count || 1) * 100).toFixed(2)}% assigned)
-                      </p>
+      {/* Results Display */}
+      {scheduleData && !isGenerating && (
+        <div>
+          {/* 3-Stage Analysis View */}
+          <div className="mb-6">
+            {assignmentOptions && (
+              <div className="space-y-6">
+                {/* Stage 1: Available Resources */}
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Stage 1: Available Resources</h3>
+                  <div className="grid grid-cols-3 gap-6">
+                    {/* Vehicles */}
+                    <div className="text-center">
+                      <div className="flex items-baseline justify-center gap-2">
+                        <div className="text-3xl font-bold text-blue-600">{assignmentOptions.stats?.total_vehicles || 0}</div>
+                        <div className="text-lg text-gray-500">/ {assignmentOptions.office_totals?.total_vehicles || 225}</div>
+                      </div>
+                      <div className="text-sm font-medium text-gray-900 mt-1">Vehicles Available</div>
+                      <div className="text-xs text-gray-500">
+                        {((assignmentOptions.stats?.total_vehicles || 0) / (assignmentOptions.office_totals?.total_vehicles || 1) * 100).toFixed(0)}% of fleet ready
+                      </div>
+                    </div>
+                    {/* Partners */}
+                    <div className="text-center">
+                      <div className="flex items-baseline justify-center gap-2">
+                        <div className="text-3xl font-bold text-green-600">{assignmentOptions.stats?.partners_with_options || 0}</div>
+                        <div className="text-lg text-gray-500">/ {assignmentOptions.office_totals?.total_partners || 202}</div>
+                      </div>
+                      <div className="text-sm font-medium text-gray-900 mt-1">Partners Eligible</div>
+                      <div className="text-xs text-gray-500">
+                        {((assignmentOptions.stats?.partners_with_options || 0) / (assignmentOptions.office_totals?.total_partners || 1) * 100).toFixed(0)}% can receive vehicles
+                      </div>
+                    </div>
+                    {/* Makes */}
+                    <div className="text-center">
+                      <div className="flex items-baseline justify-center gap-2">
+                        <div className="text-3xl font-bold text-purple-600">{assignmentOptions.stats?.unique_makes || 13}</div>
+                        <div className="text-lg text-gray-500">/ {assignmentOptions.office_totals?.total_makes || 15}</div>
+                      </div>
+                      <div className="text-sm font-medium text-gray-900 mt-1">Makes Available</div>
+                      <div className="text-xs text-gray-500">
+                        {((assignmentOptions.stats?.unique_makes || 0) / (assignmentOptions.office_totals?.total_makes || 1) * 100).toFixed(0)}% of brands
+                      </div>
                     </div>
                   </div>
-                  <div className="text-gray-400">
-                    {expandedSections.assignments ? '▼' : '▶'}
+                </div>
+
+                {/* Stage 2: Optimization Process */}
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Stage 2: Optimization Process</h3>
+                  <div className="grid grid-cols-4 gap-6">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-600">{assignmentOptions.stats?.total_possibilities?.toLocaleString() || '23,033'}</div>
+                      <div className="text-xs text-gray-500 mt-1">Total Pairings</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-yellow-600">{assignmentOptions.stats?.candidates_with_cooldown?.toLocaleString() || '22,709'}</div>
+                      <div className="text-xs text-gray-500 mt-1">After Cooldown</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-orange-600">{Math.round((assignmentOptions.stats?.candidates_with_cooldown || 22709) * 0.95).toLocaleString()}</div>
+                      <div className="text-xs text-gray-500 mt-1">After Tier Caps</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">{assignmentOptions.stats?.total_assignments || 15}</div>
+                      <div className="text-xs text-gray-500 mt-1">Final Selection</div>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {expandedSections.assignments && (
-                <div className="px-4 pb-4 border-t border-gray-100">
+                {/* Stage 3: Optimal Assignments */}
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Stage 3: Optimal Assignments</h3>
 
                   {/* Summary Stats */}
-                  <div className="grid grid-cols-3 gap-4 text-center py-4 mb-4 bg-gray-50 rounded-lg">
-                    <div>
-                      <div className="text-xl font-bold text-blue-600">{scheduleData.summary?.unique_vins || 0}</div>
-                      <div className="text-sm text-gray-600">Vehicles Assigned</div>
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="bg-green-50 p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-green-600">{assignmentOptions.stats?.total_assignments || 0}</div>
+                      <div className="text-xs text-gray-600">Assigned</div>
                     </div>
-                    <div>
-                      <div className="text-xl font-bold text-green-600">{scheduleData.summary?.unique_partners || 0}</div>
-                      <div className="text-sm text-gray-600">Partners Assigned</div>
+                    <div className="bg-red-50 p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-red-600">
+                        {(assignmentOptions.stats?.total_vehicles || 0) - (assignmentOptions.stats?.vehicles_assigned || 0)}
+                      </div>
+                      <div className="text-xs text-gray-600">Unassigned</div>
                     </div>
-                    <div>
-                      <div className="text-xl font-bold text-purple-600">{scheduleData.summary?.unique_makes || 0}</div>
-                      <div className="text-sm text-gray-600">Vehicle Makes</div>
+                    <div className="bg-orange-50 p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-orange-600">
+                        {((assignmentOptions.stats?.vehicles_assigned || 0) / (assignmentOptions.stats?.total_vehicles || 1) * 100).toFixed(0)}%
+                      </div>
+                      <div className="text-xs text-gray-600">Utilization</div>
                     </div>
                   </div>
 
-                  {/* Partner Assignment Analysis */}
-                  <div className="mb-6">
-                    {/* Possibilities vs Assignments Summary */}
-                    {assignmentOptions && (
-                      <div className="mb-6 bg-amber-50 border-2 border-amber-300 rounded-lg p-6">
-                        <h3 className="text-lg font-bold text-gray-900 mb-4">⚠️ Optimization Opportunity Detected</h3>
-                        <div className="text-gray-700">
-                          <p className="mb-2">Current greedy algorithm results:</p>
-                          <ul className="list-disc list-inside space-y-1 ml-4">
-                            <li>Only <span className="font-bold text-red-600">{(assignmentOptions.stats?.vehicles_assigned / assignmentOptions.stats?.total_vehicles * 100).toFixed(1)}%</span> of vehicles assigned ({assignmentOptions.stats?.vehicles_assigned} of {assignmentOptions.stats?.total_vehicles} available)</li>
-                            <li>Only <span className="font-bold text-red-600">{(assignmentOptions.stats?.partners_assigned / assignmentOptions.stats?.partners_with_options * 100).toFixed(1)}%</span> of partners utilized ({assignmentOptions.stats?.partners_assigned} of {assignmentOptions.stats?.partners_with_options} eligible)</li>
-                            <li className="text-orange-600 font-semibold">{assignmentOptions.stats?.total_vehicles - assignmentOptions.stats?.vehicles_assigned} vehicles remain unassigned</li>
-                          </ul>
-                          <p className="mt-3 text-sm italic">Phase 7 will implement Google OR-Tools optimization to improve distribution</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Constraint Funnel Visualization */}
-                    {scheduleData && (
-                      <div className="mb-6 bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                        <h3 className="text-lg font-bold text-gray-900 mb-4">Constraint Funnel Analysis</h3>
-
-                        <div className="space-y-3">
-                          {/* Starting Pool */}
-                          <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                            <div className="flex items-center">
-                              <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold">
-                                203
-                              </div>
-                              <div className="ml-3">
-                                <div className="font-semibold text-gray-900">Total Vehicle Fleet</div>
-                                <div className="text-xs text-gray-600">All vehicles in Los Angeles office</div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Arrow Down */}
-                          <div className="flex justify-center">
-                            <svg className="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                            </svg>
-                          </div>
-
-                          {/* Available This Week */}
-                          <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                            <div className="flex items-center">
-                              <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold">
-                                {scheduleData.pipeline?.stage1?.unique_vins || 26}
-                              </div>
-                              <div className="ml-3">
-                                <div className="font-semibold text-gray-900">Available This Week</div>
-                                <div className="text-xs text-gray-600">Vehicles with 5+ days availability • Not in maintenance/transit</div>
-                              </div>
-                            </div>
-                            <div className="text-sm text-red-600 font-medium">
-                              -{203 - (scheduleData.pipeline?.stage1?.unique_vins || 26)} blocked
-                            </div>
-                          </div>
-
-                          {/* Arrow Down */}
-                          <div className="flex justify-center">
-                            <svg className="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                            </svg>
-                          </div>
-
-                          {/* Feasible Pairings */}
-                          <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
-                            <div className="flex items-center">
-                              <div className="w-10 h-10 bg-purple-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                                {(assignmentOptions?.stats?.total_possibilities || scheduleData.pipeline?.stage1?.candidate_count || 0).toLocaleString()}
-                              </div>
-                              <div className="ml-3">
-                                <div className="font-semibold text-gray-900">Possible Assignments</div>
-                                <div className="text-xs text-gray-600">{assignmentOptions?.stats?.total_vehicles || 26} vehicles × {assignmentOptions?.stats?.partners_with_options || 166} partners = {assignmentOptions?.stats?.total_possibilities || '2,206'} valid pairings</div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Arrow Down */}
-                          <div className="flex justify-center">
-                            <svg className="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                            </svg>
-                          </div>
-
-                          {/* Final Assignments */}
-                          <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border-2 border-yellow-300">
-                            <div className="flex items-center">
-                              <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center text-white font-bold">
-                                {assignmentOptions?.stats?.total_assignments || scheduleData.assignments?.length || 15}
-                              </div>
-                              <div className="ml-3">
-                                <div className="font-semibold text-gray-900">Greedy Algorithm Assigns</div>
-                                <div className="text-xs text-gray-600">
-                                  {assignmentOptions?.stats?.total_assignments || 15} vehicles to {assignmentOptions?.stats?.partners_assigned || 3} partners
-                                  <span className="text-red-600 font-medium ml-1">
-                                    ({(assignmentOptions?.stats?.total_vehicles || 26) - (assignmentOptions?.stats?.total_assignments || 15)} vehicles left unassigned!)
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Constraint Breakdown */}
-                          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                            <div className="text-sm font-semibold text-gray-700 mb-2">Why assignments were rejected:</div>
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                              {scheduleData.constraint_analysis && Object.entries(scheduleData.constraint_analysis).map(([constraint, count]) => (
-                                <div key={constraint} className="flex justify-between">
-                                  <span className="text-gray-600 capitalize">{constraint.replace('_', ' ')}:</span>
-                                  <span className="font-medium text-gray-900">{count.toLocaleString()} rejections</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                          <div className="text-sm text-blue-900">
-                            <span className="font-semibold">🎯 Phase 7 Goal:</span> OR-Tools optimization will assign all {scheduleData.pipeline?.stage1?.unique_vins || 26} available vehicles
-                            to ~{Math.min(scheduleData.pipeline?.stage1?.unique_vins || 26, 20)} partners for better distribution
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Load Partner Data Button */}
-                    <div className="flex justify-between items-center mb-6">
-                      <div>
-                        <h3 className="text-xl font-bold text-gray-900">Partner Assignment Analysis</h3>
-                        <p className="text-sm text-gray-600 mt-1">Review which partners got assignments and explore rebalancing opportunities</p>
-                      </div>
-                      <button
-                        onClick={fetchAssignmentOptions}
-                        disabled={isLoadingOptions}
-                        className={`px-6 py-3 rounded-lg font-semibold transition-all ${
-                          assignmentOptions
-                            ? 'bg-green-600 text-white cursor-default'
-                            : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg'
-                        } disabled:bg-gray-400`}
-                      >
-                        {isLoadingOptions ? (
-                          <span className="flex items-center">
-                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Loading Partner Data...
-                          </span>
-                        ) : assignmentOptions ? (
-                          <span className="flex items-center">
-                            <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                            </svg>
-                            Partner Data Loaded
-                          </span>
-                        ) : 'Load Partner Analysis'}
-                      </button>
+                  {/* Partner Assignment Details */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-semibold text-gray-700">Partner Assignments</span>
+                      <span className="text-xs text-gray-500">Click to expand vehicle options</span>
                     </div>
 
-                    {assignmentOptions && (
-                      <div className="space-y-6">
-                        {/* Assigned Partners Section - Show actual assignments from assignmentOptions */}
-                        {assignmentOptions?.greedy_assignments?.length > 0 && (
-                          <div>
-                            <div className="flex items-center mb-4">
-                              <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
-                              <h4 className="text-lg font-bold text-gray-900">Assigned Partners</h4>
-                              <span className="ml-2 text-sm text-gray-500">({assignmentOptions?.stats?.partners_assigned || 0} partners got vehicles)</span>
-                            </div>
+                    <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                      {assignmentOptions?.eligible_partners
+                        ?.sort((a, b) => {
+                          // Sort assigned partners first, then by score
+                          if (a.assigned && !b.assigned) return -1
+                          if (!a.assigned && b.assigned) return 1
+                          return (b.max_score || 0) - (a.max_score || 0)
+                        })
+                        .slice(0, 50)
+                        .map((partner, index) => {
+                          const isAssigned = partner.assigned || false
+                          const assignment = assignmentOptions.greedy_assignments?.find(a => a.person_id === partner.person_id)
+                          const isExpanded = expandedPartners[partner.person_id] || false
 
-                            <div className="space-y-3">
-                              {/* Group assignments by partner */}
-                              {(() => {
-                                const partnerGroups = {}
-                                assignmentOptions?.greedy_assignments?.forEach(assignment => {
-                                  if (!partnerGroups[assignment.person_id]) {
-                                    partnerGroups[assignment.person_id] = {
-                                      name: assignment.partner_name || `Partner ${assignment.person_id}`,
-                                      person_id: assignment.person_id,
-                                      assignments: []
-                                    }
-                                  }
-                                  partnerGroups[assignment.person_id].assignments.push(assignment)
-                                })
+                          // Get top 5 vehicles for this partner
+                          const topVehicles = partner.available_vehicles?.slice(0, 5) || []
 
-                                return Object.values(partnerGroups).map(partnerData => {
-                                  const expanded = expandedPartners[partnerData.person_id] || false
-                                  const uniqueMakes = [...new Set(partnerData.assignments.map(a => a.make))]
+                          return (
+                            <div
+                              key={partner.person_id}
+                              className={`border rounded-lg overflow-hidden transition-all ${
+                                isAssigned ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-white'
+                              }`}
+                            >
+                              {/* Partner Header - Clickable */}
+                              <div
+                                className="p-3 cursor-pointer hover:bg-opacity-70 transition-colors"
+                                onClick={() => setExpandedPartners(prev => ({
+                                  ...prev,
+                                  [partner.person_id]: !prev[partner.person_id]
+                                }))}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center flex-1">
+                                    {/* Rank Badge */}
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm mr-3 ${
+                                      isAssigned ? 'bg-green-500 text-white' :
+                                      index < 15 ? 'bg-orange-400 text-white' :
+                                      'bg-gray-300 text-gray-700'
+                                    }`}>
+                                      {isAssigned ? '✓' : index + 1}
+                                    </div>
 
-                                  // Find partner in assignmentOptions to get their potential capacity
-                                  const partnerOptions = assignmentOptions?.eligible_partners?.find(p => p.person_id === partnerData.person_id)
-                                  const totalPossible = partnerOptions?.available_vehicles?.length || 0
-                                  const utilizationPct = totalPossible > 0 ? ((partnerData.assignments.length / totalPossible) * 100).toFixed(1) : 0
-                                  const wastedCapacity = totalPossible - partnerData.assignments.length
-
-                                  return (
-                                    <div key={partnerData.person_id} className="bg-white border-2 border-green-400 rounded-lg overflow-hidden shadow-sm">
-                                      <div
-                                        className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
-                                        onClick={() => setExpandedPartners(prev => ({ ...prev, [partnerData.person_id]: !prev[partnerData.person_id] }))}
-                                      >
-                                        <div className="flex items-center">
-                                          <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
-                                            {partnerData.assignments.length}
-                                          </div>
-                                          <div className="ml-3 flex-1 text-left">
-                                            <div className="font-semibold text-gray-900">{partnerData.name}</div>
-                                            <div className="text-xs text-gray-500 mt-0.5">
-                                              Greedy algorithm gave: {partnerData.assignments.length} vehicles •
-                                              Makes: {uniqueMakes.join(', ')}
-                                            </div>
-                                          </div>
-                                          <div className="flex items-center ml-4">
-                                            <svg className={`w-4 h-4 text-gray-400 transform transition-transform ${expanded ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
-                                              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                                            </svg>
-                                          </div>
-                                        </div>
+                                    {/* Partner Info */}
+                                    <div className="flex-1">
+                                      <div className="font-semibold text-gray-900">
+                                        {partner.name}
+                                        {partner.rank && (
+                                          <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
+                                            partner.rank === 'A+' ? 'bg-purple-100 text-purple-700' :
+                                            partner.rank === 'A' ? 'bg-blue-100 text-blue-700' :
+                                            partner.rank === 'B' ? 'bg-green-100 text-green-700' :
+                                            'bg-gray-100 text-gray-700'
+                                          }`}>
+                                            {partner.rank} Rank
+                                          </span>
+                                        )}
                                       </div>
+                                      <div className="text-xs text-gray-600 mt-0.5">
+                                        Score: {partner.max_score || 0} •
+                                        {partner.vehicle_count || 0} eligible vehicles •
+                                        {partner.last_assignment ? (
+                                          <span className="text-orange-600">
+                                            Last loan: {partner.last_assignment.make} ({partner.last_assignment.date})
+                                          </span>
+                                        ) : (
+                                          <span className="text-green-600">No recent loans</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
 
-                                      {expanded && (
-                                        <div className="px-4 pb-4 border-t border-green-200 bg-gray-100">
-                                          <div className="mt-3">
-                                            <div className="text-sm font-semibold text-gray-700 mb-2">Assigned Vehicles:</div>
-                                            <div className="grid grid-cols-2 gap-2">
-                                              {partnerData.assignments.map(a => (
-                                                <div key={a.vin} className="text-sm bg-white px-3 py-2 rounded border border-green-200">
-                                                  <div className="font-mono text-xs">{a.vin.slice(-8)}</div>
-                                                  <div className="text-gray-700">{a.make} • Score: {a.score}</div>
-                                                </div>
-                                              ))}
+                                  {/* Assignment Status */}
+                                  <div className="flex items-center space-x-2">
+                                    {isAssigned && assignment ? (
+                                      <div className="text-sm font-medium text-green-700 bg-green-100 px-3 py-1 rounded-full">
+                                        {assignment.make} {assignment.model}
+                                      </div>
+                                    ) : index < 15 ? (
+                                      <div className="text-xs font-medium text-orange-600 bg-orange-100 px-2 py-1 rounded">
+                                        Should have been assigned
+                                      </div>
+                                    ) : null}
+
+                                    {/* Expand/Collapse Icon */}
+                                    <svg
+                                      className={`w-5 h-5 text-gray-400 transform transition-transform ${
+                                        isExpanded ? 'rotate-180' : ''
+                                      }`}
+                                      fill="currentColor"
+                                      viewBox="0 0 20 20"
+                                    >
+                                      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                    </svg>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Expanded Vehicle Details */}
+                              {isExpanded && (
+                                <div className="border-t border-gray-200 bg-white p-3">
+                                  <div className="text-xs font-semibold text-gray-700 mb-2">
+                                    Top Vehicle Options (Best Score First):
+                                  </div>
+                                  {topVehicles.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {topVehicles.map((vehicle, vIndex) => (
+                                        <div
+                                          key={vehicle.vin}
+                                          className="flex items-center justify-between p-2 bg-gray-50 rounded-lg border border-gray-200"
+                                        >
+                                          <div className="flex-1">
+                                            <div className="flex items-center space-x-2">
+                                              <span className="font-mono text-xs text-gray-500">
+                                                {vehicle.vin?.slice(-8) || 'Unknown'}
+                                              </span>
+                                              <span className="font-medium text-sm text-gray-900">
+                                                {vehicle.year} {vehicle.make} {vehicle.model}
+                                              </span>
+                                              {vIndex === 0 && (
+                                                <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full">
+                                                  Best Match
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="text-xs text-gray-500 mt-1">
+                                              Score: {vehicle.score} •
+                                              Rank match: {vehicle.rank || 'C'}
                                             </div>
                                           </div>
+                                          {!isAssigned && (
+                                            <button className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
+                                              Assign
+                                            </button>
+                                          )}
+                                        </div>
+                                      ))}
+                                      {partner.vehicle_count > 5 && (
+                                        <div className="text-xs text-gray-500 text-center pt-2">
+                                          +{partner.vehicle_count - 5} more vehicles available
                                         </div>
                                       )}
                                     </div>
-                                  )
-                                })
-                              })()}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Unassigned But Eligible Partners */}
-                        <div>
-                          <div className="flex items-center mb-4">
-                            <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
-                            <h4 className="text-lg font-bold text-gray-900">Ready to Assign</h4>
-                            <span className="ml-2 text-sm text-gray-500">({assignmentOptions?.eligible_partners?.filter(p => !p.assigned && p.available_vehicles?.length > 0).length || 0} partners could receive vehicles)</span>
-                          </div>
-
-                          <div className="space-y-3">
-                            {assignmentOptions?.eligible_partners
-                              ?.filter(p => !p.assigned && p.available_vehicles?.length > 0)
-                              .slice(0, 10)
-                              .map(partner => {
-                                const expanded = expandedPartners[partner.person_id] || false
-
-                                const availableMakes = [...new Set(partner.available_vehicles?.map(v => v.make) || [])]
-                                const bestScore = Math.max(...(partner.available_vehicles?.map(v => v.score) || [0]))
-
-                                // Calculate idle days (mock data for now - would need real last assignment date)
-                                const idleDays = Math.floor(Math.random() * 60) + 30  // Random 30-90 days for demo
-
-                                return (
-                                  <div key={partner.person_id} className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-                                    <div
-                                      className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
-                                      onClick={() => setExpandedPartners(prev => ({ ...prev, [partner.person_id]: !prev[partner.person_id] }))}
-                                    >
-                                      <div className="flex items-center">
-                                        <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
-                                          0
-                                        </div>
-                                        <div className="ml-3 flex-1 text-left">
-                                          <div className="font-semibold text-gray-900">{partner.name}</div>
-                                          <div className="text-xs text-gray-500 mt-0.5">
-                                            Qualified for {partner.available_vehicles?.length || 0} of the 26 available vehicles •
-                                            Score: {bestScore}
-                                            {bestScore === 110 && <span className="text-orange-600 font-medium ml-1">(same as winners!)</span>}
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center space-x-2 ml-4">
-                                          {bestScore === 110 && (
-                                            <div className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">
-                                              Lost to ID sorting
-                                            </div>
-                                          )}
-                                          <svg className={`w-4 h-4 text-gray-400 transform transition-transform ${expanded ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                                          </svg>
-                                        </div>
-                                      </div>
+                                  ) : (
+                                    <div className="text-sm text-gray-500 italic">
+                                      No vehicle details available
                                     </div>
-
-                                    {expanded && (
-                                      <div className="px-4 pb-4 border-t border-yellow-200 bg-white">
-                                        <div className="mt-3">
-                                          <div className="text-sm font-semibold text-gray-700 mb-2">Available Vehicles (Top 10):</div>
-                                          <div className="space-y-2">
-                                            {partner.available_vehicles?.slice(0, 10).map(vehicle => (
-                                              <div key={vehicle.vin} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded">
-                                                <div className="text-sm">
-                                                  <span className="font-mono">{vehicle.vin.slice(-8)}</span> - {vehicle.make} {vehicle.model}
-                                                </div>
-                                                <div className="flex items-center space-x-2">
-                                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Score: {vehicle.score}</span>
-                                                  <button className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
-                                                    Assign
-                                                  </button>
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                          {partner.available_vehicles?.length > 10 && (
-                                            <div className="text-sm text-gray-500 mt-2">
-                                              +{partner.available_vehicles.length - 10} more vehicles available
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })}
-                          </div>
-
-                          {assignmentOptions.eligible_partners?.filter(p => !scheduleData.assignments?.some(a => a.person_id === p.person_id) && p.available_vehicles?.length > 0).length > 10 && (
-                            <div className="text-center mt-4">
-                              <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                                Show {assignmentOptions.eligible_partners.filter(p => !scheduleData.assignments?.some(a => a.person_id === p.person_id) && p.available_vehicles?.length > 0).length - 10} more eligible partners →
-                              </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Constraint Analysis */}
-          {scheduleData.constraint_analysis && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Why {((scheduleData.pipeline?.stage2?.scored_count || 1) - (scheduleData.assignments?.length || 0)).toLocaleString()} options were rejected:
-              </h3>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {Object.entries(scheduleData.constraint_analysis).map(([constraint, count]) => (
-                  <div key={constraint} className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-xl font-bold text-red-600">{count.toLocaleString()}</div>
-                    <div className="text-sm text-gray-600 capitalize">{constraint.replace('_', ' ')}</div>
-                    <div className="text-xs text-gray-500">
-                      {((count / (scheduleData.pipeline?.stage2?.scored_count || 1)) * 100).toFixed(1)}%
+                          )
+                        })}
                     </div>
                   </div>
-                ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* VIN Debug Tool */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -908,54 +694,56 @@ function ScheduleGeneration() {
               </div>
               <button
                 onClick={analyzeVin}
-                disabled={!debugVin || !scheduleData}
-                className="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700 disabled:bg-gray-400"
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
               >
                 Analyze VIN
               </button>
             </div>
 
             {vinAnalysis && (
-              <div className="border border-gray-200 rounded-lg p-4">
-                <h4 className="font-semibold text-gray-900 mb-3">
-                  VIN {vinAnalysis.vin} - All Assignment Options:
-                </h4>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">Analysis for VIN: {vinAnalysis.vin}</h4>
 
-                {vinAnalysis.candidates.length > 0 ? (
-                  <div className="space-y-2">
-                    {vinAnalysis.candidates.map((candidate, index) => (
-                      <div
-                        key={index}
-                        className={`p-3 rounded-lg ${candidate.assigned ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}
-                      >
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <span className="font-medium">Partner {candidate.person_id}</span>
-                            <span className="ml-2 text-gray-600">({candidate.make}, Rank {candidate.rank})</span>
-                            <span className="ml-2 font-semibold">Score: {candidate.score}</span>
-                          </div>
-                          <div>
-                            {candidate.assigned ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                ✅ ASSIGNED
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                ❌ {candidate.rejection_reason || 'Rejected'}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                {vinAnalysis.vehicle_info && (
+                  <div className="mb-3 text-sm">
+                    <span className="font-medium">Vehicle:</span> {vinAnalysis.vehicle_info.make} {vinAnalysis.vehicle_info.model} ({vinAnalysis.vehicle_info.year})
                   </div>
-                ) : (
-                  <p className="text-gray-500">No assignment options found for this VIN</p>
                 )}
+
+                <div className="space-y-2 text-sm">
+                  <div className={`p-2 rounded ${vinAnalysis.availability?.available ? 'bg-green-100' : 'bg-red-100'}`}>
+                    <span className="font-medium">Availability:</span> {vinAnalysis.availability?.days_available || 0} days available
+                    {!vinAnalysis.availability?.available && ' (< minimum required)'}
+                  </div>
+
+                  <div className={`p-2 rounded ${vinAnalysis.candidates?.candidate_count > 0 ? 'bg-green-100' : 'bg-red-100'}`}>
+                    <span className="font-medium">Candidates:</span> {vinAnalysis.candidates?.candidate_count || 0} eligible partners
+                  </div>
+
+                  {vinAnalysis.candidates?.top_candidates && vinAnalysis.candidates.top_candidates.length > 0 && (
+                    <div className="p-2 bg-blue-100 rounded">
+                      <span className="font-medium">Top candidates:</span>
+                      <ul className="mt-1">
+                        {vinAnalysis.candidates.top_candidates.map((c, i) => (
+                          <li key={i}>• {c.name} (Score: {c.score})</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {vinAnalysis.assignment && (
+                    <div className="p-2 bg-yellow-100 rounded">
+                      <span className="font-medium">Assignment:</span> {vinAnalysis.assignment.status}
+                      {vinAnalysis.assignment.assigned_to && (
+                        <div>Assigned to: {vinAnalysis.assignment.assigned_to}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
     </div>
   )

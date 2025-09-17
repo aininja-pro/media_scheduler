@@ -221,8 +221,9 @@ def generate_week_schedule(
     # Count trailing-12m usage per (person_id, make)
     pair_used = _loans_12m_by_pair(loan_history_df, week_start)
 
-    # Sort candidates by score desc, tie-break by vin/person_id for determinism
-    cand = cand.sort_values(by=["score", "vin", "person_id"], ascending=[False, True, True])
+    # Sort candidates by score desc only (score now has enough differentiation)
+    # The score already includes hash-based components to break ties fairly
+    cand = cand.sort_values(by=["score"], ascending=[False])
 
     assigned_vins = set()
     assigned_partners = set()  # Track partners who already have a vehicle

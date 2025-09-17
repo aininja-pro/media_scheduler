@@ -424,6 +424,27 @@ async def get_assignment_options(
         total_possibilities = len(scored_candidates) if not scored_candidates.empty else 0
         total_assignments = len(greedy_assignments)
 
+        # Get office totals (ALL vehicles and partners, not just available)
+        all_office_vehicles_response = db.client.table('vehicles').select('*').eq('office', office).execute()
+        all_office_vehicles = len(all_office_vehicles_response.data) if all_office_vehicles_response.data else 0
+
+        all_partners_response = db.client.table('media_partners').select('*').eq('office', office).execute()
+        all_office_partners = len(all_partners_response.data) if all_partners_response.data else 0
+
+        # Get unique makes from all office vehicles
+        if all_office_vehicles_response.data:
+            all_makes = set([v['make'] for v in all_office_vehicles_response.data if 'make' in v])
+            total_makes = len(all_makes)
+        else:
+            total_makes = 0
+
+        # Get unique makes from available vehicles
+        available_makes = set()
+        for vin in available_vins:
+            vehicle = vehicles_df[vehicles_df['vin'] == vin]
+            if not vehicle.empty and 'make' in vehicle.columns:
+                available_makes.add(vehicle.iloc[0]['make'])
+
         return {
             'office': office,
             'week_start': week_start,
@@ -436,7 +457,13 @@ async def get_assignment_options(
                 'total_vehicles': len(available_vins),
                 'vehicles_assigned': len(assigned_vins),
                 'total_possibilities': total_possibilities,  # All valid pairings
-                'total_assignments': total_assignments      # What greedy selected
+                'total_assignments': total_assignments,     # What greedy selected
+                'unique_makes': len(available_makes)        # Unique makes available this week
+            },
+            'office_totals': {
+                'total_vehicles': all_office_vehicles,     # ALL vehicles in office
+                'total_partners': all_office_partners,     # ALL partners in office
+                'total_makes': total_makes                  # ALL unique makes in office
             },
             'constraint_summary': constraint_summary,
             'greedy_assignments': greedy_assignments,

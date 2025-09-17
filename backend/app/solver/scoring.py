@@ -11,7 +11,7 @@ import pandas as pd
 from typing import Dict
 
 
-DEFAULT_RANK_WEIGHTS: Dict[str, int] = {"A+": 100, "A": 70, "B": 40, "C": 10, "UNRANKED": 5}
+DEFAULT_RANK_WEIGHTS: Dict[str, int] = {"A+": 1000, "A": 700, "B": 400, "C": 100, "UNRANKED": 50}
 
 
 def compute_candidate_scores(
@@ -20,8 +20,8 @@ def compute_candidate_scores(
     partners_df: pd.DataFrame,     # Media Partners: ["person_id","office","default_loan_region"]  # region is comma- or space-separated list of office codes
     publication_df: pd.DataFrame,  # same as Step 1 input; for history bonus
     rank_weights: Dict[str, int] = None,
-    geo_bonus_points: int = 10,
-    history_bonus_points: int = 5
+    geo_bonus_points: int = 100,
+    history_bonus_points: int = 50
 ) -> pd.DataFrame:
     """
     Returns candidates_df with added columns:
@@ -53,7 +53,10 @@ def compute_candidate_scores(
         parts = [t.strip() for t in s.split(",") if t.strip()]
         return set(parts)
 
-    p["region_set"] = p.get("default_loan_region", "").map(_parse_regions)
+    if "default_loan_region" in p.columns:
+        p["region_set"] = p["default_loan_region"].map(_parse_regions)
+    else:
+        p["region_set"] = [set() for _ in range(len(p))]
 
     # Rank join
     r = partner_rank_df.copy()
@@ -97,8 +100,42 @@ def compute_candidate_scores(
 
     merged["history_bonus"] = (merged["pubs"] >= 1).astype(int) * int(history_bonus_points)
 
-    # Final score
-    merged["score"] = merged["rank_weight"] + merged["geo_bonus"] + merged["history_bonus"]
+    # Add publication rate bonus (0-100 based on publication_rate_observed)
+    if "publication_rate_observed" in merged.columns:
+        # publication_rate_observed is 0-1, convert to 0-100 scale
+        merged["pub_rate_bonus"] = (merged["publication_rate_observed"].fillna(0) * 100).astype(int)
+    else:
+        merged["pub_rate_bonus"] = 0
+
+    # Add model diversity bonus (hash model name to get pseudo-random 0-50 bonus)
+    # This helps break ties and distribute different models
+    if "model" in merged.columns:
+        merged["model_bonus"] = merged["model"].apply(
+            lambda x: abs(hash(str(x))) % 51 if pd.notna(x) else 25
+        )
+    else:
+        merged["model_bonus"] = 25
+
+    # Add VIN hash bonus (0-20) for final tie-breaking that's not just alphabetical
+    if "vin" in merged.columns:
+        merged["vin_bonus"] = merged["vin"].apply(
+            lambda x: abs(hash(str(x))) % 21 if pd.notna(x) else 10
+        )
+    else:
+        merged["vin_bonus"] = 10
+
+    # Final score with more components for better differentiation
+    merged["score"] = (
+        merged["rank_weight"] +
+        merged["geo_bonus"] +
+        merged["history_bonus"] +
+        merged["pub_rate_bonus"] +
+        merged["model_bonus"] +
+        merged["vin_bonus"]
+    )
 
     # Column order: original + new
-    return merged[candidates_df.columns.tolist() + ["rank", "rank_weight", "geo_bonus", "history_bonus", "score"]]
+    return merged[candidates_df.columns.tolist() + [
+        "rank", "rank_weight", "geo_bonus", "history_bonus",
+        "pub_rate_bonus", "model_bonus", "vin_bonus", "score"
+    ]]

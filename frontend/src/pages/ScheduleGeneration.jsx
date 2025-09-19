@@ -578,7 +578,7 @@ function ScheduleGeneration() {
                                         {partner.vehicle_count || 0} eligible vehicles •
                                         {partner.last_assignment ? (
                                           <span className="text-orange-600">
-                                            Last loan: {partner.last_assignment.make} ({partner.last_assignment.date})
+                                            Last loan: {partner.last_assignment.make} {partner.last_assignment.model} ({partner.last_assignment.date})
                                           </span>
                                         ) : (
                                           <span className="text-green-600">No recent loans</span>

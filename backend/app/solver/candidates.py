@@ -17,7 +17,8 @@ def build_weekly_candidates(
                                        #       publications_observed_24m, publication_rate_observed, coverage, supported
     week_start: str,                   # "YYYY-MM-DD" (Monday)
     eligibility_df: Optional[pd.DataFrame] = None,  # optional: cols: person_id, make [, market]
-    min_available_days: int = 7
+    min_available_days: int = 7,
+    current_activity_df: Optional[pd.DataFrame] = None  # optional: cols: person_id, vehicle_vin, start_date, end_date
 ) -> pd.DataFrame:
     """
     Returns one row per feasible (vin, person_id) for the target week.
@@ -121,10 +122,18 @@ def build_weekly_candidates(
     if candidates_df.empty:
         return _empty_candidates_df(week_start)
 
-    # Step 5: Join publication data
+    # Step 5: Filter by current activity (partner availability)
+    if current_activity_df is not None:
+        candidates_df = _filter_by_current_activity(candidates_df, current_activity_df, week_start)
+        # Only keep partners who are available
+        candidates_df = candidates_df[candidates_df['partner_available'] == True].copy()
+        if candidates_df.empty:
+            return _empty_candidates_df(week_start)
+
+    # Step 6: Join publication data
     candidates_df = _join_publication_data(candidates_df, publication_df)
 
-    # Step 6: Ensure correct column order and return
+    # Step 7: Ensure correct column order and return
     output_columns = [
         "vin", "person_id", "market", "make", "model", "week_start",
         "available_days", "cooldown_ok", "publication_rate_observed", "supported", "coverage"
@@ -184,6 +193,38 @@ def _join_cooldown_data(candidates_df: pd.DataFrame, cooldown_df: pd.DataFrame) 
     candidates_with_cooldown['cooldown_ok'] = candidates_with_cooldown['cooldown_ok'].fillna(True).infer_objects(copy=False)
 
     return candidates_with_cooldown
+
+
+def _filter_by_current_activity(candidates_df: pd.DataFrame, current_activity_df: pd.DataFrame, week_start: str) -> pd.DataFrame:
+    """Filter out partners who have overlapping vehicle activities during the scheduled week."""
+    if current_activity_df.empty or 'person_id' not in current_activity_df.columns:
+        # If no activity data or person_id not available, assume all are available
+        candidates_df['partner_available'] = True
+        return candidates_df
+
+    # Parse week dates
+    week_start_date = pd.to_datetime(week_start).date()
+    week_end_date = week_start_date + timedelta(days=6)
+
+    # Convert activity dates
+    activity = current_activity_df.copy()
+    activity['start_date'] = pd.to_datetime(activity['start_date']).dt.date
+    activity['end_date'] = pd.to_datetime(activity['end_date']).dt.date
+
+    # Find partners with overlapping activities
+    # An activity overlaps if it starts before week ends AND ends after week starts
+    overlapping = activity[
+        (activity['start_date'] <= week_end_date) &
+        (activity['end_date'] >= week_start_date)
+    ]
+
+    # Get unique partner IDs who are NOT available (have overlapping activities)
+    unavailable_partners = set(overlapping['person_id'].dropna().unique())
+
+    # Mark availability in candidates
+    candidates_df['partner_available'] = ~candidates_df['person_id'].isin(unavailable_partners)
+
+    return candidates_df
 
 
 def _join_publication_data(candidates_df: pd.DataFrame, publication_df: pd.DataFrame) -> pd.DataFrame:

@@ -211,13 +211,14 @@ class LoanHistoryIngest(BaseModel):
 class CurrentActivityIngest(BaseModel):
     """Schema for current_activity CSV upload"""
     activity_id: str
+    person_id: str  # NEW: Partner ID from second field
     vehicle_vin: str
     activity_type: str
     start_date: date
     end_date: date
     to_field: Optional[str] = None
 
-    @field_validator('activity_id', 'vehicle_vin', mode='before')
+    @field_validator('activity_id', 'person_id', 'vehicle_vin', mode='before')
     @classmethod
     def validate_required_fields(cls, v) -> str:
         if v is None:

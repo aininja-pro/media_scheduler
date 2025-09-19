@@ -76,9 +76,20 @@ async def get_assignment_options(
         approved_makes_df = pd.DataFrame(all_approved)
         approved_makes_df = approved_makes_df[approved_makes_df['person_id'].isin(office_partner_ids)]
 
-        # Get loan history
-        loan_history_response = db.client.table('loan_history').select('*').execute()
-        loan_history_df = pd.DataFrame(loan_history_response.data) if loan_history_response.data else pd.DataFrame()
+        # Get ALL loan history with pagination
+        all_loan_history = []
+        limit = 1000
+        offset = 0
+        while True:
+            loan_response = db.client.table('loan_history').select('*').range(offset, offset + limit - 1).execute()
+            if not loan_response.data:
+                break
+            all_loan_history.extend(loan_response.data)
+            offset += limit
+            if len(loan_response.data) < limit:
+                break
+
+        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
 
         # Get rules
         rules_response = db.client.table('rules').select('*').execute()
@@ -97,7 +108,8 @@ async def get_assignment_options(
         if not loan_history_df.empty:
             for date_col in ['start_date', 'end_date']:
                 if date_col in loan_history_df.columns:
-                    loan_history_df[date_col] = pd.to_datetime(loan_history_df[date_col], errors='coerce').dt.date
+                    # Keep as datetime, not date object, so nlargest() works properly
+                    loan_history_df[date_col] = pd.to_datetime(loan_history_df[date_col], errors='coerce')
 
         # Build availability grid
         availability_grid_df = build_availability_grid(
@@ -176,7 +188,8 @@ async def get_assignment_options(
             publication_df=publication_df,
             week_start=week_start,
             eligibility_df=eligibility_df,
-            min_available_days=min_available_days
+            min_available_days=min_available_days,
+            current_activity_df=activity_df  # Pass current activities for availability check
         )
 
         # Score candidates
@@ -234,14 +247,47 @@ async def get_assignment_options(
                 if not loan_history_df.empty:
                     partner_history = loan_history_df[loan_history_df['person_id'] == partner_id]
                     if not partner_history.empty:
-                        latest = partner_history.nlargest(1, 'end_date')
-                        if not latest.empty:
-                            last_date = latest['end_date'].iloc[0]
-                            last_make = latest['make'].iloc[0]
-                            last_assignment = {
-                                'date': last_date.isoformat() if hasattr(last_date, 'isoformat') else str(last_date),
-                                'make': last_make
-                            }
+                        # Debug: Log what we found for Karl Brauer
+                        if partner_id == '1601':  # Karl Brauer
+                            logger.info(f"Karl Brauer's loan history before conversion:")
+                            logger.info(f"  Records found: {len(partner_history)}")
+                            logger.info(f"  End dates: {partner_history['end_date'].tolist()}")
+                            logger.info(f"  End date types: {partner_history['end_date'].dtype}")
+
+                        # end_date is already a datetime from earlier conversion, just copy
+                        partner_history = partner_history.copy()
+
+                        if partner_id == '1601':  # Karl Brauer
+                            logger.info(f"After date conversion:")
+                            logger.info(f"  Converted dates: {partner_history['end_date'].tolist()}")
+                            logger.info(f"  NaT count: {partner_history['end_date'].isna().sum()}")
+
+                        partner_history = partner_history.dropna(subset=['end_date'])
+
+                        if partner_id == '1601':  # Karl Brauer
+                            logger.info(f"After dropping NaT:")
+                            logger.info(f"  Records remaining: {len(partner_history)}")
+                            if not partner_history.empty:
+                                logger.info(f"  Valid dates: {partner_history[['activity_id', 'make', 'end_date']].to_string()}")
+
+                        if not partner_history.empty:
+                            latest = partner_history.nlargest(1, 'end_date')
+                            if not latest.empty:
+                                last_date = latest['end_date'].iloc[0]
+                                last_make = latest['make'].iloc[0]
+                                last_model = latest['model'].iloc[0] if 'model' in latest.columns else ''
+
+                                if partner_id == '1601':
+                                    logger.info(f"Karl Brauer's latest loan selected: {last_make} {last_model} ending {last_date}")
+
+                                # Format date as YYYY-MM-DD without time component
+                                date_str = last_date.strftime('%Y-%m-%d') if hasattr(last_date, 'strftime') else str(last_date).split('T')[0]
+
+                                last_assignment = {
+                                    'date': date_str,
+                                    'make': last_make,
+                                    'model': last_model
+                                }
 
                 # Calculate tier cap usage per make
                 tier_cap_usage = {}
@@ -573,7 +619,8 @@ async def generate_schedule(
         if not loan_history_df.empty:
             for date_col in ['start_date', 'end_date']:
                 if date_col in loan_history_df.columns:
-                    loan_history_df[date_col] = pd.to_datetime(loan_history_df[date_col], errors='coerce').dt.date
+                    # Keep as datetime, not date object, so nlargest() works properly
+                    loan_history_df[date_col] = pd.to_datetime(loan_history_df[date_col], errors='coerce')
 
         # STAGE 1: Generate candidates
         stage1_start = time.time()
@@ -655,7 +702,8 @@ async def generate_schedule(
             publication_df=publication_df,
             week_start=week_start,
             eligibility_df=eligibility_df,
-            min_available_days=min_available_days
+            min_available_days=min_available_days,
+            current_activity_df=activity_df  # Pass current activities for availability check
         )
 
         stage1_time = time.time() - stage1_start

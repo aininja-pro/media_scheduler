@@ -509,8 +509,14 @@ async def ingest_vehicles_from_url(
                 }
             )
         
-        # Perform database upsert
+        # Perform database operations
         try:
+            # Clear existing vehicles data first to avoid stale records
+            logger.info("Clearing existing vehicles data...")
+            delete_result = db.client.table('vehicles').delete().neq('vin', '').execute()
+            logger.info(f"Deleted {len(delete_result.data)} existing vehicle records")
+
+            # Now insert fresh data
             upsert_result = await db.upsert_records(
                 table_name="vehicles",
                 records=validated_rows
@@ -576,8 +582,14 @@ async def ingest_approved_makes_from_url(url: str, db: DatabaseService = Depends
             validated_row = INGEST_SCHEMAS["approved_makes"](**normalized_dict)
             validated_rows.append(validated_row)
         
+        # Clear existing approved_makes data first to avoid stale records
+        logger.info("Clearing existing approved_makes data...")
+        delete_result = db.client.table('approved_makes').delete().neq('person_id', '').execute()
+        logger.info(f"Deleted {len(delete_result.data)} existing approved makes records")
+
+        # Now insert fresh data
         upsert_result = await db.upsert_records(table_name="approved_makes", records=validated_rows)
-        
+
         return {
             "table": "approved_makes",
             "rows_processed": len(validated_rows),
@@ -701,8 +713,14 @@ async def ingest_media_partners_from_url(
                 }
             )
         
-        # Perform database upsert
+        # Perform database operations
         try:
+            # Clear existing media_partners data first to avoid stale records
+            logger.info("Clearing existing media_partners data...")
+            delete_result = db.client.table('media_partners').delete().neq('person_id', '').execute()
+            logger.info(f"Deleted {len(delete_result.data)} existing media partner records")
+
+            # Now insert fresh data
             upsert_result = await db.upsert_records(
                 table_name="media_partners",
                 records=validated_rows
@@ -768,8 +786,14 @@ async def ingest_approved_makes_from_url(url: str, db: DatabaseService = Depends
             validated_row = INGEST_SCHEMAS["approved_makes"](**normalized_dict)
             validated_rows.append(validated_row)
         
+        # Clear existing approved_makes data first to avoid stale records
+        logger.info("Clearing existing approved_makes data...")
+        delete_result = db.client.table('approved_makes').delete().neq('person_id', '').execute()
+        logger.info(f"Deleted {len(delete_result.data)} existing approved makes records")
+
+        # Now insert fresh data
         upsert_result = await db.upsert_records(table_name="approved_makes", records=validated_rows)
-        
+
         return {
             "table": "approved_makes",
             "rows_processed": len(validated_rows),
@@ -845,8 +869,14 @@ async def ingest_loan_history_from_url(url: str, db: DatabaseService = Depends(g
                     continue
         
         logger.info(f"Validation complete! {len(validated_rows)} valid records, {skipped_count} records skipped due to missing data")
-        
-        logger.info(f"Validation complete! Uploading {len(validated_rows)} records to Supabase...")
+
+        # Clear existing loan_history data first to avoid stale records
+        logger.info("Clearing existing loan_history data...")
+        delete_result = db.client.table('loan_history').delete().neq('activity_id', '').execute()
+        logger.info(f"Deleted {len(delete_result.data)} existing loan history records")
+
+        # Now insert fresh data
+        logger.info(f"Uploading {len(validated_rows)} records to Supabase...")
         upsert_result = await db.upsert_records(table_name="loan_history", records=validated_rows)
         logger.info(f"Upload complete! {upsert_result.get('rows_affected', 0)} records affected.")
         
@@ -872,29 +902,45 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
             logger.info(f"Download complete! Processing CSV data...")
             
         df = pd.read_csv(StringIO(response.text), header=None, names=[
-            'Activity_ID', 'Vehicle_VIN', 'Activity_Type', 'Start_Date', 'End_Date', 'To'
+            'Activity_ID', 'Person_ID', 'Vehicle_VIN', 'Activity_Type', 'Start_Date', 'End_Date', 'To'
         ])
-        
+
         df = df.fillna('')  # Replace NaN with empty strings
         records = df.to_dict('records')
         validated_rows = []
         skipped_count = 0
-        
+
         logger.info(f"Processing {len(records)} current activity records...")
-        
+
         for record in records:
             try:
+                # Convert IDs to int first to remove decimals, then to string
+                person_id_raw = record['Person_ID']
+                if pd.notna(person_id_raw):
+                    # Remove decimal by converting to int first
+                    person_id = str(int(float(person_id_raw)))
+                else:
+                    person_id = ''
+
+                activity_id_raw = record['Activity_ID']
+                if pd.notna(activity_id_raw):
+                    # Remove decimal by converting to int first
+                    activity_id = str(int(float(activity_id_raw)))
+                else:
+                    activity_id = ''
+
                 normalized_dict = {
-                    'activity_id': str(record['Activity_ID']).strip(),
+                    'activity_id': activity_id,
+                    'person_id': person_id,
                     'vehicle_vin': str(record['Vehicle_VIN']).strip(),
                     'activity_type': str(record['Activity_Type']).strip(),
                     'start_date': str(record['Start_Date']).strip(),
                     'end_date': str(record['End_Date']).strip(),
                     'to_field': str(record['To']).strip() if record['To'] else None
                 }
-                
+
                 # Quick validation - skip if missing required fields
-                if not normalized_dict['activity_id'] or not normalized_dict['vehicle_vin']:
+                if not normalized_dict['activity_id'] or not normalized_dict['person_id'] or not normalized_dict['vehicle_vin']:
                     skipped_count += 1
                     continue
                     
@@ -905,7 +951,13 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
                 continue
         
         logger.info(f"Validation complete! {len(validated_rows)} valid records, {skipped_count} records skipped")
-        
+
+        # Clear existing data first to avoid stale records
+        logger.info("Clearing existing current_activity data...")
+        delete_result = db.client.table('current_activity').delete().neq('activity_id', '').execute()
+        logger.info(f"Deleted {len(delete_result.data)} existing records")
+
+        # Now insert fresh data
         upsert_result = await db.upsert_records(table_name="current_activity", records=validated_rows)
         logger.info(f"Upload complete! {upsert_result.get('rows_affected', 0)} records affected.")
         

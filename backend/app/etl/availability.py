@@ -22,10 +22,19 @@ def parse_date_string(date_str) -> date:
     raise ValueError(f"Unable to parse date: {date_str}")
 
 
-def generate_week_range(week_start: str) -> List[date]:
-    """Generate 7-day range starting from week_start (Monday)."""
+def generate_week_range(week_start: str, horizon_days: int = 7) -> List[date]:
+    """
+    Generate date range starting from week_start.
+
+    Args:
+        week_start: Start date (Monday) in YYYY-MM-DD format
+        horizon_days: Number of days to generate (default: 7, recommended: 14)
+
+    Returns:
+        List of dates from week_start to week_start + horizon_days - 1
+    """
     start_date = parse_date_string(week_start)
-    return [start_date + timedelta(days=i) for i in range(7)]
+    return [start_date + timedelta(days=i) for i in range(horizon_days)]
 
 
 def is_date_in_lifecycle_window(target_date: date, in_service_date, expected_turn_in_date) -> bool:
@@ -125,26 +134,42 @@ def build_availability_grid(
     vehicles_df: pd.DataFrame,
     activity_df: pd.DataFrame,
     week_start: str,
-    office: str
+    office: str,
+    availability_horizon_days: int = 14,
+    loan_length_days: int = 7
 ) -> pd.DataFrame:
     """
-    Build a 7-day availability grid for vehicles in a specific office.
+    Build an availability grid for vehicles in a specific office.
 
     Args:
         vehicles_df: DataFrame with vehicle information
         activity_df: DataFrame with current vehicle activities
         week_start: Start date of the week in YYYY-MM-DD format (Monday)
         office: Office to filter vehicles by
+        availability_horizon_days: Number of days to generate availability for (default: 14)
+            Must be >= max_start_offset + loan_length_days
+            For Mon-Fri starts with 7-day loans: minimum 11 days, recommended 14
+        loan_length_days: Length of loans in days (default: 7, for future flexibility)
 
     Returns:
-        DataFrame with columns [vin, day, office, available] covering 7 days
+        DataFrame with columns [vin, day, office, available] covering horizon days
         Each row represents one VIN for one day with availability status
     """
+    # Validate horizon is sufficient for Mon-Fri starts with loan_length_days
+    min_horizon = 4 + loan_length_days  # Friday start (offset 4) + loan days
+    if availability_horizon_days < min_horizon:
+        import warnings
+        warnings.warn(
+            f"availability_horizon_days ({availability_horizon_days}) is less than "
+            f"minimum ({min_horizon}) needed for Mon-Fri starts with {loan_length_days}-day loans. "
+            f"Tue-Fri starts may not be feasible."
+        )
+
     # Filter vehicles to the specified office
     office_vehicles = vehicles_df[vehicles_df['office'] == office].copy()
 
-    # Generate 7-day range
-    week_days = generate_week_range(week_start)
+    # Generate extended date range
+    week_days = generate_week_range(week_start, horizon_days=availability_horizon_days)
 
     # Build result rows
     result_rows = []

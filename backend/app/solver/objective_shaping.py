@@ -1,0 +1,252 @@
+"""
+Phase 7.8: Objective Shaping (Weights, not filters)
+
+Make scoring knobs explicit for intuitive control without changing feasibility.
+Only shapes the objective function, keeps all hard constraints as-is.
+"""
+
+import pandas as pd
+import numpy as np
+from typing import Dict, Tuple, Optional, Any
+
+
+# Default weights for objective components
+DEFAULT_W_RANK = 1.0      # Multiplier for rank_weight (already 500-1000)
+DEFAULT_W_GEO = 100       # Bonus for same-office match
+DEFAULT_W_PUB = 150       # Bonus for publication rate (0-1 normalized)
+DEFAULT_W_HIST = 50       # Bonus for prior publication history
+
+
+def apply_objective_shaping(
+    triples_df: pd.DataFrame,
+    w_rank: float = DEFAULT_W_RANK,
+    w_geo: float = DEFAULT_W_GEO,
+    w_pub: float = DEFAULT_W_PUB,
+    w_hist: float = DEFAULT_W_HIST,
+    verbose: bool = False
+) -> pd.DataFrame:
+    """
+    Apply objective shaping to compute shaped scores.
+
+    Args:
+        triples_df: DataFrame with columns:
+            - rank_weight: Base score from rank (e.g., 500-1000)
+            - geo_office_match: 0/1 for same office
+            - pub_rate_24m: Publication rate 0-1 or 0-100
+            - history_published: 0/1 for prior publications
+            - Additional columns preserved
+        w_rank: Weight for rank component
+        w_geo: Weight for geographic match
+        w_pub: Weight for publication rate
+        w_hist: Weight for publication history
+        verbose: Print shaping details
+
+    Returns:
+        DataFrame with 'score_shaped' column added
+    """
+    df = triples_df.copy()
+
+    # Validate required columns
+    required_cols = ['rank_weight']
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(f"Missing required column: {col}")
+
+    # Initialize optional columns if missing
+    if 'geo_office_match' not in df.columns:
+        df['geo_office_match'] = 0
+    if 'pub_rate_24m' not in df.columns:
+        df['pub_rate_24m'] = 0
+    if 'history_published' not in df.columns:
+        df['history_published'] = 0
+
+    # Normalize publication rate if it's in percentage (0-100)
+    pub_rate_normalized = df['pub_rate_24m'].copy()
+    if pub_rate_normalized.max() > 1.0:
+        pub_rate_normalized = pub_rate_normalized / 100.0
+
+    # Add tiny deterministic tie-breaker based on VIN/person hash
+    # This ensures deterministic selection when scores are equal
+    if 'vin' in df.columns and 'person_id' in df.columns:
+        # Create deterministic hash from VIN and person_id
+        df['_tiebreaker'] = df.apply(
+            lambda row: hash(f"{row['vin']}_{row['person_id']}") % 10000 / 1000000.0,
+            axis=1
+        )
+    else:
+        df['_tiebreaker'] = 0
+
+    # Compute shaped score
+    df['score_shaped'] = (
+        w_rank * df['rank_weight'] +
+        w_geo * df['geo_office_match'] +
+        w_pub * pub_rate_normalized +
+        w_hist * df['history_published'] +
+        df['_tiebreaker']  # Tiny deterministic noise
+    )
+
+    # Round to avoid floating point issues
+    df['score_shaped'] = df['score_shaped'].round(6)
+
+    # Store component contributions for reporting
+    df['_score_rank'] = w_rank * df['rank_weight']
+    df['_score_geo'] = w_geo * df['geo_office_match']
+    df['_score_pub'] = w_pub * pub_rate_normalized
+    df['_score_hist'] = w_hist * df['history_published']
+
+    if verbose:
+        print(f"\n=== Objective Shaping Applied ===")
+        print(f"  Weights: rank={w_rank}, geo={w_geo}, pub={w_pub}, hist={w_hist}")
+        print(f"  Triples: {len(df):,}")
+        print(f"  Score range: {df['score_shaped'].min():.1f} - {df['score_shaped'].max():.1f}")
+
+        # Sample statistics
+        geo_matches = df['geo_office_match'].sum()
+        avg_pub_rate = pub_rate_normalized.mean()
+        hist_count = df['history_published'].sum()
+
+        print(f"  Geo matches: {geo_matches:,} ({geo_matches/len(df)*100:.1f}%)")
+        print(f"  Avg pub rate: {avg_pub_rate:.3f}")
+        print(f"  With history: {hist_count:,} ({hist_count/len(df)*100:.1f}%)")
+
+    return df
+
+
+def build_shaping_breakdown(
+    selected_assignments: list,
+    w_rank: float = DEFAULT_W_RANK,
+    w_geo: float = DEFAULT_W_GEO,
+    w_pub: float = DEFAULT_W_PUB,
+    w_hist: float = DEFAULT_W_HIST
+) -> Dict[str, Any]:
+    """
+    Build breakdown of objective components for selected assignments.
+
+    Args:
+        selected_assignments: List of selected assignment dicts
+        w_rank: Weight for rank component
+        w_geo: Weight for geographic match
+        w_pub: Weight for publication rate
+        w_hist: Weight for publication history
+
+    Returns:
+        Dict with component sums and statistics
+    """
+    if not selected_assignments:
+        return {
+            'weights': {
+                'w_rank': w_rank,
+                'w_geo': w_geo,
+                'w_pub': w_pub,
+                'w_hist': w_hist
+            },
+            'components': {
+                'rank_total': 0,
+                'geo_total': 0,
+                'pub_total': 0,
+                'hist_total': 0,
+                'total': 0
+            },
+            'counts': {
+                'geo_matches': 0,
+                'with_history': 0,
+                'avg_pub_rate': 0
+            }
+        }
+
+    # Calculate component sums
+    rank_total = sum(a.get('_score_rank', 0) for a in selected_assignments)
+    geo_total = sum(a.get('_score_geo', 0) for a in selected_assignments)
+    pub_total = sum(a.get('_score_pub', 0) for a in selected_assignments)
+    hist_total = sum(a.get('_score_hist', 0) for a in selected_assignments)
+
+    # Calculate counts
+    geo_matches = sum(1 for a in selected_assignments if a.get('geo_office_match', 0) == 1)
+    with_history = sum(1 for a in selected_assignments if a.get('history_published', 0) == 1)
+
+    # Calculate average publication rate
+    pub_rates = [a.get('pub_rate_24m', 0) for a in selected_assignments]
+    if pub_rates:
+        # Normalize if needed
+        max_rate = max(pub_rates)
+        if max_rate > 1.0:
+            pub_rates = [r / 100.0 for r in pub_rates]
+        avg_pub_rate = sum(pub_rates) / len(pub_rates)
+    else:
+        avg_pub_rate = 0
+
+    return {
+        'weights': {
+            'w_rank': w_rank,
+            'w_geo': w_geo,
+            'w_pub': w_pub,
+            'w_hist': w_hist
+        },
+        'components': {
+            'rank_total': round(rank_total, 2),
+            'geo_total': round(geo_total, 2),
+            'pub_total': round(pub_total, 2),
+            'hist_total': round(hist_total, 2),
+            'total': round(rank_total + geo_total + pub_total + hist_total, 2)
+        },
+        'counts': {
+            'geo_matches': geo_matches,
+            'with_history': with_history,
+            'avg_pub_rate': round(avg_pub_rate, 3)
+        }
+    }
+
+
+def validate_monotonicity(
+    triples_df: pd.DataFrame,
+    weight_name: str,
+    weight_values: list,
+    metric_fn: callable,
+    verbose: bool = False
+) -> Tuple[bool, list]:
+    """
+    Validate that increasing a weight produces monotonic response in metric.
+
+    Args:
+        triples_df: Input triples DataFrame
+        weight_name: Name of weight to vary ('w_geo', 'w_pub', etc)
+        weight_values: List of weight values to test
+        metric_fn: Function that takes shaped_df and returns metric value
+        verbose: Print validation details
+
+    Returns:
+        Tuple of (is_monotonic, metric_values)
+    """
+    metric_values = []
+
+    for w_val in weight_values:
+        # Set weights
+        weights = {
+            'w_rank': DEFAULT_W_RANK,
+            'w_geo': DEFAULT_W_GEO,
+            'w_pub': DEFAULT_W_PUB,
+            'w_hist': DEFAULT_W_HIST
+        }
+        weights[weight_name] = w_val
+
+        # Apply shaping
+        shaped_df = apply_objective_shaping(
+            triples_df,
+            **weights,
+            verbose=False
+        )
+
+        # Calculate metric
+        metric = metric_fn(shaped_df)
+        metric_values.append(metric)
+
+        if verbose:
+            print(f"  {weight_name}={w_val}: metric={metric:.3f}")
+
+    # Check monotonicity
+    is_monotonic = all(
+        metric_values[i] <= metric_values[i+1]
+        for i in range(len(metric_values)-1)
+    )
+
+    return is_monotonic, metric_values

@@ -341,12 +341,15 @@ def build_budget_summary(
             budget_data = budget_info[bucket_key]['budget_data']
         else:
             # Look up from original budgets
-            budget_match = budgets_df[
-                (budgets_df['office'] == office) &
-                (budgets_df['fleet'].str.upper() == fleet) &
-                (budgets_df['year'] == year) &
-                (budgets_df['quarter'] == quarter)
-            ]
+            if not budgets_df.empty:
+                budget_match = budgets_df[
+                    (budgets_df['office'] == office) &
+                    (budgets_df['fleet'].str.upper() == fleet) &
+                    (budgets_df['year'] == year) &
+                    (budgets_df['quarter'] == quarter)
+                ]
+            else:
+                budget_match = pd.DataFrame()
 
             if not budget_match.empty:
                 row = budget_match.iloc[0]

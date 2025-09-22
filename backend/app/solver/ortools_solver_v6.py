@@ -1,13 +1,14 @@
 """
-Phase 7.2 + 7.4s + 7.5 + 7.6: Complete OR-Tools Solver
+Phase 7.2 + 7.4s + 7.5 + 7.6 + 7.7 + 7.8: Complete OR-Tools Solver
 
 Includes all constraints:
 - VIN uniqueness (7.2) - HARD
-- Daily capacity (7.2) - HARD
+- Daily capacity (7.2/7.7) - HARD (with dynamic day-specific slots)
 - Cooldown filtering (7.3) - HARD (pre-filter)
 - Soft tier caps (7.4s) - SOFT
 - Distribution fairness (7.5) - SOFT
 - Quarterly budgets (7.6) - SOFT/HARD
+- Objective shaping (7.8) - Configurable weights
 
 "Price the tradeoff by default; forbid only when policy demands." - Naval
 """
@@ -42,6 +43,22 @@ from app.solver.budget_constraints import (
     DEFAULT_COST_PER_ASSIGNMENT
 )
 
+from app.solver.dynamic_capacity import (
+    load_capacity_calendar,
+    identify_special_days,
+    build_capacity_report,
+    validate_capacity_compliance
+)
+
+from app.solver.objective_shaping import (
+    apply_objective_shaping,
+    build_shaping_breakdown,
+    DEFAULT_W_RANK,
+    DEFAULT_W_GEO,
+    DEFAULT_W_PUB,
+    DEFAULT_W_HIST
+)
+
 from app.solver.ortools_solver_v2 import add_score_to_triples
 
 
@@ -69,6 +86,11 @@ def solve_with_all_constraints(
     points_per_dollar: float = DEFAULT_POINTS_PER_DOLLAR,
     enforce_budget_hard: bool = False,
     enforce_missing_budget: bool = False,
+    # Objective shaping parameters
+    w_rank: float = DEFAULT_W_RANK,
+    w_geo: float = DEFAULT_W_GEO,
+    w_pub: float = DEFAULT_W_PUB,
+    w_hist: float = DEFAULT_W_HIST,
     # General
     seed: int = 42,
     verbose: bool = True
@@ -110,9 +132,21 @@ def solve_with_all_constraints(
     if office_triples.empty:
         return _empty_result(office, week_start, start_time)
 
-    # Ensure we have scores
-    if 'score' not in office_triples.columns:
-        raise ValueError("Triples must have 'score' column. Run add_score_to_triples first.")
+    # Apply objective shaping (Phase 7.8)
+    office_triples = apply_objective_shaping(
+        office_triples,
+        w_rank=w_rank,
+        w_geo=w_geo,
+        w_pub=w_pub,
+        w_hist=w_hist,
+        verbose=verbose
+    )
+
+    # Use shaped score instead of original score
+    if 'score_shaped' in office_triples.columns:
+        office_triples['score'] = office_triples['score_shaped']
+    elif 'score' not in office_triples.columns:
+        raise ValueError("Triples must have 'score' or 'score_shaped' column.")
 
     # Create the CP-SAT model
     model = cp_model.CpModel()
@@ -146,26 +180,36 @@ def solve_with_all_constraints(
     if verbose:
         print(f"  Added VIN uniqueness constraints for {len(vin_groups)} vehicles")
 
-    # === HARD CONSTRAINT 2: Daily Capacity ===
+    # === HARD CONSTRAINT 2: Daily Capacity (7.7 Dynamic) ===
     week_start_date = pd.to_datetime(week_start)
-    capacity_map = {}
 
-    if not ops_capacity_df.empty:
-        office_capacity = ops_capacity_df[ops_capacity_df['office'] == office]
-        for _, row in office_capacity.iterrows():
-            date = pd.to_datetime(row['date']).date()
-            capacity_map[date] = int(row['slots'])
+    # Load dynamic capacity calendar with day-specific slots
+    capacity_map, notes_map = load_capacity_calendar(
+        ops_capacity_df=ops_capacity_df,
+        office=office,
+        week_start=week_start
+    )
 
+    # Apply capacity constraints
     start_day_groups = office_triples.groupby('start_day').groups
     for start_day_str, indices in start_day_groups.items():
         start_day = pd.to_datetime(start_day_str).date()
         if start_day in capacity_map:
             capacity = capacity_map[start_day]
-            if capacity > 0:
+            # Capacity 0 = blackout day, no assignments allowed
+            if capacity >= 0:
                 model.Add(sum(y[i] for i in indices) <= capacity)
 
     if verbose:
+        # Identify special days
+        special_days = identify_special_days(capacity_map, notes_map)
         print(f"  Added capacity constraints for {len(start_day_groups)} start days")
+        if special_days['blackouts']:
+            print(f"  - {len(special_days['blackouts'])} blackout days")
+        if special_days['travel_days']:
+            print(f"  - {len(special_days['travel_days'])} travel days")
+        if special_days['reduced_capacity']:
+            print(f"  - {len(special_days['reduced_capacity'])} reduced capacity days")
 
     # === SOFT CONSTRAINT 1: Tier Caps (7.4s) ===
     cap_penalty_terms, cap_info = add_soft_tier_cap_penalties(
@@ -299,8 +343,14 @@ def solve_with_all_constraints(
 
     fairness_metrics = get_fairness_metrics(fairness_summary)
 
-    # Daily usage
-    daily_usage = _calculate_daily_usage(selected_assignments, week_start_date, capacity_map)
+    # Daily usage with dynamic capacity report
+    capacity_report = build_capacity_report(
+        selected_assignments=selected_assignments,
+        capacity_map=capacity_map,
+        notes_map=notes_map,
+        week_start=week_start
+    )
+    daily_usage = capacity_report['daily_usage']
 
     # Objective breakdown
     objective_breakdown = {
@@ -311,6 +361,15 @@ def solve_with_all_constraints(
         'total_penalties': total_penalties,
         'net_score': net_objective
     }
+
+    # Shaping breakdown (Phase 7.8)
+    shaping_breakdown = build_shaping_breakdown(
+        selected_assignments,
+        w_rank=w_rank,
+        w_geo=w_geo,
+        w_pub=w_pub,
+        w_hist=w_hist
+    )
 
     if verbose:
         print(f"\n=== Solution Summary ===")
@@ -339,8 +398,11 @@ def solve_with_all_constraints(
         },
         'selected_assignments': selected_assignments,
         'daily_usage': daily_usage,
+        'capacity_notes': capacity_report.get('capacity_notes', []),
+        'special_days': capacity_report.get('special_days', {}),
         'objective_value': int(solver.ObjectiveValue()) if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else 0,
         'objective_breakdown': objective_breakdown,
+        'shaping_breakdown': shaping_breakdown,
         'cap_summary': cap_summary,
         'fairness_summary': fairness_summary,
         'fairness_metrics': fairness_metrics,
@@ -378,29 +440,4 @@ def _empty_result(office: str, week_start: str, start_time: float) -> Dict[str, 
     }
 
 
-def _calculate_daily_usage(
-    selected_assignments: List[Dict],
-    week_start_date: datetime,
-    capacity_map: Dict
-) -> List[Dict]:
-    """Calculate daily capacity usage."""
-    starts_per_day = {}
-    for assignment in selected_assignments:
-        start_day = assignment['start_day']
-        starts_per_day[start_day] = starts_per_day.get(start_day, 0) + 1
-
-    daily_usage = []
-    for offset in range(7):
-        check_date = week_start_date + timedelta(days=offset)
-        date_str = check_date.strftime('%Y-%m-%d')
-        capacity = capacity_map.get(check_date.date(), 0)
-        used = starts_per_day.get(date_str, 0)
-
-        daily_usage.append({
-            'date': date_str,
-            'used': used,
-            'capacity': capacity,
-            'remaining': capacity - used
-        })
-
-    return daily_usage
+# Note: _calculate_daily_usage removed - replaced by dynamic_capacity.build_capacity_report

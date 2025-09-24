@@ -3,6 +3,7 @@ import driveShopLogo from './assets/DriveShop_WebLogo.png'
 import Availability from './pages/Availability.jsx'
 import PublicationRates from './pages/PublicationRates.jsx'
 import ScheduleGeneration from './pages/ScheduleGeneration.jsx'
+import Optimizer from './pages/Optimizer.jsx'
 import './App.css'
 
 function App() {
@@ -215,10 +216,10 @@ function App() {
   ]
   
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="w-full min-h-screen bg-gray-50">
       {/* Header with DriveShop logo */}
       <header className="bg-black h-16 md:h-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between" style={{ maxWidth: '1280px' }}>
+        <div className="w-full px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between">
           <div className="flex items-center space-x-4">
               <img
                 src={driveShopLogo}
@@ -292,12 +293,22 @@ function App() {
               >
                 Schedule Generation
               </button>
+              <button
+                onClick={() => setActiveTab('optimizer')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'optimizer'
+                    ? 'bg-white text-black'
+                    : 'bg-gray-600 text-white hover:bg-gray-500'
+                }`}
+              >
+                Optimizer
+              </button>
           </nav>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8" style={{ maxWidth: '1280px' }}>
+      <main className="w-full py-8 px-4 sm:px-6 lg:px-8">
         <div className="min-h-[800px]">
         
         {/* Dashboard Tab */}
@@ -672,6 +683,11 @@ function App() {
         {/* Schedule Generation Tab */}
         {activeTab === 'scheduler' && (
           <ScheduleGeneration />
+        )}
+
+        {/* Optimizer Tab */}
+        {activeTab === 'optimizer' && (
+          <Optimizer />
         )}
         </div>
       </main>

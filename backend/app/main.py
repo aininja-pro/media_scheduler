@@ -40,6 +40,10 @@ app.include_router(etl.router, prefix="/api")
 from .routers import solver
 app.include_router(solver.router, prefix="/api")
 
+# Import and include UI Phase 7 router
+from .routers import ui_phase7
+app.include_router(ui_phase7.router, prefix="/api")
+
 @app.get("/")
 def read_root():
     """Root endpoint"""

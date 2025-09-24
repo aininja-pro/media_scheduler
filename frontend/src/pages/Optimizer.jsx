@@ -10,6 +10,7 @@ function Optimizer() {
   // State for metrics
   const [metrics, setMetrics] = useState(null);
   const [error, setError] = useState('');
+  const [runResult, setRunResult] = useState(null);
 
   // Policy state (sliders)
   const [rankWeight, setRankWeight] = useState(1.0);
@@ -100,6 +101,37 @@ function Optimizer() {
     return `$${(used/1000).toFixed(0)}k / $${(budget/1000).toFixed(0)}k (${pct}% used)`;
   };
 
+  const runOptimizer = async () => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      // Use generate_schedule endpoint with minimal params
+      const params = new URLSearchParams({
+        office: selectedOffice,
+        week_start: weekStart,
+        min_available_days: minDays
+      });
+
+      const response = await fetch(`http://localhost:8081/api/solver/generate_schedule?${params}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to run optimizer');
+      }
+
+      // Store the full response
+      setRunResult(data);
+      console.log('Run result:', data);
+
+    } catch (err) {
+      setError(err.message);
+      setRunResult(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="w-full min-h-screen bg-gray-50">
       {/* Compact Header */}
@@ -131,13 +163,49 @@ function Optimizer() {
               />
             </div>
 
-            <button
-              onClick={() => window.location.reload()}
-              disabled={isLoading}
-              className="px-6 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50 text-sm font-medium"
-            >
-              {isLoading ? 'Loading...' : 'Run Optimizer'}
-            </button>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-600">Min Available Days</label>
+              <input
+                type="number"
+                min="1"
+                max="14"
+                value={minDays}
+                onChange={(e) => setMinDays(parseInt(e.target.value) || 7)}
+                className="w-16 border border-gray-300 rounded px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                Seed: 42
+              </span>
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                Data: live
+              </span>
+              <button
+                onClick={runOptimizer}
+                disabled={isLoading}
+                className={`px-6 py-1.5 rounded text-sm font-medium ${
+                  isLoading
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                {isLoading ? 'Running...' : 'Run Optimizer'}
+              </button>
+
+              {/* Optional status chips */}
+              {runResult?.status && (
+                <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                  {runResult.status}
+                </span>
+              )}
+              {runResult?.assignments && (
+                <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                  Assignments: {runResult.assignments.length}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

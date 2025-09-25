@@ -235,13 +235,77 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
                 'score': int(assignment.get('score', 0))
             })
 
+        # Convert DataFrames to serializable dicts
+        # For now, just pass the fairness_metrics which is already a dict
+        fairness_metrics = solver_result.get('fairness_metrics', {})
+
+        # Build simple fairness summary from metrics
+        fairness_summary = {
+            'partners_assigned': fairness_metrics.get('num_partners', 0),
+            'max_per_partner': fairness_metrics.get('max_count', 0),
+            'gini': fairness_metrics.get('gini', 0)
+        }
+
+        # Cap summary - extract violations if any
+        cap_summary_df = solver_result.get('cap_summary', pd.DataFrame())
+        cap_violations = []
+        if not cap_summary_df.empty and hasattr(cap_summary_df, 'to_dict'):
+            # Find violations (where assigned > cap)
+            for _, row in cap_summary_df.iterrows():
+                try:
+                    assigned = int(row.get('assigned', 0))
+                    cap_val = row.get('cap', 0)
+                    # Handle 'unlimited' or other string values
+                    if isinstance(cap_val, str):
+                        continue  # Skip unlimited caps
+                    cap_val = int(cap_val)
+
+                    if assigned > cap_val:
+                        cap_violations.append({
+                            'tier': f"{row.get('fleet', '')} {row.get('tier', '')}",
+                            'count': assigned,
+                            'cap': cap_val
+                        })
+                except (ValueError, TypeError):
+                    continue  # Skip rows with invalid data
+
+        cap_summary = {
+            'violations': cap_violations,
+            'total_penalty': int(cap_summary_df.attrs.get('total_penalty', 0)) if hasattr(cap_summary_df, 'attrs') else 0
+        }
+
+        # Budget summary - extract fleet usage
+        budget_summary_df = solver_result.get('budget_summary', pd.DataFrame())
+        budget_fleets = {}
+        budget_total = {'used': 0, 'budget': 0}
+
+        if not budget_summary_df.empty and hasattr(budget_summary_df, 'to_dict'):
+            for _, row in budget_summary_df.iterrows():
+                fleet = row.get('fleet', 'Unknown')
+                budget_fleets[fleet] = {
+                    'used': int(row.get('cost_used', 0)),
+                    'budget': int(row.get('budget', 0))
+                }
+                budget_total['used'] += int(row.get('cost_used', 0))
+                budget_total['budget'] += int(row.get('budget', 0))
+
+        budget_summary = {
+            'fleets': budget_fleets,
+            'total': budget_total if budget_fleets else None
+        }
+
         return {
             'status': solver_result.get('meta', {}).get('solver_status', 'UNKNOWN'),
             'solve_time_ms': solver_result.get('timing', {}).get('wall_ms', 0),
             'assignments_count': len(assignments),
             'partners_used': len(set(a['person_id'] for a in assignments)) if assignments else 0,
             'assignments': assignments,
-            'starts_by_day': starts_by_day
+            'starts_by_day': starts_by_day,
+            # Pass through converted summaries
+            'cap_summary': cap_summary,
+            'fairness_summary': fairness_summary,
+            'budget_summary': budget_summary,
+            'objective_breakdown': solver_result.get('objective_breakdown', {})
         }
 
     except Exception as e:

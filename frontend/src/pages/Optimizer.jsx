@@ -128,6 +128,7 @@ function Optimizer() {
 
       // Store the full response
       setRunResult(data);
+      console.log('Full runResult:', data);
       console.log('Run result:', data);
 
     } catch (err) {
@@ -244,7 +245,7 @@ function Optimizer() {
             </div>
 
             <div className="flex flex-col">
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Makes in Scope</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Available Brands</div>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-semibold text-gray-900">{metrics.makes_in_scope}</span>
                 <span className="text-sm text-gray-500">unique makes</span>
@@ -260,10 +261,10 @@ function Optimizer() {
             </div>
 
             <div className="flex flex-col">
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Feasible Triples</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Possible Schedules</div>
               <div className="flex items-baseline gap-1">
                 <span className="text-sm text-gray-500">{metrics.feasible_triples_pre_cooldown.toLocaleString()}</span>
-                <span className="text-sm text-gray-500">→</span>
+                <span className="text-sm text-gray-500">→ Ready:</span>
                 <span className="text-2xl font-semibold text-gray-900">{metrics.feasible_triples_post_cooldown.toLocaleString()}</span>
                 <span className="text-sm text-red-600">(-{metrics.cooldown_removed_triples.toLocaleString()})</span>
               </div>
@@ -664,22 +665,80 @@ function Optimizer() {
           <div className="space-y-6">
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-3">Fairness Metrics</h3>
-              <div className="bg-gray-50 rounded p-3 text-sm text-gray-600">
-                Will display Gini coefficient, HHI, and distribution stats
+              <div className="bg-gray-50 rounded p-3">
+                {runResult?.fairness_summary ? (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>Partners Assigned:</span>
+                      <span className="font-medium">{runResult.fairness_summary.partners_assigned}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Max per Partner:</span>
+                      <span className="font-medium">{runResult.fairness_summary.max_per_partner}</span>
+                    </div>
+                    {runResult.fairness_summary.gini && (
+                      <div className="text-xs text-gray-500">
+                        Distribution Score: {runResult.fairness_summary.gini < 0.2 ? '✓ Balanced' : '⚠ Concentrated'}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-400">Run optimizer to see metrics</div>
+                )}
               </div>
             </div>
 
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-3">Cap Violations</h3>
-              <div className="bg-gray-50 rounded p-3 text-sm text-gray-600">
-                Will show tier cap overages and penalties
+              <div className="bg-gray-50 rounded p-3">
+                {runResult?.cap_summary ? (
+                  <div className="space-y-2 text-sm">
+                    {runResult.cap_summary.violations && runResult.cap_summary.violations.length > 0 ? (
+                      <>
+                        {runResult.cap_summary.violations.map((violation, idx) => (
+                          <div key={idx} className="text-red-600">
+                            {violation.tier}: {violation.count} (cap: {violation.cap})
+                          </div>
+                        ))}
+                        <div className="text-xs text-gray-500">
+                          Penalty: {runResult.cap_summary.total_penalty || 0}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-green-600">✓ No cap violations</div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-400">Run optimizer to see metrics</div>
+                )}
               </div>
             </div>
 
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-3">Budget Status</h3>
-              <div className="bg-gray-50 rounded p-3 text-sm text-gray-600">
-                Will track budget usage by fleet
+              <div className="bg-gray-50 rounded p-3">
+                {runResult?.budget_summary ? (
+                  <div className="space-y-2 text-sm">
+                    {runResult.budget_summary.fleets && Object.entries(runResult.budget_summary.fleets).map(([fleet, data]) => (
+                      <div key={fleet} className="flex justify-between">
+                        <span>{fleet}:</span>
+                        <span className={data.used > data.budget ? 'text-red-600 font-medium' : 'text-green-600'}>
+                          ${data.used?.toLocaleString()} / ${data.budget?.toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                    {runResult.budget_summary.total && (
+                      <div className="border-t pt-1 flex justify-between font-medium">
+                        <span>Total:</span>
+                        <span>
+                          ${runResult.budget_summary.total.used?.toLocaleString()} / ${runResult.budget_summary.total.budget?.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-400">Run optimizer to see metrics</div>
+                )}
               </div>
             </div>
 

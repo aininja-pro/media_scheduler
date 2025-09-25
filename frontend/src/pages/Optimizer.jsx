@@ -11,6 +11,7 @@ function Optimizer() {
   const [metrics, setMetrics] = useState(null);
   const [error, setError] = useState('');
   const [runResult, setRunResult] = useState(null);
+  const [assignmentFilter, setAssignmentFilter] = useState('');
 
   // Policy state (sliders)
   const [rankWeight, setRankWeight] = useState(1.0);
@@ -106,14 +107,18 @@ function Optimizer() {
     setError('');
 
     try {
-      // Use generate_schedule endpoint with minimal params
-      const params = new URLSearchParams({
-        office: selectedOffice,
-        week_start: weekStart,
-        min_available_days: minDays
+      // Use Phase 7 run endpoint
+      const response = await fetch('http://localhost:8081/api/ui/phase7/run', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          office: selectedOffice,
+          week_start: weekStart,
+          seed: 42
+        })
       });
-
-      const response = await fetch(`http://localhost:8081/api/solver/generate_schedule?${params}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -512,16 +517,102 @@ function Optimizer() {
                 })}
               </div>
 
-              {/* Schedule Placeholder */}
-              <div className="bg-white rounded-lg shadow-sm border p-12">
-                <div className="text-center">
-                  <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <p className="mt-2 text-sm text-gray-500">Schedule View Coming Soon</p>
-                  <p className="text-xs text-gray-400 mt-1">This area will display the optimized schedule with vehicle-partner assignments</p>
+              {/* Assignments Table or Placeholder */}
+              {runResult?.assignments && runResult.assignments.length > 0 ? (
+                <div className="bg-white rounded-lg shadow-sm border">
+                  <div className="p-4 border-b">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-gray-900">Assignments</h3>
+                      <div className="flex items-center gap-4">
+                        {runResult?.starts_by_day && (
+                          <span className="text-sm text-gray-600">
+                            Mon {runResult.starts_by_day.mon} •
+                            Tue {runResult.starts_by_day.tue} •
+                            Wed {runResult.starts_by_day.wed} •
+                            Thu {runResult.starts_by_day.thu} •
+                            Fri {runResult.starts_by_day.fri}
+                            {(runResult.starts_by_day.sat > 0 || runResult.starts_by_day.sun > 0) &&
+                              ` • Sat ${runResult.starts_by_day.sat} • Sun ${runResult.starts_by_day.sun}`}
+                          </span>
+                        )}
+                        <input
+                          type="text"
+                          placeholder="Filter VIN or partner..."
+                          value={assignmentFilter}
+                          onChange={(e) => setAssignmentFilter(e.target.value)}
+                          className="px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VIN</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Partner</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Make</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {runResult.assignments
+                          .filter(a => {
+                            if (!assignmentFilter) return true;
+                            const filter = assignmentFilter.toLowerCase();
+                            return a.vin?.toLowerCase().includes(filter) ||
+                                   a.partner_name?.toLowerCase().includes(filter) ||
+                                   a.person_id?.toString().includes(filter);
+                          })
+                          .sort((a, b) => {
+                            // Sort by start_day asc, then score desc
+                            if (a.start_day !== b.start_day) {
+                              return a.start_day < b.start_day ? -1 : 1;
+                            }
+                            return b.score - a.score;
+                          })
+                          .map((assignment, idx) => (
+                            <tr key={`${assignment.vin}-${assignment.person_id}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {new Date(assignment.start_day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{assignment.vin}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {assignment.partner_name || `Partner ${assignment.person_id}`}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{assignment.make}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{assignment.model}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{assignment.score}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              ) : runResult ? (
+                <div className="bg-white rounded-lg shadow-sm border p-12">
+                  <div className="text-center">
+                    <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="mt-2 text-sm text-gray-500">No assignments returned</p>
+                    <p className="text-xs text-gray-400 mt-1">The optimizer did not produce any assignments for this configuration</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white rounded-lg shadow-sm border p-12">
+                  <div className="text-center">
+                    <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p className="mt-2 text-sm text-gray-500">Schedule View</p>
+                    <p className="text-xs text-gray-400 mt-1">Run the optimizer to see assignments</p>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="bg-white rounded-lg shadow-sm border p-12">

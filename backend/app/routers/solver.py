@@ -757,8 +757,14 @@ async def generate_schedule(
 
         # Format results for UI
         assignments = []
+        starts_by_day = {'mon': 0, 'tue': 0, 'wed': 0, 'thu': 0, 'fri': 0, 'sat': 0, 'sun': 0}
+
         if not schedule_df.empty:
             weekly_assignments = schedule_df.drop_duplicates(['vin', 'person_id'])
+
+            # Map to get the actual start day for each assignment
+            # In the greedy solver, all assignments start on the week_start (Monday)
+            week_start_date = pd.to_datetime(week_start)
 
             for _, assignment in weekly_assignments.iterrows():
                 partner_info = partners_df[partners_df['person_id'] == assignment['person_id']]
@@ -771,18 +777,28 @@ async def generate_schedule(
 
                 if not scoring_info.empty:
                     score_row = scoring_info.iloc[0]
+
+                    # The greedy solver assigns everything on Monday
+                    # TODO: When Phase 7 solver is used, get actual start_day from solver
+                    start_day = week_start
+
+                    # Count by day of week (0=Monday, 6=Sunday)
+                    day_of_week = pd.to_datetime(start_day).dayofweek
+                    day_names = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+                    starts_by_day[day_names[day_of_week]] += 1
+
+                    # Convert flags string to list of rationales
+                    rationales = assignment.get('flags', 'tier_ok|capacity_ok|cooldown_ok|availability_ok').split('|')
+
                     assignments.append({
+                        'start_day': start_day,
                         'vin': assignment['vin'],
-                        'person_id': assignment['person_id'],
+                        'person_id': int(assignment['person_id']),
                         'partner_name': partner_name,
                         'make': assignment['make'],
                         'model': assignment.get('model', ''),
                         'score': int(assignment['score']),
-                        'rank': score_row.get('rank', 'C'),
-                        'rank_weight': int(score_row.get('rank_weight', 0)),
-                        'geo_bonus': int(score_row.get('geo_bonus', 0)),
-                        'history_bonus': int(score_row.get('history_bonus', 0)),
-                        'flags': assignment.get('flags', 'tier_ok|capacity_ok|cooldown_ok|availability_ok')
+                        'rationales': rationales
                     })
 
         # Calculate pipeline stats
@@ -801,6 +817,11 @@ async def generate_schedule(
         }
 
         return {
+            'status': 'OPTIMAL',  # The greedy solver always finds a solution
+            'solve_time_ms': int(total_time * 1000),
+            'assignments_count': len(assignments),
+            'assignments': assignments,
+            'starts_by_day': starts_by_day,
             'office': office,
             'week_start': week_start,
             'pipeline': {

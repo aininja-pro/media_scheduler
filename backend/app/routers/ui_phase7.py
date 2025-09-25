@@ -3,17 +3,251 @@ UI endpoints for Phase 7 - read-only metrics using existing Phase 7 functions.
 """
 
 from fastapi import APIRouter, Query, HTTPException
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from pydantic import BaseModel
 import pandas as pd
 from datetime import datetime, timedelta
+import time
 
 from ..services.database import DatabaseService
 from ..solver.ortools_feasible_v2 import build_feasible_start_day_triples
 from ..solver.cooldown_filter import apply_cooldown_filter
 from ..etl.availability import build_availability_grid
 from ..solver.dynamic_capacity import load_capacity_calendar
+from ..solver.ortools_solver_v6 import solve_with_all_constraints
+from ..solver.ortools_solver_v2 import add_score_to_triples
 
 router = APIRouter(prefix="/ui/phase7", tags=["UI Phase 7"])
+
+
+class RunRequest(BaseModel):
+    office: str
+    week_start: str
+    seed: int = 42
+
+
+@router.post("/run")
+async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
+    """
+    Run Phase 7 optimizer using all implemented constraints.
+    Returns assignments with actual start days distributed across the week.
+    """
+
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        start_time = time.time()
+
+        # 1. Load all necessary data
+        vehicles_response = db.client.table('vehicles').select('*').eq('office', request.office).execute()
+        vehicles_df = pd.DataFrame(vehicles_response.data) if vehicles_response.data else pd.DataFrame()
+
+        partners_response = db.client.table('media_partners').select('*').eq('office', request.office).execute()
+        partners_df = pd.DataFrame(partners_response.data) if partners_response.data else pd.DataFrame()
+
+        # Load current activity with pagination
+        all_activity = []
+        offset = 0
+        limit = 1000
+        while True:
+            activity_response = db.client.table('current_activity').select('*').range(offset, offset + limit - 1).execute()
+            if not activity_response.data:
+                break
+            all_activity.extend(activity_response.data)
+            if len(activity_response.data) < limit:
+                break
+            offset += limit
+
+        current_activity_df = pd.DataFrame(all_activity) if all_activity else pd.DataFrame()
+        if 'vehicle_vin' in current_activity_df.columns:
+            current_activity_df = current_activity_df.rename(columns={'vehicle_vin': 'vin'})
+
+        # Load approved makes with pagination
+        all_approved = []
+        offset = 0
+        limit = 1000
+        while True:
+            approved_response = db.client.table('approved_makes').select('*').range(offset, offset + limit - 1).execute()
+            if not approved_response.data:
+                break
+            all_approved.extend(approved_response.data)
+            if len(approved_response.data) < limit:
+                break
+            offset += limit
+
+        approved_makes_df = pd.DataFrame(all_approved) if all_approved else pd.DataFrame()
+        office_partner_ids = set(partners_df['person_id'].tolist()) if not partners_df.empty else set()
+        office_approved = approved_makes_df[approved_makes_df['person_id'].isin(office_partner_ids)]
+
+        # Build availability grid
+        availability_df = build_availability_grid(
+            vehicles_df=vehicles_df,
+            activity_df=current_activity_df,
+            week_start=request.week_start,
+            office=request.office,
+            availability_horizon_days=14,
+            loan_length_days=7
+        )
+
+        if 'day' in availability_df.columns:
+            availability_df = availability_df.rename(columns={'day': 'date'})
+
+        # 2. Load capacity for the week using Phase 7.7
+        ops_capacity_response = db.client.table('ops_capacity_calendar').select('*').execute()
+        ops_capacity_df = pd.DataFrame(ops_capacity_response.data) if ops_capacity_response.data else pd.DataFrame()
+
+        capacity_map, notes_map = load_capacity_calendar(
+            ops_capacity_df=ops_capacity_df,
+            office=request.office,
+            week_start=request.week_start
+        )
+
+        # 3. Build feasible triples using Phase 7.1
+        triples_pre = build_feasible_start_day_triples(
+            vehicles_df=vehicles_df,
+            partners_df=partners_df,
+            availability_df=availability_df,
+            approved_makes_df=office_approved,
+            week_start=request.week_start,
+            office=request.office
+        )
+
+        # 4. Apply cooldown filter using Phase 7.3
+        all_loan_history = []
+        offset = 0
+        limit = 1000
+        while True:
+            loan_response = db.client.table('loan_history').select('*').range(offset, offset + limit - 1).execute()
+            if not loan_response.data:
+                break
+            all_loan_history.extend(loan_response.data)
+            if len(loan_response.data) < limit:
+                break
+            offset += limit
+
+        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
+
+        rules_response = db.client.table('rules').select('*').execute()
+        rules_df = pd.DataFrame(rules_response.data) if rules_response.data else pd.DataFrame()
+
+        triples_post = apply_cooldown_filter(
+            feasible_triples_df=triples_pre,
+            loan_history_df=loan_history_df,
+            rules_df=rules_df,
+            default_cooldown_days=30
+        )
+
+        # 4b. Add scoring columns using the Phase 7 scoring function
+        # Add scores to triples (this adds rank_weight and other columns needed by solver)
+        # Note: publications table doesn't exist, passing None for publication_df
+        triples_post = add_score_to_triples(
+            triples_df=triples_post,
+            partners_df=partners_df,
+            publication_df=None  # No publications table in database
+        )
+
+        print(f"\n=== PRE-SOLVER DEBUG ===")
+        print(f"Triples to solver: {len(triples_post)} rows")
+        print(f"Columns in triples: {list(triples_post.columns)}")
+        print(f"Sample triple: {triples_post.iloc[0].to_dict() if not triples_post.empty else 'EMPTY'}")
+
+        # 5. Load budgets
+        budgets_response = db.client.table('budgets').select('*').execute()
+        budgets_df = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+
+        # 6. Run Phase 7 solver with all constraints
+        solver_result = solve_with_all_constraints(
+            triples_df=triples_post,
+            ops_capacity_df=ops_capacity_df,
+            approved_makes_df=office_approved,
+            loan_history_df=loan_history_df,
+            rules_df=rules_df,
+            budgets_df=budgets_df,
+            week_start=request.week_start,
+            office=request.office,
+
+            # Use default policy parameters for now
+            lambda_cap=800,
+            lambda_fair=200,
+            fair_step_up=400,
+            fair_target=1,
+            points_per_dollar=3,
+            enforce_budget_hard=False,
+
+            w_rank=1.0,
+            w_geo=100,
+            w_pub=150,
+            w_hist=50,
+
+            solver_time_limit_s=30,  # Increased from 10s for 58k triples
+            seed=request.seed,
+            verbose=True  # Enable to see what's happening
+        )
+
+        # 7. Format response
+        print(f"\n=== SOLVER RESULT DEBUG ===")
+        print(f"Solver status: {solver_result.get('meta', {}).get('solver_status', 'UNKNOWN')}")
+        print(f"Assignments count: {len(solver_result.get('selected_assignments', []))}")
+        print(f"Objective value: {solver_result.get('objective_value', 0)}")
+
+        # The solver returns a dict with 'selected_assignments' list
+        selected_assignments = solver_result.get('selected_assignments', [])
+
+        # Get partner names for enrichment (convert person_id to int for proper lookup)
+        partner_names = {}
+        if not partners_df.empty:
+            for _, partner in partners_df.iterrows():
+                pid = partner['person_id']
+                # Handle numpy types
+                if hasattr(pid, 'item'):
+                    pid = pid.item()
+                else:
+                    pid = int(pid)
+                partner_names[pid] = partner['name']
+
+        # Format assignments and count by day
+        assignments = []
+        starts_by_day = {'mon': 0, 'tue': 0, 'wed': 0, 'thu': 0, 'fri': 0, 'sat': 0, 'sun': 0}
+
+        for assignment in selected_assignments:
+            # Count by day of week
+            start_day = assignment.get('start_day', request.week_start)
+            day_of_week = pd.to_datetime(start_day).dayofweek
+            day_names = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+            starts_by_day[day_names[day_of_week]] += 1
+
+            # Format for frontend (convert numpy types to Python native)
+            person_id = assignment['person_id']
+            # Convert numpy.int64 to Python int
+            if hasattr(person_id, 'item'):
+                person_id = person_id.item()
+            else:
+                person_id = int(person_id)
+
+            assignments.append({
+                'start_day': start_day,
+                'vin': str(assignment['vin']),
+                'person_id': person_id,
+                'partner_name': partner_names.get(person_id, f"Partner {person_id}"),
+                'make': str(assignment['make']),
+                'model': str(assignment.get('model', '')),
+                'score': int(assignment.get('score', 0))
+            })
+
+        return {
+            'status': solver_result.get('meta', {}).get('solver_status', 'UNKNOWN'),
+            'solve_time_ms': solver_result.get('timing', {}).get('wall_ms', 0),
+            'assignments_count': len(assignments),
+            'partners_used': len(set(a['person_id'] for a in assignments)) if assignments else 0,
+            'assignments': assignments,
+            'starts_by_day': starts_by_day
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
 
 
 @router.get("/overview")

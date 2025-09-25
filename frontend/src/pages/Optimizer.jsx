@@ -505,16 +505,31 @@ function Optimizer() {
               {/* Day Tiles Grid */}
               <div className="grid grid-cols-7 gap-3 mb-8">
                 {[
-                  { key: 'mon', label: 'Mon' },
-                  { key: 'tue', label: 'Tue' },
-                  { key: 'wed', label: 'Wed' },
-                  { key: 'thu', label: 'Thu' },
-                  { key: 'fri', label: 'Fri' },
-                  { key: 'sat', label: 'Sat' },
-                  { key: 'sun', label: 'Sun' }
+                  { key: 'mon', label: 'Mon', dayOffset: 0 },
+                  { key: 'tue', label: 'Tue', dayOffset: 1 },
+                  { key: 'wed', label: 'Wed', dayOffset: 2 },
+                  { key: 'thu', label: 'Thu', dayOffset: 3 },
+                  { key: 'fri', label: 'Fri', dayOffset: 4 },
+                  { key: 'sat', label: 'Sat', dayOffset: 5 },
+                  { key: 'sun', label: 'Sun', dayOffset: 6 }
                 ].map((day) => {
                   const capacity = metrics.capacity[day.key];
                   const enabled = (capacity?.slots ?? 0) > 0;
+
+                  // Calculate actual date
+                  const weekStartDate = new Date(weekStart + 'T00:00:00');
+                  const dayDate = new Date(weekStartDate);
+                  dayDate.setDate(weekStartDate.getDate() + day.dayOffset);
+                  const dayNumber = dayDate.getDate();
+
+                  // Calculate usage if assignments exist
+                  let usedSlots = 0;
+                  if (runResult?.starts_by_day) {
+                    usedSlots = runResult.starts_by_day[day.key] || 0;
+                  }
+                  const totalSlots = capacity?.slots ?? 0;
+                  const isFull = usedSlots >= totalSlots && totalSlots > 0;
+                  const isNearCapacity = usedSlots > totalSlots * 0.8 && !isFull && totalSlots > 0;
 
                   const isSelected = selectedDay === day.key;
 
@@ -522,33 +537,56 @@ function Optimizer() {
                     <div
                       key={day.key}
                       onClick={() => {
-                        // Toggle selection: click same day to unselect, or select new day
-                        setSelectedDay(isSelected ? null : day.key);
+                        if (enabled) {
+                          setSelectedDay(isSelected ? null : day.key);
+                        }
                       }}
                       className={[
-                        "rounded-lg border p-3 text-center transition-all hover:shadow-md",
-                        enabled ? "cursor-pointer" : "cursor-not-allowed",
+                        "rounded-lg border p-3 text-center transition-all relative",
+                        enabled ? "cursor-pointer hover:shadow-md" : "cursor-not-allowed",
                         isSelected
-                          ? "ring-2 ring-blue-500 border-blue-400 bg-blue-50"
-                          : enabled
-                            ? "border-emerald-200 bg-emerald-50 hover:border-emerald-300"
-                            : "border-rose-200 bg-rose-50 hover:border-rose-300"
+                          ? "ring-2 ring-blue-500 border-blue-500 bg-blue-50 shadow-lg"
+                          : isFull
+                            ? "border-green-400 bg-green-100"
+                            : isNearCapacity
+                              ? "border-yellow-400 bg-yellow-50 hover:border-yellow-500"
+                              : enabled
+                                ? "border-emerald-200 bg-emerald-50 hover:border-emerald-300"
+                                : "border-rose-200 bg-rose-50"
                       ].join(" ")}
-                      title={capacity?.notes || ""}
+                      title={enabled ? "Click to filter assignments" : "No capacity available"}
                     >
-                      <div className="text-sm text-slate-500 font-medium">{day.label}</div>
+                      {isSelected && (
+                        <div className="absolute -left-2 top-1/2 -translate-y-1/2 text-blue-500 font-bold">
+                          ▸
+                        </div>
+                      )}
+                      <div className="text-sm text-slate-600 font-medium">
+                        {day.label} {dayNumber}
+                      </div>
                       <div className={[
                         "text-2xl font-semibold leading-tight mt-1",
+                        isFull ? "text-green-700" :
+                        isNearCapacity ? "text-yellow-700" :
                         enabled ? "text-emerald-700" : "text-rose-700"
                       ].join(" ")}>
-                        {capacity?.slots ?? 0}
+                        {runResult ? (
+                          enabled ? (
+                            <span>{usedSlots}/{totalSlots}</span>
+                          ) : (
+                            <span className="line-through">{totalSlots}</span>
+                          )
+                        ) : (
+                          enabled ? totalSlots : <span className="line-through">{totalSlots}</span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-500 mt-1">
-                        {capacity?.notes ? (
+                        {isFull ? 'Full' :
+                         capacity?.notes ? (
                           capacity.notes === 'blackout' ? 'Blackout' :
                           capacity.notes.includes('Default') ? 'Default' :
                           capacity.notes
-                        ) : 'Available'}
+                        ) : runResult && enabled ? `${Math.round((usedSlots/totalSlots)*100)}% used` : 'Available'}
                       </div>
                     </div>
                   );
@@ -561,7 +599,13 @@ function Optimizer() {
                   <div className="p-4 border-b">
                     <div className="flex items-center justify-between">
                       <h3 className="text-lg font-semibold text-gray-900">
-                        Assignments {selectedDay && `- ${selectedDay.charAt(0).toUpperCase() + selectedDay.slice(1)}`}
+                        Assignments {selectedDay && (() => {
+                          const dayMap = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 };
+                          const weekStartDate = new Date(weekStart + 'T00:00:00');
+                          const selectedDate = new Date(weekStartDate);
+                          selectedDate.setDate(weekStartDate.getDate() + dayMap[selectedDay]);
+                          return `- ${selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`;
+                        })()}
                       </h3>
                       <div className="flex items-center gap-4">
                         {selectedDay && (

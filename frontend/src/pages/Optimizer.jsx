@@ -393,19 +393,18 @@ function Optimizer() {
 
       {/* Main Content Area */}
       <div className="flex h-full">
-        {/* Left Panel - Policy Configuration */}
+        {/* Left Panel - Schedule Settings */}
         <div className="w-80 bg-white border-r p-6 overflow-y-auto">
-          <h2 className="text-lg font-semibold text-gray-900 mb-6">Policy Configuration</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-6">Schedule Settings</h2>
 
           <div className="space-y-6">
-            {/* Scoring Weights Section */}
+            {/* Schedule Priorities Section */}
             <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-4">Scoring Weights</h3>
+              <h3 className="text-sm font-medium text-gray-700 mb-4">Schedule Priorities</h3>
               <div className="space-y-4">
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Rank Importance</label>
-                    <span className="text-sm font-medium">{rankWeight.toFixed(1)}</span>
+                    <label className="text-sm text-gray-600">Partner Quality</label>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-400">Low</span>
@@ -424,8 +423,7 @@ function Optimizer() {
 
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Geographic Match</label>
-                    <span className="text-sm font-medium">{geoMatch}</span>
+                    <label className="text-sm text-gray-600">Local Priority</label>
                   </div>
                   <input
                     type="range"
@@ -440,8 +438,7 @@ function Optimizer() {
 
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Publication Rate</label>
-                    <span className="text-sm font-medium">{pubRate}</span>
+                    <label className="text-sm text-gray-600">Publishing Success</label>
                   </div>
                   <input
                     type="range"
@@ -456,8 +453,7 @@ function Optimizer() {
 
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">History Bonus</label>
-                    <span className="text-sm font-medium">{historyBonus}</span>
+                    <label className="text-sm text-gray-600">Past Performance</label>
                   </div>
                   <input
                     type="range"
@@ -472,104 +468,25 @@ function Optimizer() {
               </div>
             </div>
 
-            {/* Constraint Penalties Section */}
+            {/* Business Rules Section */}
             <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-4">Constraint Penalties</h3>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Tier Cap Penalty</label>
-                    <span className="text-sm font-medium">{tierCapPenalty}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1600"
-                    step="100"
-                    value={tierCapPenalty}
-                    onChange={(e) => setTierCapPenalty(parseInt(e.target.value))}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
+              <h3 className="text-sm font-medium text-gray-700 mb-4">Business Rules</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span>Partner Limits</span>
+                  <span className="text-green-600">✓ Active</span>
                 </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Fairness Base</label>
-                    <span className="text-sm font-medium">{fairnessBase}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="400"
-                    step="50"
-                    value={fairnessBase}
-                    onChange={(e) => setFairnessBase(parseInt(e.target.value))}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
+                <div className="flex justify-between">
+                  <span>Fair Distribution</span>
+                  <span className="text-green-600">✓ Active</span>
                 </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Fairness Step-up</label>
-                    <span className="text-sm font-medium">{fairnessStepUp}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="800"
-                    step="100"
-                    value={fairnessStepUp}
-                    onChange={(e) => setFairnessStepUp(parseInt(e.target.value))}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
+                <div className="flex justify-between">
+                  <span>Budget Tracking</span>
+                  <span className="text-green-600">✓ Active</span>
                 </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Budget Penalty (per $)</label>
-                    <span className="text-sm font-medium">{budgetPenalty}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="10"
-                    step="1"
-                    value={budgetPenalty}
-                    onChange={(e) => setBudgetPenalty(parseInt(e.target.value))}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Hard Constraints Section */}
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-4">Hard Constraints</h3>
-              <div className="space-y-3">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={enforceBudgetHard}
-                    onChange={(e) => setEnforceBudgetHard(e.target.checked)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-600">Enforce Budget as Hard Constraint</span>
-                </label>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Cooldown Days</label>
-                    <span className="text-sm font-medium">{cooldownDays}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="60"
-                    step="5"
-                    value={cooldownDays}
-                    onChange={(e) => setCooldownDays(parseInt(e.target.value))}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
+                <div className="flex justify-between">
+                  <span>Cooldown Period</span>
+                  <span className="text-gray-700">30 days</span>
                 </div>
               </div>
             </div>

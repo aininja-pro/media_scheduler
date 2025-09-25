@@ -103,11 +103,26 @@ function Optimizer() {
     return `$${(used/1000).toFixed(0)}k / $${(budget/1000).toFixed(0)}k (${pct}% used)`;
   };
 
+  const [progressStage, setProgressStage] = useState('');
+
   const runOptimizer = async () => {
     setIsLoading(true);
     setError('');
+    setProgressStage('initializing');
 
     try {
+      // Simulate progress stages with brief delays for visual feedback
+      setProgressStage('loading-data');
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      setProgressStage('building-triples');
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      setProgressStage('applying-constraints');
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      setProgressStage('solving');
+
       // Use Phase 7 run endpoint
       const response = await fetch('http://localhost:8081/api/ui/phase7/run', {
         method: 'POST',
@@ -120,6 +135,8 @@ function Optimizer() {
           seed: 42
         })
       });
+
+      setProgressStage('processing-results');
       const data = await response.json();
 
       if (!response.ok) {
@@ -136,11 +153,104 @@ function Optimizer() {
       setRunResult(null);
     } finally {
       setIsLoading(false);
+      setProgressStage('');
     }
   };
 
   return (
     <div className="w-full min-h-screen bg-gray-50">
+      {/* Progress Modal */}
+      {isLoading && progressStage && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full mx-4">
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Optimizing Schedule</h2>
+
+              {/* Spinner */}
+              <div className="mb-6">
+                <svg className="animate-spin h-12 w-12 text-blue-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+
+              {/* Progress stages */}
+              <div className="space-y-3 text-left">
+                <div className={`flex items-center ${progressStage === 'initializing' ? 'text-blue-600 font-medium' : progressStage > 'initializing' ? 'text-green-600' : 'text-gray-400'}`}>
+                  <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    {progressStage > 'initializing' ? (
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    ) : (
+                      <circle cx="10" cy="10" r="3" />
+                    )}
+                  </svg>
+                  Initializing optimizer...
+                </div>
+
+                <div className={`flex items-center ${progressStage === 'loading-data' ? 'text-blue-600 font-medium' : progressStage > 'loading-data' ? 'text-green-600' : 'text-gray-400'}`}>
+                  <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    {progressStage > 'loading-data' ? (
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    ) : (
+                      <circle cx="10" cy="10" r="3" />
+                    )}
+                  </svg>
+                  Loading vehicles and partners...
+                </div>
+
+                <div className={`flex items-center ${progressStage === 'building-triples' ? 'text-blue-600 font-medium' : progressStage > 'building-triples' ? 'text-green-600' : 'text-gray-400'}`}>
+                  <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    {progressStage > 'building-triples' ? (
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    ) : (
+                      <circle cx="10" cy="10" r="3" />
+                    )}
+                  </svg>
+                  Building feasible schedules...
+                </div>
+
+                <div className={`flex items-center ${progressStage === 'applying-constraints' ? 'text-blue-600 font-medium' : progressStage > 'applying-constraints' ? 'text-green-600' : 'text-gray-400'}`}>
+                  <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    {progressStage > 'applying-constraints' ? (
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    ) : (
+                      <circle cx="10" cy="10" r="3" />
+                    )}
+                  </svg>
+                  Applying cooldown and constraints...
+                </div>
+
+                <div className={`flex items-center ${progressStage === 'solving' ? 'text-blue-600 font-medium' : progressStage > 'solving' ? 'text-green-600' : 'text-gray-400'}`}>
+                  <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    {progressStage > 'solving' ? (
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    ) : (
+                      <circle cx="10" cy="10" r="3" />
+                    )}
+                  </svg>
+                  Running OR-Tools solver...
+                </div>
+
+                <div className={`flex items-center ${progressStage === 'processing-results' ? 'text-blue-600 font-medium' : progressStage > 'processing-results' ? 'text-green-600' : 'text-gray-400'}`}>
+                  <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    {progressStage > 'processing-results' ? (
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    ) : (
+                      <circle cx="10" cy="10" r="3" />
+                    )}
+                  </svg>
+                  Processing results...
+                </div>
+              </div>
+
+              <div className="mt-6 text-sm text-gray-500">
+                Finding optimal assignments for {metrics.vehicles.available} vehicles...
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Compact Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">

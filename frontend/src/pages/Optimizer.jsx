@@ -12,6 +12,7 @@ function Optimizer() {
   const [error, setError] = useState('');
   const [runResult, setRunResult] = useState(null);
   const [assignmentFilter, setAssignmentFilter] = useState('');
+  const [selectedDay, setSelectedDay] = useState(null); // null = show all days
 
   // Policy state (sliders)
   const [rankWeight, setRankWeight] = useState(1.0);
@@ -487,14 +488,23 @@ function Optimizer() {
                   const capacity = metrics.capacity[day.key];
                   const enabled = (capacity?.slots ?? 0) > 0;
 
+                  const isSelected = selectedDay === day.key;
+
                   return (
                     <div
                       key={day.key}
+                      onClick={() => {
+                        // Toggle selection: click same day to unselect, or select new day
+                        setSelectedDay(isSelected ? null : day.key);
+                      }}
                       className={[
-                        "rounded-lg border p-3 text-center transition-all hover:shadow-md cursor-default",
-                        enabled
-                          ? "border-emerald-200 bg-emerald-50 hover:border-emerald-300"
-                          : "border-rose-200 bg-rose-50 hover:border-rose-300"
+                        "rounded-lg border p-3 text-center transition-all hover:shadow-md",
+                        enabled ? "cursor-pointer" : "cursor-not-allowed",
+                        isSelected
+                          ? "ring-2 ring-blue-500 border-blue-400 bg-blue-50"
+                          : enabled
+                            ? "border-emerald-200 bg-emerald-50 hover:border-emerald-300"
+                            : "border-rose-200 bg-rose-50 hover:border-rose-300"
                       ].join(" ")}
                       title={capacity?.notes || ""}
                     >
@@ -522,8 +532,18 @@ function Optimizer() {
                 <div className="bg-white rounded-lg shadow-sm border">
                   <div className="p-4 border-b">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold text-gray-900">Assignments</h3>
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        Assignments {selectedDay && `- ${selectedDay.charAt(0).toUpperCase() + selectedDay.slice(1)}`}
+                      </h3>
                       <div className="flex items-center gap-4">
+                        {selectedDay && (
+                          <button
+                            onClick={() => setSelectedDay(null)}
+                            className="text-xs text-blue-600 hover:text-blue-700 underline"
+                          >
+                            Show all days
+                          </button>
+                        )}
                         {runResult?.starts_by_day && (
                           <span className="text-sm text-gray-600">
                             Mon {runResult.starts_by_day.mon} •
@@ -561,6 +581,16 @@ function Optimizer() {
                       <tbody className="bg-white divide-y divide-gray-200">
                         {runResult.assignments
                           .filter(a => {
+                            // Filter by selected day
+                            if (selectedDay) {
+                              const assignmentDate = new Date(a.start_day + 'T00:00:00');
+                              const dayOfWeek = assignmentDate.getDay();
+                              // JavaScript: 0=Sunday, 1=Monday, 2=Tuesday, etc.
+                              const dayMap = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+                              if (dayOfWeek !== dayMap[selectedDay]) return false;
+                            }
+
+                            // Filter by search text
                             if (!assignmentFilter) return true;
                             const filter = assignmentFilter.toLowerCase();
                             return a.vin?.toLowerCase().includes(filter) ||
@@ -577,7 +607,7 @@ function Optimizer() {
                           .map((assignment, idx) => (
                             <tr key={`${assignment.vin}-${assignment.person_id}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {new Date(assignment.start_day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                {new Date(assignment.start_day + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{assignment.vin}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">

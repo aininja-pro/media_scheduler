@@ -24,6 +24,7 @@ class RunRequest(BaseModel):
     office: str
     week_start: str
     seed: int = 42
+    rank_weight: float = 1.0  # Partner Quality slider (0.0 - 2.0)
 
 
 @router.post("/run")
@@ -167,7 +168,7 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             week_start=request.week_start,
             office=request.office,
 
-            # Use default policy parameters for now
+            # Use policy parameters from request
             lambda_cap=800,
             lambda_fair=200,
             fair_step_up=400,
@@ -175,7 +176,7 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             points_per_dollar=3,
             enforce_budget_hard=False,
 
-            w_rank=1.0,
+            w_rank=request.rank_weight,  # From Partner Quality slider
             w_geo=100,
             w_pub=150,
             w_hist=50,

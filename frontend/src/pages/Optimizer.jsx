@@ -151,7 +151,8 @@ function Optimizer() {
         body: JSON.stringify({
           office: selectedOffice,
           week_start: weekStart,
-          seed: 42
+          seed: 42,
+          rank_weight: rankWeight  // Partner Quality slider value
         })
       });
 

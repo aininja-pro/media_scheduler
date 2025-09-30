@@ -26,6 +26,7 @@ function Optimizer() {
   const [budgetPenalty, setBudgetPenalty] = useState(3);
   const [cooldownDays, setCooldownDays] = useState(30);
   const [enforceBudgetHard, setEnforceBudgetHard] = useState(false);
+  const [maxPerPartnerPerDay, setMaxPerPartnerPerDay] = useState(1);
 
   // Load offices from database
   const [offices, setOffices] = useState([]);
@@ -178,7 +179,8 @@ function Optimizer() {
           rank_weight: rankWeight,  // Partner Quality slider value
           geo_match: geoMatch,  // Local Priority slider value
           pub_rate: pubRate,  // Publishing Success slider value
-          engagement_priority: historyBonus  // Engagement Priority slider value
+          engagement_priority: historyBonus,  // Engagement Priority slider value
+          max_per_partner_per_day: maxPerPartnerPerDay  // Max vehicles per partner per day
         })
       });
 
@@ -485,7 +487,7 @@ function Optimizer() {
                     <label className="text-sm text-gray-600">Partner Quality</label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">Low</span>
+                    <span className="text-xs text-gray-400 w-12">Any</span>
                     <input
                       type="range"
                       min="0"
@@ -495,7 +497,7 @@ function Optimizer() {
                       onChange={(e) => setRankWeight(parseFloat(e.target.value))}
                       className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                     />
-                    <span className="text-xs text-gray-400">High</span>
+                    <span className="text-xs text-gray-400 w-12 text-right">Top Tier</span>
                   </div>
                 </div>
 
@@ -503,30 +505,38 @@ function Optimizer() {
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-sm text-gray-600">Local Priority</label>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="200"
-                    step="10"
-                    value={geoMatch}
-                    onChange={(e) => setGeoMatch(parseInt(e.target.value))}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 w-12">Any</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="200"
+                      step="10"
+                      value={geoMatch}
+                      onChange={(e) => setGeoMatch(parseInt(e.target.value))}
+                      className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                    />
+                    <span className="text-xs text-gray-400 w-12 text-right">Nearby</span>
+                  </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-sm text-gray-600">Publishing Success</label>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="300"
-                    step="10"
-                    value={pubRate}
-                    onChange={(e) => setPubRate(parseInt(e.target.value))}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 w-12">Any</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="300"
+                      step="10"
+                      value={pubRate}
+                      onChange={(e) => setPubRate(parseInt(e.target.value))}
+                      className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                    />
+                    <span className="text-xs text-gray-400 w-12 text-right">Top Rate</span>
+                  </div>
                 </div>
 
                 <div>
@@ -534,7 +544,7 @@ function Optimizer() {
                     <label className="text-sm text-gray-600">Engagement Priority</label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">Dormant</span>
+                    <span className="text-xs text-gray-400 w-12">Dormant</span>
                     <input
                       type="range"
                       min="0"
@@ -544,7 +554,7 @@ function Optimizer() {
                       onChange={(e) => setHistoryBonus(parseInt(e.target.value))}
                       className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                     />
-                    <span className="text-xs text-gray-400">Momentum</span>
+                    <span className="text-xs text-gray-400 w-12 text-right">Active</span>
                   </div>
                 </div>
               </div>
@@ -553,7 +563,7 @@ function Optimizer() {
             {/* Business Rules Section */}
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-4">Business Rules</h3>
-              <div className="space-y-2 text-sm">
+              <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
                   <span>Partner Limits</span>
                   <span className="text-green-600">✓ Active</span>
@@ -569,6 +579,22 @@ function Optimizer() {
                 <div className="flex justify-between">
                   <span>Cooldown Period</span>
                   <span className="text-gray-700">30 days</span>
+                </div>
+                <div className="pt-2 border-t border-gray-200">
+                  <label className="text-sm text-gray-600 mb-2 block">Max Vehicles per Partner per Day</label>
+                  <select
+                    value={maxPerPartnerPerDay}
+                    onChange={(e) => setMaxPerPartnerPerDay(parseInt(e.target.value))}
+                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="1">1 (Recommended)</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="0">Unlimited</option>
+                  </select>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Limits how many vehicles can start on the same day for one partner
+                  </div>
                 </div>
               </div>
             </div>

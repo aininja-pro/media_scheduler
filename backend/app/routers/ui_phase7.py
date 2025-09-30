@@ -29,6 +29,7 @@ class RunRequest(BaseModel):
     geo_match: int = 100  # Local Priority slider (0 - 200)
     pub_rate: int = 150  # Publishing Success slider (0 - 300)
     engagement_priority: int = 50  # Engagement Priority slider (0-100: 0=dormant, 50=neutral, 100=momentum)
+    max_per_partner_per_day: int = 1  # Max vehicles per partner per day (0=unlimited, 1=default)
 
 
 @router.post("/run")
@@ -218,6 +219,7 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             engagement_mode=('dormant' if request.engagement_priority < 45 else
                            'momentum' if request.engagement_priority > 55 else
                            'neutral'),  # From Engagement Priority slider
+            max_per_partner_per_day=request.max_per_partner_per_day,  # Max vehicles per partner per day
 
             solver_time_limit_s=30,  # Increased from 10s for 58k triples
             seed=request.seed,

@@ -86,6 +86,8 @@ def solve_with_all_constraints(
     points_per_dollar: float = DEFAULT_POINTS_PER_DOLLAR,
     enforce_budget_hard: bool = False,
     enforce_missing_budget: bool = False,
+    # Partner-day constraint
+    max_per_partner_per_day: int = 1,
     # Objective shaping parameters
     w_rank: float = DEFAULT_W_RANK,
     w_geo: float = DEFAULT_W_GEO,
@@ -119,6 +121,7 @@ def solve_with_all_constraints(
         points_per_dollar: Penalty points per dollar over budget
         enforce_budget_hard: If True, hard budget constraints
         enforce_missing_budget: If True, treat missing budgets as 0
+        max_per_partner_per_day: Max vehicles per partner per start day (0=unlimited, default=1)
         seed: Random seed for determinism
         verbose: Print detailed progress
 
@@ -212,6 +215,24 @@ def solve_with_all_constraints(
             print(f"  - {len(special_days['travel_days'])} travel days")
         if special_days['reduced_capacity']:
             print(f"  - {len(special_days['reduced_capacity'])} reduced capacity days")
+
+    # === HARD CONSTRAINT 3: Max Vehicles per Partner per Day ===
+    # Group by (person_id, start_day) to enforce max vehicles per partner per start day
+    partner_day_groups = office_triples.groupby(['person_id', 'start_day']).groups
+
+    if max_per_partner_per_day > 0:  # 0 = unlimited
+        for (person_id, start_day), indices in partner_day_groups.items():
+            if len(indices) > max_per_partner_per_day:
+                model.Add(sum(y[i] for i in indices) <= max_per_partner_per_day)
+
+        if verbose:
+            multi_option_groups = sum(1 for indices in partner_day_groups.values() if len(indices) > max_per_partner_per_day)
+            print(f"  Added partner-day constraints: max {max_per_partner_per_day} vehicle(s) per partner per day")
+            print(f"  - {len(partner_day_groups)} unique (partner, day) combinations")
+            print(f"  - {multi_option_groups} combinations constrained by this limit")
+    else:
+        if verbose:
+            print(f"  No partner-day constraint (unlimited vehicles per partner per day)")
 
     # === SOFT CONSTRAINT 1: Tier Caps (7.4s) ===
     cap_penalty_terms, cap_info = add_soft_tier_cap_penalties(

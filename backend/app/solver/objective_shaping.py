@@ -9,6 +9,8 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Tuple, Optional, Any
 
+from ..utils.geo import normalize_distance_score
+
 
 # Default weights for objective components
 DEFAULT_W_RANK = 1.0      # Multiplier for rank_weight (already 500-1000)
@@ -31,12 +33,13 @@ def apply_objective_shaping(
     Args:
         triples_df: DataFrame with columns:
             - rank_weight: Base score from rank (e.g., 500-1000)
-            - geo_office_match: 0/1 for same office
+            - distance_miles: Distance between partner and office (preferred)
+            - geo_office_match: 0/1 for same office (legacy fallback)
             - pub_rate_24m: Publication rate 0-1 or 0-100
             - history_published: 0/1 for prior publications
             - Additional columns preserved
         w_rank: Weight for rank component
-        w_geo: Weight for geographic match
+        w_geo: Weight for geographic proximity (uses distance if available)
         w_pub: Weight for publication rate
         w_hist: Weight for publication history
         verbose: Print shaping details
@@ -65,6 +68,29 @@ def apply_objective_shaping(
     if pub_rate_normalized.max() > 1.0:
         pub_rate_normalized = pub_rate_normalized / 100.0
 
+    # Calculate geographic proximity score
+    # Prefer distance_miles if available, otherwise fall back to binary geo_office_match
+    if 'distance_miles' in df.columns:
+        # Convert distance to normalized score (0-1 where closer is better)
+        # Handle NaN values by falling back to geo_office_match for those rows
+        def calc_geo_score(row):
+            dist = row.get('distance_miles')
+            if pd.notna(dist):
+                return float(normalize_distance_score(dist, max_distance=500.0))
+            else:
+                # Fallback to binary match when distance is unavailable
+                match_val = row.get('geo_office_match', 0)
+                # Convert boolean to int/float if needed
+                if isinstance(match_val, bool):
+                    return float(match_val)
+                return float(match_val) if match_val else 0.0
+
+        geo_score = df.apply(calc_geo_score, axis=1).astype(float)
+    else:
+        # Fallback to binary match for backward compatibility
+        # Ensure numeric conversion
+        geo_score = pd.to_numeric(df['geo_office_match'], errors='coerce').fillna(0.0)
+
     # Add tiny deterministic tie-breaker based on VIN/person hash
     # This ensures deterministic selection when scores are equal
     if 'vin' in df.columns and 'person_id' in df.columns:
@@ -79,7 +105,7 @@ def apply_objective_shaping(
     # Compute shaped score
     df['score_shaped'] = (
         w_rank * df['rank_weight'] +
-        w_geo * df['geo_office_match'] +
+        w_geo * geo_score +
         w_pub * pub_rate_normalized +
         w_hist * df['history_published'] +
         df['_tiebreaker']  # Tiny deterministic noise
@@ -90,7 +116,7 @@ def apply_objective_shaping(
 
     # Store component contributions for reporting
     df['_score_rank'] = w_rank * df['rank_weight']
-    df['_score_geo'] = w_geo * df['geo_office_match']
+    df['_score_geo'] = w_geo * geo_score
     df['_score_pub'] = w_pub * pub_rate_normalized
     df['_score_hist'] = w_hist * df['history_published']
 
@@ -101,11 +127,18 @@ def apply_objective_shaping(
         print(f"  Score range: {df['score_shaped'].min():.1f} - {df['score_shaped'].max():.1f}")
 
         # Sample statistics
-        geo_matches = df['geo_office_match'].sum()
+        if 'distance_miles' in df.columns:
+            valid_distances = df[df['distance_miles'].notna()]['distance_miles']
+            if len(valid_distances) > 0:
+                print(f"  Distance range: {valid_distances.min():.1f} - {valid_distances.max():.1f} miles")
+                print(f"  Avg distance: {valid_distances.mean():.1f} miles")
+            print(f"  With distance: {valid_distances.count():,} ({valid_distances.count()/len(df)*100:.1f}%)")
+        else:
+            geo_matches = df['geo_office_match'].sum()
+            print(f"  Geo matches: {geo_matches:,} ({geo_matches/len(df)*100:.1f}%)")
+
         avg_pub_rate = pub_rate_normalized.mean()
         hist_count = df['history_published'].sum()
-
-        print(f"  Geo matches: {geo_matches:,} ({geo_matches/len(df)*100:.1f}%)")
         print(f"  Avg pub rate: {avg_pub_rate:.3f}")
         print(f"  With history: {hist_count:,} ({hist_count/len(df)*100:.1f}%)")
 

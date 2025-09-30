@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 import logging
 
+from ..utils.geo import haversine_distance
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,8 @@ def build_feasible_start_day_triples(
     default_slots_per_day: int = 15,
     brand_filter: Optional[str] = None,
     fleet_filter: Optional[str] = None,
-    seed: int = 42
+    seed: int = 42,
+    offices_df: Optional[pd.DataFrame] = None
 ) -> pd.DataFrame:
     """
     Build feasible (VIN, partner, start_day) triples per SPEC 7.1.
@@ -54,6 +57,7 @@ def build_feasible_start_day_triples(
         - vin, person_id, start_day (ISO date)
         - office, make, model, rank
         - eligibility_ok, availability_ok, start_day_ok, geo_office_match
+        - distance_miles (haversine distance between partner and office)
         - short_model_class, powertrain
         - tie_key (for deterministic ordering)
     """
@@ -94,6 +98,16 @@ def build_feasible_start_day_triples(
     if office_partners.empty:
         logger.warning(f"No partners found for office {office}")
         return _empty_triples_df()
+
+    # Step 2b: Build office coordinates lookup for distance calculation
+    office_coords = {}
+    if offices_df is not None and not offices_df.empty:
+        for _, off_row in offices_df.iterrows():
+            off_name = off_row.get('name')
+            lat = off_row.get('latitude')
+            lon = off_row.get('longitude')
+            if off_name and pd.notna(lat) and pd.notna(lon):
+                office_coords[off_name] = (float(lat), float(lon))
 
     # Step 3: Prepare availability data
     availability_df = availability_df.copy()
@@ -199,9 +213,23 @@ def build_feasible_start_day_triples(
                     if allowed_dows and start_dow not in allowed_dows:
                         continue  # Partner doesn't allow this start day
 
-                # Check geo match
+                # Calculate distance between partner and vehicle office
                 partner_office = partner.get('office_y') or partner.get('office')  # Handle merge column naming
-                geo_office_match = (vehicle['office'] == partner_office)
+                geo_office_match = (vehicle['office'] == partner_office)  # Keep for backward compatibility
+
+                # Calculate distance using coordinates
+                distance_miles = None
+                vehicle_office_name = vehicle['office']
+                partner_lat = partner.get('latitude')
+                partner_lon = partner.get('longitude')
+
+                if (vehicle_office_name in office_coords and
+                    pd.notna(partner_lat) and pd.notna(partner_lon)):
+                    office_lat, office_lon = office_coords[vehicle_office_name]
+                    distance_miles = haversine_distance(
+                        office_lat, office_lon,
+                        float(partner_lat), float(partner_lon)
+                    )
 
                 # Generate deterministic tie-breaker key
                 tie_key = _generate_tie_key(vin, person_id, start_date, seed)
@@ -218,7 +246,8 @@ def build_feasible_start_day_triples(
                     'eligibility_ok': True,  # Always true if we got here
                     'availability_ok': True,  # Always true if we got here
                     'start_day_ok': start_day_has_capacity,
-                    'geo_office_match': geo_office_match,
+                    'geo_office_match': geo_office_match,  # Keep for backward compatibility
+                    'distance_miles': distance_miles,  # NEW: Actual distance calculation
                     'short_model_class': short_model_class,
                     'powertrain': powertrain,
                     'tie_key': tie_key
@@ -259,7 +288,7 @@ def _empty_triples_df() -> pd.DataFrame:
     return pd.DataFrame(columns=[
         'vin', 'person_id', 'start_day', 'office', 'make', 'model', 'rank',
         'eligibility_ok', 'availability_ok', 'start_day_ok', 'geo_office_match',
-        'short_model_class', 'powertrain'
+        'distance_miles', 'short_model_class', 'powertrain'
     ])
 
 
@@ -280,7 +309,7 @@ def validate_triples_output(triples_df: pd.DataFrame) -> bool:
     required_columns = [
         'vin', 'person_id', 'start_day', 'office', 'make', 'model', 'rank',
         'eligibility_ok', 'availability_ok', 'start_day_ok', 'geo_office_match',
-        'short_model_class', 'powertrain'
+        'distance_miles', 'short_model_class', 'powertrain'
     ]
 
     # Check all required columns exist

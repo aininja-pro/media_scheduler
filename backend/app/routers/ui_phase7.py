@@ -50,6 +50,10 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         partners_response = db.client.table('media_partners').select('*').eq('office', request.office).execute()
         partners_df = pd.DataFrame(partners_response.data) if partners_response.data else pd.DataFrame()
 
+        # Load offices with coordinates for distance calculations
+        offices_response = db.client.table('offices').select('*').execute()
+        offices_df = pd.DataFrame(offices_response.data) if offices_response.data else pd.DataFrame()
+
         # Load current activity with pagination
         all_activity = []
         offset = 0
@@ -114,7 +118,8 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             availability_df=availability_df,
             approved_makes_df=office_approved,
             week_start=request.week_start,
-            office=request.office
+            office=request.office,
+            offices_df=offices_df  # Pass offices for distance calculation
         )
 
         # 4. Apply cooldown filter using Phase 7.3
@@ -354,6 +359,10 @@ async def get_overview(
         partners_df = pd.DataFrame(partners_response.data) if partners_response.data else pd.DataFrame()
         total_partners = len(partners_df)
 
+        # Load offices with coordinates for distance calculations
+        offices_response = db.client.table('offices').select('*').execute()
+        offices_df = pd.DataFrame(offices_response.data) if offices_response.data else pd.DataFrame()
+
         # 3. Load current activity WITH PAGINATION
         all_activity = []
         offset = 0
@@ -413,7 +422,8 @@ async def get_overview(
             availability_df=availability_df,
             approved_makes_df=office_approved,
             week_start=week_start,
-            office=office
+            office=office,
+            offices_df=offices_df  # Pass offices for distance calculation
         )
 
         # Count unique vehicles and partners in feasible triples (pre-cooldown)

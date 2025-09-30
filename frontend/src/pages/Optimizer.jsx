@@ -27,7 +27,8 @@ function Optimizer() {
   const [cooldownDays, setCooldownDays] = useState(30);
   const [enforceBudgetHard, setEnforceBudgetHard] = useState(false);
 
-  const offices = ['Los Angeles', 'Atlanta', 'Chicago', 'Dallas', 'Denver', 'Detroit', 'Miami', 'Phoenix', 'San Francisco', 'Seattle'];
+  // Load offices from database
+  const [offices, setOffices] = useState([]);
 
   // Get current Monday as default
   const getCurrentMonday = () => {
@@ -41,6 +42,28 @@ function Optimizer() {
 
   useEffect(() => {
     setWeekStart(getCurrentMonday());
+  }, []);
+
+  // Load offices from database
+  useEffect(() => {
+    const loadOffices = async () => {
+      try {
+        const response = await fetch('http://localhost:8081/api/offices');
+        const data = await response.json();
+        if (data && data.length > 0) {
+          setOffices(data.map(office => office.name));
+          // Set default office if current selection is not in the list
+          if (!data.find(o => o.name === selectedOffice)) {
+            setSelectedOffice(data[0].name);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load offices:', err);
+        // Fallback to hardcoded list if API fails
+        setOffices(['Los Angeles', 'Atlanta', 'Chicago', 'Dallas', 'Denver', 'Detroit', 'Miami', 'Phoenix', 'San Francisco', 'Seattle']);
+      }
+    };
+    loadOffices();
   }, []);
 
   // Auto-load on component mount and when parameters change

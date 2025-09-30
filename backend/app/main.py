@@ -49,6 +49,15 @@ def read_root():
     """Root endpoint"""
     return {"message": "Media Scheduler API", "version": "1.0.0"}
 
+@app.get("/api/offices")
+async def get_offices():
+    """Get list of active offices"""
+    try:
+        response = db_service.client.table('offices').select('*').eq('active', True).order('name').execute()
+        return response.data if response.data else []
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/healthz")
 def health_check():
     """Health check endpoint"""

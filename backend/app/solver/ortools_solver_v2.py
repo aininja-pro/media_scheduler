@@ -56,20 +56,26 @@ def add_score_to_triples(
         else:
             result['geo_bonus'] = 0
 
-    # History bonus (if publication data available)
+    # Publication rate and history bonus (if publication data available)
+    result['pub_rate_24m'] = 0.0
     result['history_bonus'] = 0
     if publication_df is not None and not publication_df.empty:
-        if 'publications_observed_24m' in publication_df.columns:
-            pub_data = publication_df[['person_id', 'make', 'publications_observed_24m']].copy()
-            pub_data = pub_data.groupby(['person_id', 'make'])['publications_observed_24m'].max().reset_index()
+        # Merge publication_rate from compute_publication_rate_24m
+        if 'publication_rate' in publication_df.columns:
+            pub_data = publication_df[['person_id', 'make', 'publication_rate', 'publications_24m']].copy()
+            pub_data = pub_data.groupby(['person_id', 'make']).agg({
+                'publication_rate': 'max',
+                'publications_24m': 'max'
+            }).reset_index()
             result = result.merge(
                 pub_data,
                 on=['person_id', 'make'],
                 how='left',
                 suffixes=('', '_pub')
             )
+            result['pub_rate_24m'] = result.get('publication_rate', 0).fillna(0)
             result['history_bonus'] = (
-                result.get('publications_observed_24m', 0).fillna(0) >= 1
+                result.get('publications_24m', 0).fillna(0) >= 1
             ).astype(int) * history_bonus_points
 
     # Add deterministic tie-breakers based on hash

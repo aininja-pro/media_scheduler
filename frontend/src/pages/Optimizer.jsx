@@ -152,7 +152,9 @@ function Optimizer() {
           office: selectedOffice,
           week_start: weekStart,
           seed: 42,
-          rank_weight: rankWeight  // Partner Quality slider value
+          rank_weight: rankWeight,  // Partner Quality slider value
+          geo_match: geoMatch,  // Local Priority slider value
+          pub_rate: pubRate  // Publishing Success slider value
         })
       });
 

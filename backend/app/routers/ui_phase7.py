@@ -16,6 +16,7 @@ from ..etl.availability import build_availability_grid
 from ..solver.dynamic_capacity import load_capacity_calendar
 from ..solver.ortools_solver_v6 import solve_with_all_constraints
 from ..solver.ortools_solver_v2 import add_score_to_triples
+from ..etl.publication import compute_publication_rate_24m
 
 router = APIRouter(prefix="/ui/phase7", tags=["UI Phase 7"])
 
@@ -25,6 +26,8 @@ class RunRequest(BaseModel):
     week_start: str
     seed: int = 42
     rank_weight: float = 1.0  # Partner Quality slider (0.0 - 2.0)
+    geo_match: int = 100  # Local Priority slider (0 - 200)
+    pub_rate: int = 150  # Publishing Success slider (0 - 300)
 
 
 @router.post("/run")
@@ -139,13 +142,22 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             default_cooldown_days=30
         )
 
-        # 4b. Add scoring columns using the Phase 7 scoring function
-        # Add scores to triples (this adds rank_weight and other columns needed by solver)
-        # Note: publications table doesn't exist, passing None for publication_df
+        # 4b. Calculate publication rates from loan history
+        publication_df = compute_publication_rate_24m(
+            loan_history_df=loan_history_df,
+            as_of_date=request.week_start,
+            window_months=24,
+            min_observed=3
+        )
+        print(f"Publication rates calculated: {len(publication_df)} partner-make combinations")
+        if not publication_df.empty:
+            print(f"  Avg publication rate: {publication_df['publication_rate'].mean():.2%}")
+
+        # 4c. Add scoring columns using the Phase 7 scoring function
         triples_post = add_score_to_triples(
             triples_df=triples_post,
             partners_df=partners_df,
-            publication_df=None  # No publications table in database
+            publication_df=publication_df
         )
 
         print(f"\n=== PRE-SOLVER DEBUG ===")
@@ -177,8 +189,8 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             enforce_budget_hard=False,
 
             w_rank=request.rank_weight,  # From Partner Quality slider
-            w_geo=100,
-            w_pub=150,
+            w_geo=request.geo_match,  # From Local Priority slider
+            w_pub=request.pub_rate,  # From Publishing Success slider
             w_hist=50,
 
             solver_time_limit_s=30,  # Increased from 10s for 58k triples

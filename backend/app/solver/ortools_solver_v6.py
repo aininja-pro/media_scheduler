@@ -56,7 +56,7 @@ from app.solver.objective_shaping import (
     DEFAULT_W_RANK,
     DEFAULT_W_GEO,
     DEFAULT_W_PUB,
-    DEFAULT_W_HIST
+    DEFAULT_W_RECENCY
 )
 
 from app.solver.ortools_solver_v2 import add_score_to_triples
@@ -90,7 +90,8 @@ def solve_with_all_constraints(
     w_rank: float = DEFAULT_W_RANK,
     w_geo: float = DEFAULT_W_GEO,
     w_pub: float = DEFAULT_W_PUB,
-    w_hist: float = DEFAULT_W_HIST,
+    w_recency: float = DEFAULT_W_RECENCY,
+    engagement_mode: str = 'neutral',
     # General
     seed: int = 42,
     verbose: bool = True
@@ -138,7 +139,8 @@ def solve_with_all_constraints(
         w_rank=w_rank,
         w_geo=w_geo,
         w_pub=w_pub,
-        w_hist=w_hist,
+        w_recency=w_recency,
+        engagement_mode=engagement_mode,
         verbose=verbose
     )
 
@@ -368,7 +370,7 @@ def solve_with_all_constraints(
         w_rank=w_rank,
         w_geo=w_geo,
         w_pub=w_pub,
-        w_hist=w_hist
+        w_recency=w_recency
     )
 
     if verbose:

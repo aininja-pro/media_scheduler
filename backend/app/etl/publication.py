@@ -137,6 +137,68 @@ def compute_publication_rate_24m(
     ]
 
 
+def compute_recency_scores(
+    loan_history_df: pd.DataFrame,
+    as_of_date: Optional[str] = None
+) -> pd.DataFrame:
+    """
+    Calculate days since last loan for each (person_id, make) combination.
+
+    Args:
+        loan_history_df: DataFrame with columns:
+            - person_id, make, start_date, end_date
+        as_of_date: Reference date in YYYY-MM-DD format (default: today)
+
+    Returns:
+        DataFrame with columns:
+        - person_id: Partner identifier
+        - make: Vehicle make
+        - days_since_last_loan: Days since most recent loan ended
+        - last_loan_date: Date of most recent loan end
+
+        Grain: One row per (person_id, make) combination
+    """
+
+    as_of = pd.to_datetime(as_of_date or datetime.today().date()).normalize()
+
+    df = loan_history_df.copy()
+
+    # Parse dates
+    for col in ("start_date", "end_date"):
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+
+    # Use end_date if available, otherwise start_date
+    df["ref_date"] = df["end_date"].where(df["end_date"].notna(),
+                                          df["start_date"] if "start_date" in df.columns else df["end_date"])
+
+    df = df[df["ref_date"].notna() & df["person_id"].notna()]
+
+    if df.empty:
+        return pd.DataFrame(columns=['person_id', 'make', 'days_since_last_loan', 'last_loan_date'])
+
+    # Group by (person_id, make) and find most recent loan
+    group_cols = [c for c in ["person_id", "make"] if c in df.columns]
+    grouped = df.groupby(group_cols, dropna=False)
+
+    results = []
+    for name, group in grouped:
+        person_id, make = name if isinstance(name, tuple) else (name, '')
+
+        # Get most recent loan date
+        last_loan_date = group["ref_date"].max()
+        days_since = (as_of - last_loan_date).days
+
+        results.append({
+            'person_id': person_id,
+            'make': make,
+            'days_since_last_loan': days_since,
+            'last_loan_date': last_loan_date.date()
+        })
+
+    return pd.DataFrame(results)
+
+
 def _normalize_clips_received(value) -> bool:
     """
     Normalize clips_received values to boolean.

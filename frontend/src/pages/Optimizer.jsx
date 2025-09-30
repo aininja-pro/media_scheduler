@@ -177,7 +177,8 @@ function Optimizer() {
           seed: 42,
           rank_weight: rankWeight,  // Partner Quality slider value
           geo_match: geoMatch,  // Local Priority slider value
-          pub_rate: pubRate  // Publishing Success slider value
+          pub_rate: pubRate,  // Publishing Success slider value
+          engagement_priority: historyBonus  // Engagement Priority slider value
         })
       });
 
@@ -530,17 +531,21 @@ function Optimizer() {
 
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Past Performance</label>
+                    <label className="text-sm text-gray-600">Engagement Priority</label>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="5"
-                    value={historyBonus}
-                    onChange={(e) => setHistoryBonus(parseInt(e.target.value))}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">Dormant</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={historyBonus}
+                      onChange={(e) => setHistoryBonus(parseInt(e.target.value))}
+                      className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                    />
+                    <span className="text-xs text-gray-400">Momentum</span>
+                  </div>
                 </div>
               </div>
             </div>

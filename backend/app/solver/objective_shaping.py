@@ -16,7 +16,7 @@ from ..utils.geo import normalize_distance_score
 DEFAULT_W_RANK = 1.0      # Multiplier for rank_weight (already 500-1000)
 DEFAULT_W_GEO = 100       # Bonus for same-office match
 DEFAULT_W_PUB = 150       # Bonus for publication rate (0-1 normalized)
-DEFAULT_W_HIST = 50       # Bonus for prior publication history
+DEFAULT_W_RECENCY = 50    # Weight for engagement recency (replaces history)
 
 
 def apply_objective_shaping(
@@ -24,7 +24,8 @@ def apply_objective_shaping(
     w_rank: float = DEFAULT_W_RANK,
     w_geo: float = DEFAULT_W_GEO,
     w_pub: float = DEFAULT_W_PUB,
-    w_hist: float = DEFAULT_W_HIST,
+    w_recency: float = DEFAULT_W_RECENCY,
+    engagement_mode: str = 'neutral',  # 'dormant', 'neutral', or 'momentum'
     verbose: bool = False
 ) -> pd.DataFrame:
     """
@@ -36,12 +37,16 @@ def apply_objective_shaping(
             - distance_miles: Distance between partner and office (preferred)
             - geo_office_match: 0/1 for same office (legacy fallback)
             - pub_rate_24m: Publication rate 0-1 or 0-100
-            - history_published: 0/1 for prior publications
+            - days_since_last_loan: Days since partner's last loan for this make
             - Additional columns preserved
         w_rank: Weight for rank component
         w_geo: Weight for geographic proximity (uses distance if available)
         w_pub: Weight for publication rate
-        w_hist: Weight for publication history
+        w_recency: Weight for engagement recency
+        engagement_mode: How to score recency
+            - 'dormant': Favor partners who haven't had recent loans (re-engage)
+            - 'neutral': No recency preference
+            - 'momentum': Favor recently active partners (maintain momentum)
         verbose: Print shaping details
 
     Returns:
@@ -60,8 +65,8 @@ def apply_objective_shaping(
         df['geo_office_match'] = 0
     if 'pub_rate_24m' not in df.columns:
         df['pub_rate_24m'] = 0
-    if 'history_published' not in df.columns:
-        df['history_published'] = 0
+    if 'days_since_last_loan' not in df.columns:
+        df['days_since_last_loan'] = None
 
     # Normalize publication rate if it's in percentage (0-100)
     pub_rate_normalized = df['pub_rate_24m'].copy()
@@ -91,6 +96,30 @@ def apply_objective_shaping(
         # Ensure numeric conversion
         geo_score = pd.to_numeric(df['geo_office_match'], errors='coerce').fillna(0.0)
 
+    # Calculate engagement recency score
+    def calc_recency_score(days_since):
+        """
+        Calculate recency score based on engagement mode.
+
+        dormant mode: Favor partners who haven't had loans recently (re-engage)
+        neutral mode: No recency preference
+        momentum mode: Favor recently active partners (maintain momentum)
+        """
+        if pd.isna(days_since):
+            # No history - treat as neutral (0.5 score)
+            return 0.5
+
+        if engagement_mode == 'dormant':
+            # Older = better (up to 90 days gets full score)
+            return min(1.0, days_since / 90.0)
+        elif engagement_mode == 'momentum':
+            # Newer = better (within 30 days gets full score)
+            return max(0.0, (30 - days_since) / 30.0)
+        else:  # neutral
+            return 0.0  # No recency weight
+
+    recency_score = df['days_since_last_loan'].apply(calc_recency_score).astype(float)
+
     # Add tiny deterministic tie-breaker based on VIN/person hash
     # This ensures deterministic selection when scores are equal
     if 'vin' in df.columns and 'person_id' in df.columns:
@@ -107,7 +136,7 @@ def apply_objective_shaping(
         w_rank * df['rank_weight'] +
         w_geo * geo_score +
         w_pub * pub_rate_normalized +
-        w_hist * df['history_published'] +
+        w_recency * recency_score +
         df['_tiebreaker']  # Tiny deterministic noise
     )
 
@@ -118,11 +147,12 @@ def apply_objective_shaping(
     df['_score_rank'] = w_rank * df['rank_weight']
     df['_score_geo'] = w_geo * geo_score
     df['_score_pub'] = w_pub * pub_rate_normalized
-    df['_score_hist'] = w_hist * df['history_published']
+    df['_score_recency'] = w_recency * recency_score
 
     if verbose:
         print(f"\n=== Objective Shaping Applied ===")
-        print(f"  Weights: rank={w_rank}, geo={w_geo}, pub={w_pub}, hist={w_hist}")
+        print(f"  Weights: rank={w_rank}, geo={w_geo}, pub={w_pub}, recency={w_recency}")
+        print(f"  Engagement mode: {engagement_mode}")
         print(f"  Triples: {len(df):,}")
         print(f"  Score range: {df['score_shaped'].min():.1f} - {df['score_shaped'].max():.1f}")
 
@@ -138,9 +168,14 @@ def apply_objective_shaping(
             print(f"  Geo matches: {geo_matches:,} ({geo_matches/len(df)*100:.1f}%)")
 
         avg_pub_rate = pub_rate_normalized.mean()
-        hist_count = df['history_published'].sum()
         print(f"  Avg pub rate: {avg_pub_rate:.3f}")
-        print(f"  With history: {hist_count:,} ({hist_count/len(df)*100:.1f}%)")
+
+        # Recency statistics
+        if 'days_since_last_loan' in df.columns:
+            valid_recency = df[df['days_since_last_loan'].notna()]['days_since_last_loan']
+            if len(valid_recency) > 0:
+                print(f"  Days since last loan: min={valid_recency.min():.0f}, max={valid_recency.max():.0f}, avg={valid_recency.mean():.0f}")
+            print(f"  With recency data: {valid_recency.count():,} ({valid_recency.count()/len(df)*100:.1f}%)")
 
     return df
 
@@ -150,7 +185,7 @@ def build_shaping_breakdown(
     w_rank: float = DEFAULT_W_RANK,
     w_geo: float = DEFAULT_W_GEO,
     w_pub: float = DEFAULT_W_PUB,
-    w_hist: float = DEFAULT_W_HIST
+    w_recency: float = DEFAULT_W_RECENCY
 ) -> Dict[str, Any]:
     """
     Build breakdown of objective components for selected assignments.
@@ -160,7 +195,7 @@ def build_shaping_breakdown(
         w_rank: Weight for rank component
         w_geo: Weight for geographic match
         w_pub: Weight for publication rate
-        w_hist: Weight for publication history
+        w_recency: Weight for engagement recency
 
     Returns:
         Dict with component sums and statistics
@@ -171,18 +206,18 @@ def build_shaping_breakdown(
                 'w_rank': w_rank,
                 'w_geo': w_geo,
                 'w_pub': w_pub,
-                'w_hist': w_hist
+                'w_recency': w_recency
             },
             'components': {
                 'rank_total': 0,
                 'geo_total': 0,
                 'pub_total': 0,
-                'hist_total': 0,
+                'recency_total': 0,
                 'total': 0
             },
             'counts': {
                 'geo_matches': 0,
-                'with_history': 0,
+                'with_recency_data': 0,
                 'avg_pub_rate': 0
             }
         }
@@ -191,11 +226,11 @@ def build_shaping_breakdown(
     rank_total = sum(a.get('_score_rank', 0) for a in selected_assignments)
     geo_total = sum(a.get('_score_geo', 0) for a in selected_assignments)
     pub_total = sum(a.get('_score_pub', 0) for a in selected_assignments)
-    hist_total = sum(a.get('_score_hist', 0) for a in selected_assignments)
+    recency_total = sum(a.get('_score_recency', 0) for a in selected_assignments)
 
     # Calculate counts
     geo_matches = sum(1 for a in selected_assignments if a.get('geo_office_match', 0) == 1)
-    with_history = sum(1 for a in selected_assignments if a.get('history_published', 0) == 1)
+    with_recency_data = sum(1 for a in selected_assignments if a.get('days_since_last_loan') is not None)
 
     # Calculate average publication rate
     pub_rates = [a.get('pub_rate_24m', 0) for a in selected_assignments]
@@ -213,18 +248,18 @@ def build_shaping_breakdown(
             'w_rank': w_rank,
             'w_geo': w_geo,
             'w_pub': w_pub,
-            'w_hist': w_hist
+            'w_recency': w_recency
         },
         'components': {
             'rank_total': round(rank_total, 2),
             'geo_total': round(geo_total, 2),
             'pub_total': round(pub_total, 2),
-            'hist_total': round(hist_total, 2),
-            'total': round(rank_total + geo_total + pub_total + hist_total, 2)
+            'recency_total': round(recency_total, 2),
+            'total': round(rank_total + geo_total + pub_total + recency_total, 2)
         },
         'counts': {
             'geo_matches': geo_matches,
-            'with_history': with_history,
+            'with_recency_data': with_recency_data,
             'avg_pub_rate': round(avg_pub_rate, 3)
         }
     }
@@ -258,7 +293,7 @@ def validate_monotonicity(
             'w_rank': DEFAULT_W_RANK,
             'w_geo': DEFAULT_W_GEO,
             'w_pub': DEFAULT_W_PUB,
-            'w_hist': DEFAULT_W_HIST
+            'w_recency': DEFAULT_W_RECENCY
         }
         weights[weight_name] = w_val
 

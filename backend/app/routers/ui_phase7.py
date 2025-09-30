@@ -16,7 +16,7 @@ from ..etl.availability import build_availability_grid
 from ..solver.dynamic_capacity import load_capacity_calendar
 from ..solver.ortools_solver_v6 import solve_with_all_constraints
 from ..solver.ortools_solver_v2 import add_score_to_triples
-from ..etl.publication import compute_publication_rate_24m
+from ..etl.publication import compute_publication_rate_24m, compute_recency_scores
 
 router = APIRouter(prefix="/ui/phase7", tags=["UI Phase 7"])
 
@@ -28,6 +28,7 @@ class RunRequest(BaseModel):
     rank_weight: float = 1.0  # Partner Quality slider (0.0 - 2.0)
     geo_match: int = 100  # Local Priority slider (0 - 200)
     pub_rate: int = 150  # Publishing Success slider (0 - 300)
+    engagement_priority: int = 50  # Engagement Priority slider (0-100: 0=dormant, 50=neutral, 100=momentum)
 
 
 @router.post("/run")
@@ -158,12 +159,29 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         if not publication_df.empty:
             print(f"  Avg publication rate: {publication_df['publication_rate'].mean():.2%}")
 
-        # 4c. Add scoring columns using the Phase 7 scoring function
+        # 4c. Calculate recency scores (days since last loan)
+        recency_df = compute_recency_scores(
+            loan_history_df=loan_history_df,
+            as_of_date=request.week_start
+        )
+        print(f"Recency scores calculated: {len(recency_df)} partner-make combinations")
+        if not recency_df.empty:
+            print(f"  Avg days since last loan: {recency_df['days_since_last_loan'].mean():.0f}")
+
+        # 4d. Add scoring columns using the Phase 7 scoring function
         triples_post = add_score_to_triples(
             triples_df=triples_post,
             partners_df=partners_df,
             publication_df=publication_df
         )
+
+        # 4e. Merge recency data into triples
+        if not recency_df.empty:
+            triples_post = triples_post.merge(
+                recency_df[['person_id', 'make', 'days_since_last_loan']],
+                on=['person_id', 'make'],
+                how='left'
+            )
 
         print(f"\n=== PRE-SOLVER DEBUG ===")
         print(f"Triples to solver: {len(triples_post)} rows")
@@ -196,7 +214,10 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             w_rank=request.rank_weight,  # From Partner Quality slider
             w_geo=request.geo_match,  # From Local Priority slider
             w_pub=request.pub_rate,  # From Publishing Success slider
-            w_hist=50,
+            w_recency=abs(request.engagement_priority - 50) * 2,  # Weight magnitude (0-100, scaled from slider distance)
+            engagement_mode=('dormant' if request.engagement_priority < 45 else
+                           'momentum' if request.engagement_priority > 55 else
+                           'neutral'),  # From Engagement Priority slider
 
             solver_time_limit_s=30,  # Increased from 10s for 58k triples
             seed=request.seed,

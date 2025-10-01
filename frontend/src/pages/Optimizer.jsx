@@ -132,6 +132,36 @@ function Optimizer() {
     return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
+  // Helper functions to display slider values
+  const getPartnerQualityLabel = (weight) => {
+    if (weight <= 0.3) return 'All Tiers (A+/A/B/C/D)';
+    if (weight <= 0.8) return 'B+ and Better';
+    if (weight <= 1.2) return 'A Tier and Better';
+    if (weight <= 1.6) return 'A+ and A Only';
+    return 'A+ Only';
+  };
+
+  const getLocalPriorityLabel = (value) => {
+    // Higher value = MORE local (inverse of weight)
+    if (value === 0) return 'Any Distance';
+    const effectiveMiles = Math.round(300 - (value * 1.5)); // 200 = 0 miles (very local), 0 = 300 miles (far)
+    if (effectiveMiles <= 50) return 'Very Local (<50 mi)';
+    if (effectiveMiles <= 150) return `Regional (~${effectiveMiles} mi)`;
+    return `Wide Area (~${effectiveMiles}+ mi)`;
+  };
+
+  const getPublicationRateLabel = (value) => {
+    if (value === 0) return 'All Partners (0%)';
+    const percentage = Math.round((value / 300) * 100);
+    return `${percentage}%+ Publication Rate`;
+  };
+
+  const getEngagementLabel = (value) => {
+    if (value < 45) return 'Re-engage Dormant Partners';
+    if (value > 55) return 'Maintain Active Partners';
+    return 'Balanced Mix';
+  };
+
   const getWeekdayCapacity = () => {
     if (!metrics?.capacity) return 0;
     return ['mon', 'tue', 'wed', 'thu', 'fri']
@@ -483,78 +513,90 @@ function Optimizer() {
               <h3 className="text-sm font-medium text-gray-700 mb-4">Schedule Priorities</h3>
               <div className="space-y-4">
                 <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Partner Quality</label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-sm font-medium text-gray-700">Partner Quality</label>
+                    <span className="text-xs font-semibold text-blue-600">{getPartnerQualityLabel(rankWeight)}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 w-12">Any</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      value={rankWeight}
-                      onChange={(e) => setRankWeight(parseFloat(e.target.value))}
-                      className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                    />
-                    <span className="text-xs text-gray-400 w-12 text-right">Top Tier</span>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Local Priority</label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 w-12">Any</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="200"
-                      step="10"
-                      value={geoMatch}
-                      onChange={(e) => setGeoMatch(parseInt(e.target.value))}
-                      className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                    />
-                    <span className="text-xs text-gray-400 w-12 text-right">Nearby</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={rankWeight}
+                    onChange={(e) => setRankWeight(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  />
+                  <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
+                    <span>All Tiers</span>
+                    <span>B+</span>
+                    <span>A</span>
+                    <span>A+</span>
                   </div>
                 </div>
 
                 <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Publishing Success</label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-sm font-medium text-gray-700">Local Priority</label>
+                    <span className="text-xs font-semibold text-blue-600">{getLocalPriorityLabel(geoMatch)}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 w-12">Any</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="300"
-                      step="10"
-                      value={pubRate}
-                      onChange={(e) => setPubRate(parseInt(e.target.value))}
-                      className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                    />
-                    <span className="text-xs text-gray-400 w-12 text-right">Top Rate</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="200"
+                    step="10"
+                    value={geoMatch}
+                    onChange={(e) => setGeoMatch(parseInt(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  />
+                  <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
+                    <span>Any Distance</span>
+                    <span>~200 mi</span>
+                    <span>~100 mi</span>
+                    <span>Very Local</span>
                   </div>
                 </div>
 
                 <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm text-gray-600">Engagement Priority</label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-sm font-medium text-gray-700">Publication Rate</label>
+                    <span className="text-xs font-semibold text-blue-600">{getPublicationRateLabel(pubRate)}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 w-12">Dormant</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      step="5"
-                      value={historyBonus}
-                      onChange={(e) => setHistoryBonus(parseInt(e.target.value))}
-                      className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                    />
-                    <span className="text-xs text-gray-400 w-12 text-right">Active</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="300"
+                    step="30"
+                    value={pubRate}
+                    onChange={(e) => setPubRate(parseInt(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  />
+                  <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
+                    <span>0%</span>
+                    <span>25%</span>
+                    <span>50%</span>
+                    <span>75%</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-sm font-medium text-gray-700">Engagement Priority</label>
+                    <span className="text-xs font-semibold text-blue-600">{getEngagementLabel(historyBonus)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={historyBonus}
+                    onChange={(e) => setHistoryBonus(parseInt(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  />
+                  <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
+                    <span>Dormant</span>
+                    <span>Balanced</span>
+                    <span>Active</span>
                   </div>
                 </div>
               </div>

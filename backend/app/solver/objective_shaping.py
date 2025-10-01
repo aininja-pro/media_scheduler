@@ -17,6 +17,7 @@ DEFAULT_W_RANK = 1.0      # Multiplier for rank_weight (already 500-1000)
 DEFAULT_W_GEO = 100       # Bonus for same-office match
 DEFAULT_W_PUB = 150       # Bonus for publication rate (0-1 normalized)
 DEFAULT_W_RECENCY = 50    # Weight for engagement recency (replaces history)
+DEFAULT_W_PREFERRED_DAY = 0  # Weight for preferred day match (0=off by default)
 
 
 def apply_objective_shaping(
@@ -26,6 +27,7 @@ def apply_objective_shaping(
     w_pub: float = DEFAULT_W_PUB,
     w_recency: float = DEFAULT_W_RECENCY,
     engagement_mode: str = 'neutral',  # 'dormant', 'neutral', or 'momentum'
+    w_preferred_day: float = DEFAULT_W_PREFERRED_DAY,
     verbose: bool = False
 ) -> pd.DataFrame:
     """
@@ -67,6 +69,8 @@ def apply_objective_shaping(
         df['pub_rate_24m'] = 0
     if 'days_since_last_loan' not in df.columns:
         df['days_since_last_loan'] = None
+    if 'preferred_day_match' not in df.columns:
+        df['preferred_day_match'] = False
 
     # Normalize publication rate if it's in percentage (0-100)
     pub_rate_normalized = df['pub_rate_24m'].copy()
@@ -120,6 +124,9 @@ def apply_objective_shaping(
 
     recency_score = df['days_since_last_loan'].apply(calc_recency_score).astype(float)
 
+    # Calculate preferred day score (simple binary: 1 if match, 0 if not)
+    preferred_day_score = pd.to_numeric(df['preferred_day_match'], errors='coerce').fillna(0.0).astype(float)
+
     # Add tiny deterministic tie-breaker based on VIN/person hash
     # This ensures deterministic selection when scores are equal
     if 'vin' in df.columns and 'person_id' in df.columns:
@@ -137,6 +144,7 @@ def apply_objective_shaping(
         w_geo * geo_score +
         w_pub * pub_rate_normalized +
         w_recency * recency_score +
+        w_preferred_day * preferred_day_score +
         df['_tiebreaker']  # Tiny deterministic noise
     )
 
@@ -148,10 +156,11 @@ def apply_objective_shaping(
     df['_score_geo'] = w_geo * geo_score
     df['_score_pub'] = w_pub * pub_rate_normalized
     df['_score_recency'] = w_recency * recency_score
+    df['_score_preferred_day'] = w_preferred_day * preferred_day_score
 
     if verbose:
         print(f"\n=== Objective Shaping Applied ===")
-        print(f"  Weights: rank={w_rank}, geo={w_geo}, pub={w_pub}, recency={w_recency}")
+        print(f"  Weights: rank={w_rank}, geo={w_geo}, pub={w_pub}, recency={w_recency}, preferred_day={w_preferred_day}")
         print(f"  Engagement mode: {engagement_mode}")
         print(f"  Triples: {len(df):,}")
         print(f"  Score range: {df['score_shaped'].min():.1f} - {df['score_shaped'].max():.1f}")
@@ -176,6 +185,10 @@ def apply_objective_shaping(
             if len(valid_recency) > 0:
                 print(f"  Days since last loan: min={valid_recency.min():.0f}, max={valid_recency.max():.0f}, avg={valid_recency.mean():.0f}")
             print(f"  With recency data: {valid_recency.count():,} ({valid_recency.count()/len(df)*100:.1f}%)")
+
+        # Preferred day statistics
+        preferred_day_matches = df['preferred_day_match'].sum()
+        print(f"  Preferred day matches: {preferred_day_matches:,} ({preferred_day_matches/len(df)*100:.1f}%)")
 
     return df
 

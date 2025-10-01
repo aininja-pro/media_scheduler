@@ -27,6 +27,7 @@ function Optimizer() {
   const [cooldownDays, setCooldownDays] = useState(30);
   const [enforceBudgetHard, setEnforceBudgetHard] = useState(false);
   const [maxPerPartnerPerDay, setMaxPerPartnerPerDay] = useState(1);
+  const [preferNormalDays, setPreferNormalDays] = useState(false);
 
   // Load offices from database
   const [offices, setOffices] = useState([]);
@@ -210,7 +211,8 @@ function Optimizer() {
           geo_match: geoMatch,  // Local Priority slider value
           pub_rate: pubRate,  // Publishing Success slider value
           engagement_priority: historyBonus,  // Engagement Priority slider value
-          max_per_partner_per_day: maxPerPartnerPerDay  // Max vehicles per partner per day
+          max_per_partner_per_day: maxPerPartnerPerDay,  // Max vehicles per partner per day
+          prefer_normal_days: preferNormalDays  // Prioritize Partner Normal Days toggle
         })
       });
 
@@ -636,6 +638,20 @@ function Optimizer() {
                   </select>
                   <div className="text-xs text-gray-500 mt-1">
                     Limits how many vehicles can start on the same day for one partner
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-gray-200">
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={preferNormalDays}
+                      onChange={(e) => setPreferNormalDays(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Prioritize Partner Normal Days</span>
+                  </label>
+                  <div className="text-xs text-gray-500 mt-1 ml-6">
+                    Favor scheduling partners on their historically preferred day of week
                   </div>
                 </div>
               </div>

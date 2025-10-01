@@ -231,6 +231,14 @@ def build_feasible_start_day_triples(
                         float(partner_lat), float(partner_lon)
                     )
 
+                # Check if this matches the partner's preferred day
+                preferred_day_match = False
+                preferred_day_of_week = partner.get('preferred_day_of_week')
+                if pd.notna(preferred_day_of_week):
+                    # Convert start_date to day name (e.g., 'Monday')
+                    start_day_name = start_date.strftime('%A')
+                    preferred_day_match = (start_day_name == preferred_day_of_week)
+
                 # Generate deterministic tie-breaker key
                 tie_key = _generate_tie_key(vin, person_id, start_date, seed)
 
@@ -247,7 +255,8 @@ def build_feasible_start_day_triples(
                     'availability_ok': True,  # Always true if we got here
                     'start_day_ok': start_day_has_capacity,
                     'geo_office_match': geo_office_match,  # Keep for backward compatibility
-                    'distance_miles': distance_miles,  # NEW: Actual distance calculation
+                    'distance_miles': distance_miles,  # Actual distance calculation
+                    'preferred_day_match': preferred_day_match,  # NEW: Does this match partner's preferred day?
                     'short_model_class': short_model_class,
                     'powertrain': powertrain,
                     'tie_key': tie_key

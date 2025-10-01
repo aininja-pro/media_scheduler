@@ -94,6 +94,7 @@ def solve_with_all_constraints(
     w_pub: float = DEFAULT_W_PUB,
     w_recency: float = DEFAULT_W_RECENCY,
     engagement_mode: str = 'neutral',
+    w_preferred_day: float = 0,  # Weight for preferred day match (0=off)
     # General
     seed: int = 42,
     verbose: bool = True
@@ -144,6 +145,7 @@ def solve_with_all_constraints(
         w_pub=w_pub,
         w_recency=w_recency,
         engagement_mode=engagement_mode,
+        w_preferred_day=w_preferred_day,
         verbose=verbose
     )
 

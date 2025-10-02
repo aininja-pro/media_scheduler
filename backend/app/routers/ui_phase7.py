@@ -453,12 +453,56 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
         else:
             mileage_str = 'N/A'
 
+        # Determine last known location
+        # Check if vehicle has current activity (active loan)
+        if not activities_df.empty:
+            # Find most recent activity with to_field
+            recent_activity = activities_df[activities_df['to_field'].notna()].sort_values('start_date', ascending=False)
+
+            if not recent_activity.empty:
+                to_field = recent_activity.iloc[0]['to_field']
+
+                # Look up partner info
+                partner_response = db.client.table('media_partners')\
+                    .select('*')\
+                    .eq('person_id', to_field)\
+                    .execute()
+
+                if partner_response.data:
+                    partner = partner_response.data[0]
+                    partner_name = partner.get('name', f'Partner {to_field}')
+                    partner_office = partner.get('office', 'Unknown')
+
+                    # Check if activity is still active (end_date is None or in future)
+                    end_date = recent_activity.iloc[0].get('end_date')
+                    is_active = pd.isna(end_date) or pd.to_datetime(end_date) >= now
+
+                    if is_active:
+                        last_known_location = f"At {partner_name} ({partner_office})"
+                        location_type = "active_loan"
+                    else:
+                        last_known_location = f"Last seen at {partner_name} ({partner_office})"
+                        location_type = "last_partner"
+                else:
+                    last_known_location = f"Unknown partner location"
+                    location_type = "unknown"
+            else:
+                # No to_field in activities, assume at home office
+                last_known_location = f"Home Office ({vehicle_info.get('office', 'Unknown')})"
+                location_type = "home_office"
+        else:
+            # No activities found, assume at home office
+            last_known_location = f"Home Office ({vehicle_info.get('office', 'Unknown')})"
+            location_type = "home_office"
+
         return {
             'vin': vin,
             'make': vehicle_info.get('make'),
             'model': vehicle_info.get('model'),
             'office': vehicle_info.get('office'),
             'mileage': mileage_str,
+            'last_known_location': last_known_location,
+            'location_type': location_type,
             'previous_activity': previous_activity,
             'next_activity': next_activity,
             'timeline': timeline

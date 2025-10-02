@@ -1158,7 +1158,18 @@ function Optimizer() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">Mileage:</span>
-                        <span className="text-sm italic text-gray-500">{vehicleContext.mileage}</span>
+                        <span className="text-sm font-medium text-gray-900">{vehicleContext.mileage}</span>
+                      </div>
+                      <div className="border-t pt-2 mt-2">
+                        <div className="flex items-start">
+                          <svg className="w-4 h-4 text-blue-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                          </svg>
+                          <div className="flex-1">
+                            <p className="text-xs text-gray-500 font-medium">Last Known Location</p>
+                            <p className="text-sm text-gray-900 mt-0.5">{vehicleContext.last_known_location}</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -325,12 +325,16 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         if not budget_summary_df.empty and hasattr(budget_summary_df, 'to_dict'):
             for _, row in budget_summary_df.iterrows():
                 fleet = row.get('fleet', 'Unknown')
+                # Map from budget_constraints columns to frontend format
+                planned_spend = int(row.get('planned_spend', 0))
+                budget_amount = int(row.get('budget_amount', 0)) if pd.notna(row.get('budget_amount')) else 0
+
                 budget_fleets[fleet] = {
-                    'used': int(row.get('cost_used', 0)),
-                    'budget': int(row.get('budget', 0))
+                    'used': planned_spend,
+                    'budget': budget_amount
                 }
-                budget_total['used'] += int(row.get('cost_used', 0))
-                budget_total['budget'] += int(row.get('budget', 0))
+                budget_total['used'] += planned_spend
+                budget_total['budget'] += budget_amount
 
         budget_summary = {
             'fleets': budget_fleets,

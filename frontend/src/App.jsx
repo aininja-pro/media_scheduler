@@ -4,6 +4,7 @@ import Availability from './pages/Availability.jsx'
 import PublicationRates from './pages/PublicationRates.jsx'
 import ScheduleGeneration from './pages/ScheduleGeneration.jsx'
 import Optimizer from './pages/Optimizer.jsx'
+import Calendar from './pages/Calendar.jsx'
 import './App.css'
 
 function App() {
@@ -302,6 +303,16 @@ function App() {
                 }`}
               >
                 Optimizer
+              </button>
+              <button
+                onClick={() => setActiveTab('calendar')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'calendar'
+                    ? 'bg-white text-black'
+                    : 'bg-gray-600 text-white hover:bg-gray-500'
+                }`}
+              >
+                Calendar
               </button>
           </nav>
         </div>
@@ -688,6 +699,11 @@ function App() {
         {/* Optimizer Tab */}
         {activeTab === 'optimizer' && (
           <Optimizer />
+        )}
+
+        {/* Calendar Tab */}
+        {activeTab === 'calendar' && (
+          <Calendar />
         )}
         </div>
       </main>

@@ -1025,18 +1025,86 @@ function Optimizer() {
               <h3 className="text-sm font-medium text-gray-700 mb-3">Fairness Metrics</h3>
               <div className="bg-gray-50 rounded p-3">
                 {runResult?.fairness_summary ? (
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>Partners Assigned:</span>
-                      <span className="font-medium">{runResult.fairness_summary.partners_assigned}</span>
+                  <div className="space-y-3 text-sm">
+                    {/* Basic Stats */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Partners Used:</span>
+                        <span className="font-medium text-gray-900">{runResult.fairness_summary.partners_assigned || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Max per Partner:</span>
+                        <span className="font-medium text-gray-900">{runResult.fairness_summary.max_per_partner || 0}</span>
+                      </div>
+                      {runResult.fairness_summary.num_partners !== undefined && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Multiple Vehicles:</span>
+                          <span className="font-medium text-gray-900">{runResult.fairness_summary.partners_with_multiple || 0}</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex justify-between">
-                      <span>Max per Partner:</span>
-                      <span className="font-medium">{runResult.fairness_summary.max_per_partner}</span>
+
+                    {/* Gini Coefficient */}
+                    <div className="border-t pt-2">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs font-medium text-gray-500 uppercase">Gini Coefficient</span>
+                        <span className="text-sm font-semibold text-gray-900">
+                          {runResult.fairness_summary.gini_coefficient !== undefined
+                            ? runResult.fairness_summary.gini_coefficient.toFixed(2)
+                            : (runResult.fairness_summary.gini || 0).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <div className="flex-1 bg-gray-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full ${
+                              (runResult.fairness_summary.gini_coefficient || runResult.fairness_summary.gini || 0) < 0.3
+                                ? 'bg-green-500'
+                                : (runResult.fairness_summary.gini_coefficient || runResult.fairness_summary.gini || 0) < 0.5
+                                  ? 'bg-yellow-500'
+                                  : 'bg-orange-500'
+                            }`}
+                            style={{ width: `${((runResult.fairness_summary.gini_coefficient || runResult.fairness_summary.gini || 0) * 100)}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>Equal</span>
+                        <span>Concentrated</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        {(runResult.fairness_summary.gini_coefficient || runResult.fairness_summary.gini || 0) < 0.3
+                          ? '✓ Well distributed'
+                          : (runResult.fairness_summary.gini_coefficient || runResult.fairness_summary.gini || 0) < 0.5
+                            ? '⚠ Moderate concentration'
+                            : '⚠ High concentration'}
+                      </p>
                     </div>
-                    {runResult.fairness_summary.gini && (
-                      <div className="text-xs text-gray-500">
-                        Distribution Score: {runResult.fairness_summary.gini < 0.2 ? '✓ Balanced' : '⚠ Concentrated'}
+
+                    {/* Additional Metrics if available */}
+                    {(runResult.fairness_summary.hhi !== undefined ||
+                      runResult.fairness_summary.top_5_share !== undefined ||
+                      runResult.fairness_summary.top_1_share !== undefined) && (
+                      <div className="border-t pt-2 space-y-1">
+                        <p className="text-xs font-medium text-gray-500 uppercase mb-1.5">Concentration</p>
+                        {runResult.fairness_summary.hhi !== undefined && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">HHI Index:</span>
+                            <span className="font-medium text-gray-900">{(runResult.fairness_summary.hhi * 10000).toFixed(0)}</span>
+                          </div>
+                        )}
+                        {runResult.fairness_summary.top_1_share !== undefined && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">Top Partner:</span>
+                            <span className="font-medium text-gray-900">{(runResult.fairness_summary.top_1_share * 100).toFixed(0)}%</span>
+                          </div>
+                        )}
+                        {runResult.fairness_summary.top_5_share !== undefined && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">Top 5 Partners:</span>
+                            <span className="font-medium text-gray-900">{(runResult.fairness_summary.top_5_share * 100).toFixed(0)}%</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

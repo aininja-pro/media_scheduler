@@ -282,11 +282,18 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         # For now, just pass the fairness_metrics which is already a dict
         fairness_metrics = solver_result.get('fairness_metrics', {})
 
-        # Build simple fairness summary from metrics
+        # Build comprehensive fairness summary from metrics
         fairness_summary = {
-            'partners_assigned': fairness_metrics.get('num_partners', 0),
-            'max_per_partner': fairness_metrics.get('max_count', 0),
-            'gini': fairness_metrics.get('gini', 0)
+            'partners_assigned': fairness_metrics.get('partners_assigned', 0),
+            'max_per_partner': fairness_metrics.get('max_concentration', 0),
+            'partners_with_multiple': fairness_metrics.get('partners_with_multiple', 0),
+            'gini': fairness_metrics.get('gini_coefficient', 0),
+            'gini_coefficient': fairness_metrics.get('gini_coefficient', 0),
+            'hhi': fairness_metrics.get('hhi', 0),
+            'top_1_share': fairness_metrics.get('top_1_share', 0),
+            'top_5_share': fairness_metrics.get('top_5_share', 0),
+            'avg_assignments': fairness_metrics.get('avg_assignments', 0),
+            'concentration_ratio': fairness_metrics.get('concentration_ratio', 0)
         }
 
         # Cap summary - extract violations if any

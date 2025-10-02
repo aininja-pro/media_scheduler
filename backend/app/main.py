@@ -44,6 +44,10 @@ app.include_router(solver.router, prefix="/api")
 from .routers import ui_phase7
 app.include_router(ui_phase7.router, prefix="/api")
 
+# Import and include Calendar router
+from .routers import calendar
+app.include_router(calendar.router)
+
 @app.get("/")
 def read_root():
     """Root endpoint"""

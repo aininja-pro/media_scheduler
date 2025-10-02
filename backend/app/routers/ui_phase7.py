@@ -348,7 +348,7 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             'total': budget_total if budget_fleets else None
         }
 
-        return {
+        result = {
             'status': solver_result.get('meta', {}).get('solver_status', 'UNKNOWN'),
             'solve_time_ms': solver_result.get('timing', {}).get('wall_ms', 0),
             'assignments_count': len(assignments),
@@ -361,6 +361,48 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             'budget_summary': budget_summary,
             'objective_breakdown': solver_result.get('objective_breakdown', {})
         }
+
+        # Save assignments to scheduled_assignments table for calendar view
+        if assignments:
+            import uuid
+            run_id = str(uuid.uuid4())
+            week_start_date = pd.to_datetime(request.week_start).date()
+
+            # Delete existing planned assignments for this week/office
+            db.client.table('scheduled_assignments')\
+                .delete()\
+                .eq('office', request.office)\
+                .eq('week_start', str(week_start_date))\
+                .eq('status', 'planned')\
+                .execute()
+
+            # Insert new assignments
+            assignments_to_insert = []
+            for assignment in selected_assignments:
+                start_day = pd.to_datetime(assignment['start_day']).date()
+                end_day = start_day + timedelta(days=7)
+
+                assignments_to_insert.append({
+                    'vin': assignment['vin'],
+                    'person_id': int(assignment['person_id']),
+                    'start_day': str(start_day),
+                    'end_day': str(end_day),
+                    'make': assignment['make'],
+                    'model': assignment.get('model', ''),
+                    'office': request.office,
+                    'partner_name': partner_names.get(int(assignment['person_id']), f"Partner {assignment['person_id']}"),
+                    'score': int(assignment.get('score', 0)),
+                    'optimizer_run_id': run_id,
+                    'week_start': str(week_start_date),
+                    'status': 'planned'
+                })
+
+            if assignments_to_insert:
+                db.client.table('scheduled_assignments').insert(assignments_to_insert).execute()
+
+            result['optimizer_run_id'] = run_id
+
+        return result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

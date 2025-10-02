@@ -1170,8 +1170,67 @@ function Optimizer() {
 
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-3">Objective Breakdown</h3>
-              <div className="bg-gray-50 rounded p-3 text-sm text-gray-600">
-                Will show score components and penalties
+              <div className="bg-gray-50 rounded p-3">
+                {runResult?.objective_breakdown ? (
+                  <div className="space-y-3 text-sm">
+                    {/* Positive Score */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Raw Score:</span>
+                        <span className="font-medium text-green-600">+{runResult.objective_breakdown.raw_score?.toLocaleString() || 0}</span>
+                      </div>
+                      <p className="text-xs text-gray-500">Points from good matches (quality, location, publication rate)</p>
+                    </div>
+
+                    {/* Penalties */}
+                    <div className="border-t pt-2 space-y-1.5">
+                      <p className="text-xs font-medium text-gray-500 uppercase">Penalties</p>
+
+                      {runResult.objective_breakdown.cap_penalty > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">Tier Cap Violations:</span>
+                          <span className="font-medium text-red-600">-{runResult.objective_breakdown.cap_penalty?.toLocaleString()}</span>
+                        </div>
+                      )}
+
+                      {runResult.objective_breakdown.fairness_penalty > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">Fairness Concentration:</span>
+                          <span className="font-medium text-red-600">-{runResult.objective_breakdown.fairness_penalty?.toLocaleString()}</span>
+                        </div>
+                      )}
+
+                      {runResult.objective_breakdown.budget_penalty > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">Budget Overages:</span>
+                          <span className="font-medium text-red-600">-{runResult.objective_breakdown.budget_penalty?.toLocaleString()}</span>
+                        </div>
+                      )}
+
+                      {runResult.objective_breakdown.total_penalties === 0 && (
+                        <div className="text-xs text-green-600">✓ No penalties applied</div>
+                      )}
+
+                      {runResult.objective_breakdown.total_penalties > 0 && (
+                        <div className="flex justify-between text-xs font-medium border-t pt-1 mt-1">
+                          <span className="text-gray-700">Total Penalties:</span>
+                          <span className="text-red-600">-{runResult.objective_breakdown.total_penalties?.toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Net Score */}
+                    <div className="border-t pt-2">
+                      <div className="flex justify-between items-center">
+                        <span className="font-semibold text-gray-700">Net Score:</span>
+                        <span className="text-lg font-bold text-blue-600">{runResult.objective_breakdown.net_score?.toLocaleString() || 0}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Final optimized score</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-400">Run optimizer to see breakdown</div>
+                )}
               </div>
             </div>
           </div>

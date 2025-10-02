@@ -446,12 +446,19 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
 
         vehicle_info = vehicle_response.data[0] if vehicle_response.data else {}
 
+        # Format mileage
+        current_mileage = vehicle_info.get('current_mileage')
+        if current_mileage and pd.notna(current_mileage):
+            mileage_str = f"{int(current_mileage):,} mi"
+        else:
+            mileage_str = 'N/A'
+
         return {
             'vin': vin,
             'make': vehicle_info.get('make'),
             'model': vehicle_info.get('model'),
             'office': vehicle_info.get('office'),
-            'mileage': 'Coming soon',  # Placeholder until mileage field is added
+            'mileage': mileage_str,
             'previous_activity': previous_activity,
             'next_activity': next_activity,
             'timeline': timeline

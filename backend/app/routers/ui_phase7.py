@@ -357,6 +357,112 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         await db.close()
 
 
+@router.get("/vehicle-context/{vin}")
+async def get_vehicle_context(vin: str) -> Dict[str, Any]:
+    """
+    Get context information for a specific vehicle including previous and next activities.
+    """
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        # Get current time for comparison
+        now = datetime.now()
+
+        # Load current and recent activities for this VIN
+        activity_response = db.client.table('current_activity')\
+            .select('*')\
+            .eq('vehicle_vin', vin)\
+            .order('start_date', desc=False)\
+            .execute()
+
+        activities_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
+
+        # Load loan history for this VIN
+        loan_response = db.client.table('loan_history')\
+            .select('*')\
+            .eq('vin', vin)\
+            .order('start_date', desc=True)\
+            .limit(10)\
+            .execute()
+
+        loans_df = pd.DataFrame(loan_response.data) if loan_response.data else pd.DataFrame()
+
+        # Combine activities and loans into a timeline
+        timeline = []
+
+        # Add activities
+        if not activities_df.empty:
+            for _, activity in activities_df.iterrows():
+                start = pd.to_datetime(activity.get('start_date'))
+                end = pd.to_datetime(activity.get('end_date')) if pd.notna(activity.get('end_date')) else None
+
+                timeline.append({
+                    'type': 'activity',
+                    'activity_type': activity.get('activity_type', 'Unknown'),
+                    'start_date': start.isoformat() if pd.notna(start) else None,
+                    'end_date': end.isoformat() if end else None,
+                    'person_id': activity.get('person_id'),
+                    'to_field': activity.get('to_field')
+                })
+
+        # Add loan history
+        if not loans_df.empty:
+            for _, loan in loans_df.iterrows():
+                start = pd.to_datetime(loan.get('start_date'))
+                end = pd.to_datetime(loan.get('end_date')) if pd.notna(loan.get('end_date')) else None
+
+                timeline.append({
+                    'type': 'loan',
+                    'activity_type': 'Media Loan',
+                    'start_date': start.isoformat() if pd.notna(start) else None,
+                    'end_date': end.isoformat() if end else None,
+                    'person_id': loan.get('person_id'),
+                    'make': loan.get('make'),
+                    'published': loan.get('published', False)
+                })
+
+        # Sort timeline by start date
+        timeline.sort(key=lambda x: x['start_date'] if x['start_date'] else '9999-01-01')
+
+        # Find previous and next activity relative to now
+        previous_activity = None
+        next_activity = None
+
+        for item in timeline:
+            start = pd.to_datetime(item['start_date']) if item['start_date'] else None
+            end = pd.to_datetime(item['end_date']) if item['end_date'] else None
+
+            if start and start < now:
+                previous_activity = item
+            elif start and start >= now and next_activity is None:
+                next_activity = item
+
+        # Get vehicle info
+        vehicle_response = db.client.table('vehicles')\
+            .select('*')\
+            .eq('vin', vin)\
+            .execute()
+
+        vehicle_info = vehicle_response.data[0] if vehicle_response.data else {}
+
+        return {
+            'vin': vin,
+            'make': vehicle_info.get('make'),
+            'model': vehicle_info.get('model'),
+            'office': vehicle_info.get('office'),
+            'mileage': 'Coming soon',  # Placeholder until mileage field is added
+            'previous_activity': previous_activity,
+            'next_activity': next_activity,
+            'timeline': timeline
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
+
+
 @router.get("/overview")
 async def get_overview(
     office: str = Query(..., description="Office name"),

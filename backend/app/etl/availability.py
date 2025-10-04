@@ -105,8 +105,8 @@ def has_overlapping_activity(vin: str, target_date: date, activity_df: pd.DataFr
         start_date = activity.get('start_date')
         end_date = activity.get('end_date')
 
-        # Skip activities that don't block availability
-        if activity_type not in {'loan', 'service', 'hold', 'event', 'storage'}:
+        # Skip activities that don't block availability (case-insensitive check)
+        if activity_type.lower() not in {'loan', 'service', 'hold', 'event', 'storage'}:
             continue
 
         # Convert dates to date objects

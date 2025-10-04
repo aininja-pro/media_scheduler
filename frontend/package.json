@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@thepocman/gantt-task-react": "^1.0.36",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

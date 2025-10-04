@@ -405,19 +405,19 @@ function Calendar({ sharedOffice }) {
 
   return (
     <div className="w-full min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b px-6 py-4">
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">📅 Calendar View</h1>
-            <p className="text-sm text-gray-600 mt-1">Vehicle activity timeline - past, current, and planned</p>
+      {/* Header - Compact */}
+      <div className="bg-white border-b px-6 py-2">
+        <div className="flex justify-between items-center">
+          <div className="flex items-baseline gap-2">
+            <h1 className="!text-base font-semibold text-gray-900">📅 Calendar</h1>
+            <p className="text-xs text-gray-500">Vehicle activity timeline</p>
           </div>
 
           {/* View Mode Toggle */}
           <div className="flex bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => setViewMode('vehicle')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                 viewMode === 'vehicle'
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
@@ -427,7 +427,7 @@ function Calendar({ sharedOffice }) {
             </button>
             <button
               onClick={() => setViewMode('partner')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                 viewMode === 'partner'
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
@@ -440,7 +440,7 @@ function Calendar({ sharedOffice }) {
       </div>
 
       {/* Controls */}
-      <div className="bg-white border-b px-6 py-4">
+      <div className="bg-white border-b px-6 py-2">
         <div className="flex flex-wrap gap-4 items-end">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium text-gray-700 mb-1">Office</label>
@@ -551,7 +551,7 @@ function Calendar({ sharedOffice }) {
         ) : (
           <div className="bg-white rounded-lg shadow-sm border overflow-x-auto">
             {/* Gantt Chart Header */}
-            <div className="flex border-b bg-gray-50 sticky top-0 z-10">
+            <div className="flex border-b bg-gray-50">
               {/* Row label column */}
               <div className="w-64 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700">
                 {viewMode === 'vehicle' ? 'Vehicle' : 'Partner'}

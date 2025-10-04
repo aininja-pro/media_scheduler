@@ -646,11 +646,29 @@ function Optimizer() {
             </div>
 
             <div className="flex flex-col">
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Budget (2025 Q3)</div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-semibold text-gray-900">$38k</span>
-                <span className="text-sm text-gray-500">/ $268k (86% used)</span>
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">
+                Budget ({metrics.budget_status?.year} {metrics.budget_status?.current_quarter})
               </div>
+              {metrics.budget_status?.quarter_totals ? (
+                <div className="flex items-baseline gap-1">
+                  <span className="text-sm text-gray-500">
+                    ${(metrics.budget_status.quarter_totals.used / 1000).toFixed(1)}k
+                  </span>
+                  <span className="text-sm text-gray-500">/</span>
+                  <span className={`text-2xl font-semibold ${
+                    metrics.budget_status.quarter_totals.used > metrics.budget_status.quarter_totals.budget
+                      ? 'text-red-600'
+                      : 'text-gray-900'
+                  }`}>
+                    ${(metrics.budget_status.quarter_totals.budget / 1000).toFixed(0)}k
+                  </span>
+                  <span className="text-sm text-gray-500">
+                    ({((metrics.budget_status.quarter_totals.used / metrics.budget_status.quarter_totals.budget) * 100).toFixed(0)}% used)
+                  </span>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500">No budget data</div>
+              )}
             </div>
           </div>
         </div>

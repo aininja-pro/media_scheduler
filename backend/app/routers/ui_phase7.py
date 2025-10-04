@@ -21,6 +21,40 @@ from ..etl.publication import compute_publication_rate_24m, compute_recency_scor
 router = APIRouter(prefix="/ui/phase7", tags=["UI Phase 7"])
 
 
+def calculate_cost_per_make(budgets_df: pd.DataFrame, loan_history_df: pd.DataFrame, office: str) -> Dict[str, float]:
+    """
+    Calculate average cost per assignment by make/fleet from historical budget data.
+    Uses total amount_used from budgets table divided by loan count from loan_history.
+
+    Returns dict mapping make name (uppercase) to average cost per loan.
+    """
+    cost_per_make = {}
+
+    if budgets_df.empty or loan_history_df.empty:
+        return cost_per_make
+
+    # Filter to office
+    office_budgets = budgets_df[budgets_df['office'] == office]
+    office_loans = loan_history_df[loan_history_df['office'] == office]
+
+    # For each fleet in budgets
+    for fleet in office_budgets['fleet'].unique():
+        # Sum all amount_used for this fleet across all quarters
+        fleet_budgets = office_budgets[office_budgets['fleet'] == fleet]
+        total_spent = fleet_budgets['amount_used'].sum()
+
+        # Count loans for this make (match make to fleet, case-insensitive)
+        fleet_loans = office_loans[office_loans['make'].str.upper() == fleet.upper()]
+        loan_count = len(fleet_loans)
+
+        if loan_count > 0:
+            avg_cost = total_spent / loan_count
+            cost_per_make[fleet.upper()] = float(avg_cost)
+            print(f"  {fleet}: ${avg_cost:.2f} per loan ({loan_count} loans, ${total_spent:.2f} total spent)")
+
+    return cost_per_make
+
+
 class RunRequest(BaseModel):
     office: str
     week_start: str
@@ -194,6 +228,10 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         budgets_response = db.client.table('budgets').select('*').execute()
         budgets_df = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
 
+        # Calculate actual cost per make from historical data
+        cost_per_assignment = calculate_cost_per_make(budgets_df, loan_history_df, request.office)
+        print(f"Calculated cost_per_assignment: {cost_per_assignment}")
+
         # 6. Run Phase 7 solver with all constraints
         solver_result = solve_with_all_constraints(
             triples_df=triples_post,
@@ -223,6 +261,7 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             max_per_partner_per_day=request.max_per_partner_per_day,  # Max vehicles per partner per day
             w_preferred_day=150 if request.prefer_normal_days else 0,  # Preferred Day toggle
 
+            cost_per_assignment=cost_per_assignment,  # Actual costs from budget history
             solver_time_limit_s=30,  # Increased from 10s for 58k triples
             seed=request.seed,
             verbose=True  # Enable to see what's happening
@@ -324,24 +363,48 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             'total_penalty': int(cap_summary_df.attrs.get('total_penalty', 0)) if hasattr(cap_summary_df, 'attrs') else 0
         }
 
-        # Budget summary - extract fleet usage
-        budget_summary_df = solver_result.get('budget_summary', pd.DataFrame())
+        # Budget summary - show ALL fleets from budgets table for current quarter
+        # Determine quarter from week_start
+        week_start_dt = datetime.strptime(request.week_start, '%Y-%m-%d')
+        current_year = week_start_dt.year
+        current_month = week_start_dt.month
+        current_quarter = f'Q{((current_month - 1) // 3) + 1}'
+
         budget_fleets = {}
         budget_total = {'used': 0, 'budget': 0}
 
-        if not budget_summary_df.empty and hasattr(budget_summary_df, 'to_dict'):
+        # Get ALL budgets for this office and quarter
+        quarter_budgets = budgets_df[
+            (budgets_df['office'] == request.office) &
+            (budgets_df['year'] == current_year) &
+            (budgets_df['quarter'] == current_quarter)
+        ]
+
+        # Create a lookup for planned spend by fleet from solver results
+        planned_by_fleet = {}
+        budget_summary_df = solver_result.get('budget_summary', pd.DataFrame())
+        if not budget_summary_df.empty:
             for _, row in budget_summary_df.iterrows():
                 fleet = row.get('fleet', 'Unknown')
-                # Map from budget_constraints columns to frontend format
-                planned_spend = int(row.get('planned_spend', 0))
-                budget_amount = int(row.get('budget_amount', 0)) if pd.notna(row.get('budget_amount')) else 0
+                planned_spend = float(row.get('planned_spend', 0))
+                planned_by_fleet[fleet] = planned_spend
 
-                budget_fleets[fleet] = {
-                    'used': planned_spend,
-                    'budget': budget_amount
-                }
-                budget_total['used'] += planned_spend
-                budget_total['budget'] += budget_amount
+        # Build budget summary for ALL fleets in the quarter
+        for _, row in quarter_budgets.iterrows():
+            fleet = row['fleet']
+            current_used = float(row['amount_used']) if pd.notna(row['amount_used']) else 0
+            budget_amount = float(row['budget_amount']) if pd.notna(row['budget_amount']) else 0
+            planned_spend = planned_by_fleet.get(fleet, 0)
+
+            # Show current + planned as "used"
+            total_used = current_used + planned_spend
+
+            budget_fleets[fleet] = {
+                'used': int(total_used),
+                'budget': int(budget_amount)
+            }
+            budget_total['used'] += int(total_used)
+            budget_total['budget'] += int(budget_amount)
 
         budget_summary = {
             'fleets': budget_fleets,
@@ -734,6 +797,52 @@ async def get_overview(
                 'notes': notes
             }
 
+        # 9. Load budget status for current quarter and YTD
+        budgets_response = db.client.table('budgets').select('*').eq('office', office).execute()
+        budgets_df = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+
+        # Determine quarter from week_start
+        week_start_dt = datetime.strptime(week_start, '%Y-%m-%d')
+        current_year = week_start_dt.year
+        current_month = week_start_dt.month
+        current_quarter = f'Q{((current_month - 1) // 3) + 1}'
+
+        # Build budget summary by fleet
+        budget_by_fleet = {}
+        ytd_totals = {'budget': 0, 'used': 0}
+        current_quarter_totals = {'budget': 0, 'used': 0}
+
+        if not budgets_df.empty:
+            # Filter to current year
+            year_budgets = budgets_df[budgets_df['year'] == current_year]
+
+            for fleet in year_budgets['fleet'].unique():
+                fleet_budgets = year_budgets[year_budgets['fleet'] == fleet]
+
+                # YTD totals
+                ytd_budget = fleet_budgets['budget_amount'].sum()
+                ytd_used = fleet_budgets['amount_used'].sum()
+
+                # Current quarter
+                quarter_budgets = fleet_budgets[fleet_budgets['quarter'] == current_quarter]
+                q_budget = quarter_budgets['budget_amount'].sum() if not quarter_budgets.empty else 0
+                q_used = quarter_budgets['amount_used'].sum() if not quarter_budgets.empty else 0
+
+                budget_by_fleet[fleet] = {
+                    'ytd_budget': float(ytd_budget),
+                    'ytd_used': float(ytd_used),
+                    'ytd_remaining': float(ytd_budget - ytd_used),
+                    'current_quarter': current_quarter,
+                    'quarter_budget': float(q_budget),
+                    'quarter_used': float(q_used),
+                    'quarter_remaining': float(q_budget - q_used)
+                }
+
+                ytd_totals['budget'] += ytd_budget
+                ytd_totals['used'] += ytd_used
+                current_quarter_totals['budget'] += q_budget
+                current_quarter_totals['used'] += q_used
+
         return {
             "office": office,
             "week_start": week_start,
@@ -750,7 +859,22 @@ async def get_overview(
             "feasible_triples_post_cooldown": feasible_triples_post_cooldown,
             "cooldown_removed_triples": cooldown_removed_triples,
             "makes_in_scope": makes_in_scope,
-            "capacity": capacity
+            "capacity": capacity,
+            "budget_status": {
+                "year": current_year,
+                "current_quarter": current_quarter,
+                "by_fleet": budget_by_fleet,
+                "ytd_totals": {
+                    'budget': float(ytd_totals['budget']),
+                    'used': float(ytd_totals['used']),
+                    'remaining': float(ytd_totals['budget'] - ytd_totals['used'])
+                },
+                "quarter_totals": {
+                    'budget': float(current_quarter_totals['budget']),
+                    'used': float(current_quarter_totals['used']),
+                    'remaining': float(current_quarter_totals['budget'] - current_quarter_totals['used'])
+                }
+            }
         }
 
     except Exception as e:

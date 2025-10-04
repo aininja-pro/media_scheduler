@@ -171,6 +171,7 @@ class LoanHistoryIngest(BaseModel):
     office: str
     name: str
     clips_received: Optional[str] = None
+    partner_address: Optional[str] = None
 
     @field_validator('activity_id', 'vin', 'person_id', mode='before')
     @classmethod
@@ -217,6 +218,7 @@ class CurrentActivityIngest(BaseModel):
     start_date: date
     end_date: date
     to_field: Optional[str] = None
+    partner_address: Optional[str] = None
 
     @field_validator('activity_id', 'person_id', 'vehicle_vin', mode='before')
     @classmethod

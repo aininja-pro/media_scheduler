@@ -7,9 +7,15 @@ from fastapi import APIRouter, UploadFile, HTTPException, Depends
 from typing import Dict, Any, List
 from io import StringIO, BytesIO
 import logging
+import sys
+import os
 
 from ..schemas.ingest import INGEST_SCHEMAS
 from ..services.database import get_database, DatabaseService
+
+# Add backend directory to path for importing analyze_preferred_days
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..', '..'))
+from analyze_preferred_days import analyze_preferred_days
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -720,22 +726,56 @@ async def ingest_media_partners_from_url(
             delete_result = db.client.table('media_partners').delete().neq('person_id', '').execute()
             logger.info(f"Deleted {len(delete_result.data)} existing media partner records")
 
-            # Now insert fresh data
+            # Insert fresh data from CSV
             upsert_result = await db.upsert_records(
                 table_name="media_partners",
                 records=validated_rows
             )
-            
+
             logger.info(f"Successfully upserted {len(validated_rows)} media partners from URL")
-            
+
+            # Auto-update preferred days based on latest loan history
+            logger.info("Auto-updating preferred days from loan history...")
+            preferred_days_count = 0
+            try:
+                # Analyze loan history to get preferred days
+                preferred_df = analyze_preferred_days(min_loans=5, min_confidence=0.40)
+
+                if not preferred_df.empty:
+                    logger.info(f"Found {len(preferred_df)} partners with preferred days")
+
+                    # Update media_partners with preferred days
+                    for _, row in preferred_df.iterrows():
+                        person_id = row['person_id']
+                        office = row['office']
+                        preferred_day = row['preferred_day']
+                        confidence = row['confidence']
+
+                        try:
+                            db.client.table('media_partners').update({
+                                'preferred_day_of_week': preferred_day,
+                                'preferred_day_confidence': round(confidence * 100, 1)
+                            }).eq('person_id', person_id).eq('office', office).execute()
+                            preferred_days_count += 1
+                        except Exception as update_error:
+                            logger.warning(f"Could not update preferred day for person_id={person_id}, office={office}: {update_error}")
+
+                    logger.info(f"✓ Auto-updated {preferred_days_count} preferred days")
+                else:
+                    logger.info("No partners met criteria for preferred days")
+
+            except Exception as pref_error:
+                logger.warning(f"Preferred days auto-update failed (non-critical): {pref_error}")
+
             return {
                 "table": "media_partners",
-                "source": "url", 
+                "source": "url",
                 "url": url,
                 "rows_processed": len(validated_rows),
                 "rows_affected": upsert_result.get("rows_affected", 0),
+                "preferred_days_updated": preferred_days_count,
                 "status": "success",
-                "message": f"Successfully fetched and processed {len(validated_rows)} media partners from URL"
+                "message": f"Successfully fetched and processed {len(validated_rows)} media partners from URL. Auto-updated {preferred_days_count} preferred days."
             }
             
         except Exception as e:
@@ -817,7 +857,7 @@ async def ingest_loan_history_from_url(url: str, db: DatabaseService = Depends(g
             
         df = pd.read_csv(StringIO(response.text), header=None, names=[
             'Activity_ID', 'VIN', 'Person_ID', 'Make', 'Model', 'Year', 'Model_Short_Name',
-            'Start_Date', 'End_Date', 'Clips_Received', 'Office', 'Name'
+            'Start_Date', 'End_Date', 'Clips_Received', 'Office', 'Name', 'Partner_Address'
         ])
         
         # Optimize: Process in chunks and use vectorized operations
@@ -853,7 +893,8 @@ async def ingest_loan_history_from_url(url: str, db: DatabaseService = Depends(g
                         'end_date': str(record['End_Date']).strip(),
                         'clips_received': str(record['Clips_Received']).strip() if record['Clips_Received'] else None,
                         'office': str(record['Office']).strip(),
-                        'name': str(record['Name']).strip()
+                        'name': str(record['Name']).strip(),
+                        'partner_address': str(record['Partner_Address']).strip() if record.get('Partner_Address') else None
                     }
                     
                     # Quick validation - skip if missing required fields
@@ -902,7 +943,7 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
             logger.info(f"Download complete! Processing CSV data...")
             
         df = pd.read_csv(StringIO(response.text), header=None, names=[
-            'Activity_ID', 'Person_ID', 'Vehicle_VIN', 'Activity_Type', 'Start_Date', 'End_Date', 'To'
+            'Activity_ID', 'Person_ID', 'Vehicle_VIN', 'Activity_Type', 'Start_Date', 'End_Date', 'To', 'Partner_Address'
         ])
 
         df = df.fillna('')  # Replace NaN with empty strings
@@ -936,6 +977,7 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
                     'activity_type': str(record['Activity_Type']).strip(),
                     'start_date': str(record['Start_Date']).strip(),
                     'end_date': str(record['End_Date']).strip(),
+                    'partner_address': str(record['Partner_Address']).strip() if record.get('Partner_Address') else None,
                     'to_field': str(record['To']).strip() if record['To'] else None
                 }
 

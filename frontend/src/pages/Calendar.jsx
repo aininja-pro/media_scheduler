@@ -145,9 +145,15 @@ function Calendar() {
     setVehicleContext(null);
   };
 
+  // Parse date string as local date (YYYY-MM-DD)
+  const parseLocalDate = (dateStr) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
   const formatActivityDate = (dateStr) => {
     if (!dateStr) return 'N/A';
-    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return parseLocalDate(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
   const getActivityColor = (status) => {
@@ -166,6 +172,61 @@ function Calendar() {
       case 'planned': return 'Planned';
       default: return status;
     }
+  };
+
+  // Generate days in the selected month
+  const getDaysInMonth = () => {
+    if (!selectedMonth) return [];
+    const [year, month] = selectedMonth.split('-');
+    const numDays = new Date(year, month, 0).getDate();
+    const days = [];
+    for (let day = 1; day <= numDays; day++) {
+      days.push(day);
+    }
+    return days;
+  };
+
+  const daysInMonth = getDaysInMonth();
+
+  // Check if activity overlaps with the selected month
+  const activityOverlapsMonth = (activity) => {
+    if (!selectedMonth) return false;
+
+    const [year, month] = selectedMonth.split('-');
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 0, 23, 59, 59); // End of last day of month
+
+    const activityStart = parseLocalDate(activity.start_date);
+    const activityEnd = parseLocalDate(activity.end_date);
+
+    // Activity must end after month starts AND start before month ends
+    return activityEnd >= monthStart && activityStart <= monthEnd;
+  };
+
+  // Calculate bar position and width for Gantt chart
+  const getBarStyle = (activity) => {
+    if (!selectedMonth) return { left: 0, width: 0 };
+
+    const [year, month] = selectedMonth.split('-');
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 0, 23, 59, 59); // End of last day of month
+
+    const activityStart = parseLocalDate(activity.start_date);
+    const activityEnd = parseLocalDate(activity.end_date);
+
+    // Clamp to month boundaries
+    const startDate = activityStart < monthStart ? monthStart : activityStart;
+    const endDate = activityEnd > monthEnd ? monthEnd : activityEnd;
+
+    // Calculate position as percentage
+    const totalDays = daysInMonth.length;
+    const startDay = startDate.getDate();
+    const endDay = endDate.getDate();
+
+    const left = ((startDay - 1) / totalDays) * 100;
+    const width = ((endDay - startDay + 1) / totalDays) * 100;
+
+    return { left: `${left}%`, width: `${width}%` };
   };
 
   return (
@@ -256,7 +317,7 @@ function Calendar() {
         </div>
       </div>
 
-      {/* Timeline Content */}
+      {/* Gantt Chart Content */}
       <div className="p-6">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
@@ -278,55 +339,66 @@ function Calendar() {
             <p className="text-xs text-gray-400 mt-1">Try adjusting your filters or select a different month</p>
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+          <div className="bg-white rounded-lg shadow-sm border overflow-x-auto">
+            {/* Gantt Chart Header */}
+            <div className="flex border-b bg-gray-50 sticky top-0 z-10">
+              {/* Vehicle column */}
+              <div className="w-64 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700">
+                Vehicle
+              </div>
+              {/* Days column */}
+              <div className="flex-1 flex">
+                {daysInMonth.map(day => (
+                  <div key={day} className="flex-1 text-center text-xs text-gray-600 py-3 border-r">
+                    {day}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Gantt Chart Rows */}
             <div className="divide-y divide-gray-200">
               {filteredVins.map((vehicle) => (
-                <div key={vehicle.vin} className="p-4 hover:bg-gray-50">
-                  {/* Vehicle Header */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">
+                <div key={vehicle.vin} className="flex hover:bg-gray-50">
+                  {/* Vehicle info */}
+                  <div className="w-64 flex-shrink-0 px-4 py-3 border-r">
+                    <button
+                      onClick={() => handleActivityClick(vehicle.vin)}
+                      className="text-left w-full group"
+                    >
+                      <h3 className="font-semibold text-sm text-gray-900 group-hover:text-blue-600">
                         {vehicle.make} {vehicle.model}
                       </h3>
                       <p className="text-xs text-gray-500 font-mono">{vehicle.vin}</p>
-                    </div>
-                    <button
-                      onClick={() => handleActivityClick(vehicle.vin)}
-                      className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                    >
-                      View Details →
                     </button>
                   </div>
 
-                  {/* Timeline */}
-                  <div className="space-y-2">
-                    {vehicle.activities
-                      .sort((a, b) => new Date(a.start_date) - new Date(b.start_date))
-                      .map((activity, idx) => (
-                        <div key={idx} className="flex items-center gap-3">
-                          <div className={`w-2 h-2 rounded-full ${getActivityColor(activity.status)}`}></div>
-                          <div className="flex-1 flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-3">
-                              <span className="text-gray-600">
-                                {formatActivityDate(activity.start_date)} - {formatActivityDate(activity.end_date)}
-                              </span>
-                              <span className="font-medium text-gray-900">{activity.partner_name}</span>
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                activity.status === 'completed' ? 'bg-gray-100 text-gray-700' :
-                                activity.status === 'active' ? 'bg-blue-100 text-blue-700' :
-                                'bg-green-100 text-green-700'
-                              }`}>
-                                {getActivityLabel(activity.status)}
-                              </span>
-                              {activity.published && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                  Published
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
+                  {/* Timeline bars */}
+                  <div className="flex-1 relative h-16">
+                    {/* Day grid */}
+                    <div className="absolute inset-0 flex">
+                      {daysInMonth.map(day => (
+                        <div key={day} className="flex-1 border-r border-gray-100"></div>
                       ))}
+                    </div>
+
+                    {/* Activity bars */}
+                    {vehicle.activities
+                      .filter(activity => activityOverlapsMonth(activity))
+                      .map((activity, idx) => {
+                        const barStyle = getBarStyle(activity);
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => handleActivityClick(vehicle.vin)}
+                            className={`absolute top-1/2 -translate-y-1/2 h-8 ${getActivityColor(activity.status)} rounded shadow-sm hover:shadow-md transition-shadow cursor-pointer flex items-center justify-center text-white text-xs font-medium px-2 overflow-hidden`}
+                            style={{ left: barStyle.left, width: barStyle.width, minWidth: '20px' }}
+                            title={`${activity.partner_name} (${formatActivityDate(activity.start_date)} - ${formatActivityDate(activity.end_date)})`}
+                          >
+                            <span className="truncate">{activity.partner_name}</span>
+                          </button>
+                        );
+                      })}
                   </div>
                 </div>
               ))}

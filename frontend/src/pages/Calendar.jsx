@@ -35,6 +35,14 @@ function Calendar({ sharedOffice }) {
   const [makeFilter, setMakeFilter] = useState('');
   const [partnerFilter, setPartnerFilter] = useState('');
 
+  // Sorting
+  const [sortBy, setSortBy] = useState('make'); // 'make', 'model', 'vin'
+  const [sortOrder, setSortOrder] = useState('asc'); // 'asc', 'desc'
+
+  // What-If Mode for drag-drop scenarios
+  const [whatIfMode, setWhatIfMode] = useState(false);
+  const [scenarioChanges, setScenarioChanges] = useState({});
+
   // Vehicle context (reuse existing side panel)
   const [selectedVin, setSelectedVin] = useState(null);
   const [vehicleContext, setVehicleContext] = useState(null);
@@ -168,8 +176,34 @@ function Calendar({ sharedOffice }) {
     return true;
   });
 
+  // Apply sorting to vehicle view
+  const sortedVins = [...filteredVins].sort((a, b) => {
+    let compareA, compareB;
+
+    switch (sortBy) {
+      case 'make':
+        compareA = a.make || '';
+        compareB = b.make || '';
+        break;
+      case 'model':
+        compareA = a.model || '';
+        compareB = b.model || '';
+        break;
+      case 'vin':
+        compareA = a.vin || '';
+        compareB = b.vin || '';
+        break;
+      default:
+        compareA = a.make || '';
+        compareB = b.make || '';
+    }
+
+    const comparison = compareA.localeCompare(compareB);
+    return sortOrder === 'asc' ? comparison : -comparison;
+  });
+
   // Choose which data to display based on view mode
-  const displayData = viewMode === 'vehicle' ? filteredVins : filteredPartners;
+  const displayData = viewMode === 'vehicle' ? sortedVins : filteredPartners;
 
   // Get unique makes for filter
   const uniqueMakes = [...new Set(activities.map(a => a.make).filter(Boolean))].sort();
@@ -300,10 +334,10 @@ function Calendar({ sharedOffice }) {
 
   const getActivityColor = (status) => {
     switch (status) {
-      case 'completed': return 'bg-gray-400';
-      case 'active': return 'bg-blue-500';
-      case 'planned': return 'bg-green-400';
-      default: return 'bg-gray-300';
+      case 'completed': return 'bg-gradient-to-br from-gray-400 to-gray-500 border-2 border-gray-600';
+      case 'active': return 'bg-gradient-to-br from-blue-500 to-blue-600 border-2 border-blue-700';
+      case 'planned': return 'bg-gradient-to-br from-green-400 to-green-500 border-2 border-green-600';
+      default: return 'bg-gradient-to-br from-gray-300 to-gray-400 border-2 border-gray-500';
     }
   };
 
@@ -397,8 +431,9 @@ function Calendar({ sharedOffice }) {
     const startDay = startDate.getDate();
     const endDay = endDate.getDate();
 
-    const left = ((startDay - 1) / totalDays) * 100;
-    const width = ((endDay - startDay + 1) / totalDays) * 100;
+    // Center bars on start/end dates (0.5 offset to bisect the day squares)
+    const left = ((startDay - 0.5) / totalDays) * 100;
+    const width = ((endDay - startDay) / totalDays) * 100;
 
     return { left: `${left}%`, width: `${width}%` };
   };
@@ -413,27 +448,46 @@ function Calendar({ sharedOffice }) {
             <p className="text-xs text-gray-500">Vehicle activity timeline</p>
           </div>
 
-          {/* View Mode Toggle */}
-          <div className="flex bg-gray-100 rounded-lg p-1">
+          {/* View Mode Toggle and What-If Mode */}
+          <div className="flex gap-3 items-center">
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('vehicle')}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === 'vehicle'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                🚗 By Vehicle
+              </button>
+              <button
+                onClick={() => setViewMode('partner')}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === 'partner'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                👤 By Partner
+              </button>
+            </div>
+
+            {/* What-If Mode Toggle */}
             <button
-              onClick={() => setViewMode('vehicle')}
+              onClick={() => {
+                setWhatIfMode(!whatIfMode);
+                if (whatIfMode) {
+                  setScenarioChanges({});
+                }
+              }}
               className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                viewMode === 'vehicle'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
+                whatIfMode
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              🚗 By Vehicle
-            </button>
-            <button
-              onClick={() => setViewMode('partner')}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                viewMode === 'partner'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              👤 By Partner
+              {whatIfMode ? '✓ What-If Mode' : '🔄 What-If Mode'}
             </button>
           </div>
         </div>
@@ -499,6 +553,31 @@ function Calendar({ sharedOffice }) {
               placeholder="Search partner..."
               className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="make">Make</option>
+              <option value="model">Model</option>
+              <option value="vin">VIN</option>
+            </select>
+          </div>
+
+          <div className="flex-1 min-w-[150px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Order</label>
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="asc">A → Z</option>
+              <option value="desc">Z → A</option>
+            </select>
           </div>
         </div>
 
@@ -641,7 +720,7 @@ function Calendar({ sharedOffice }) {
                           <button
                             key={idx}
                             onClick={() => viewMode === 'vehicle' && handleActivityClick(item.vin)}
-                            className={`absolute top-1/2 -translate-y-1/2 h-8 ${getActivityColor(activity.status)} ${hasChaining ? 'ring-2 ring-yellow-400 ring-offset-1' : ''} rounded shadow-sm hover:shadow-md transition-shadow cursor-pointer flex items-center gap-1 text-white text-xs font-medium px-2 overflow-hidden`}
+                            className={`absolute top-1/2 -translate-y-1/2 h-10 ${getActivityColor(activity.status)} ${hasChaining ? 'ring-2 ring-yellow-400 ring-offset-1' : ''} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer flex items-center gap-1 text-white text-xs font-semibold px-3 overflow-hidden`}
                             style={{ left: barStyle.left, width: barStyle.width, minWidth: '20px' }}
                             title={`${label}\n${formatActivityDate(activity.start_date)} - ${formatActivityDate(activity.end_date)}\n${location ? location.label : ''}${hasChaining ? '\n⛓️ Chaining opportunity!' : ''}`}
                           >

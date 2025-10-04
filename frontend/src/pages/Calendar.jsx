@@ -558,11 +558,22 @@ function Calendar({ sharedOffice }) {
               </div>
               {/* Days column */}
               <div className="flex-1 flex">
-                {daysInMonth.map(day => (
-                  <div key={day} className="flex-1 text-center text-xs text-gray-600 py-3 border-r">
-                    {day}
-                  </div>
-                ))}
+                {daysInMonth.map(day => {
+                  const date = new Date(selectedMonth + '-' + String(day).padStart(2, '0'));
+                  const dayOfWeek = date.getDay();
+                  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+                  return (
+                    <div
+                      key={day}
+                      className={`flex-1 text-center text-xs py-3 border-r ${
+                        isWeekend ? 'bg-gray-50 text-gray-500' : 'text-gray-600'
+                      }`}
+                    >
+                      {day}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -598,9 +609,20 @@ function Calendar({ sharedOffice }) {
                   <div className="flex-1 relative h-16">
                     {/* Day grid */}
                     <div className="absolute inset-0 flex">
-                      {daysInMonth.map(day => (
-                        <div key={day} className="flex-1 border-r border-gray-100"></div>
-                      ))}
+                      {daysInMonth.map(day => {
+                        const date = new Date(selectedMonth + '-' + String(day).padStart(2, '0'));
+                        const dayOfWeek = date.getDay();
+                        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+                        return (
+                          <div
+                            key={day}
+                            className={`flex-1 border-r border-gray-100 ${
+                              isWeekend ? 'bg-gray-50' : ''
+                            }`}
+                          ></div>
+                        );
+                      })}
                     </div>
 
                     {/* Activity bars */}

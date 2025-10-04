@@ -610,7 +610,7 @@ function Calendar({ sharedOffice }) {
                   {/* Timeline bars */}
                   <div className="flex-1 relative h-16">
                     {/* Day grid */}
-                    <div className="absolute inset-0 flex">
+                    <div className="absolute inset-0 flex h-full">
                       {daysInMonth.map(day => {
                         // Parse date correctly in local timezone
                         const [year, month] = selectedMonth.split('-');
@@ -621,7 +621,7 @@ function Calendar({ sharedOffice }) {
                         return (
                           <div
                             key={day}
-                            className={`flex-1 border-r border-gray-100 ${
+                            className={`flex-1 h-full border-r border-gray-100 ${
                               isWeekend ? 'bg-blue-50' : ''
                             }`}
                           ></div>

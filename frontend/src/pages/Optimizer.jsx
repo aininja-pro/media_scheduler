@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
 
-function Optimizer() {
-  // State for controls
-  const [selectedOffice, setSelectedOffice] = useState('Los Angeles');
+function Optimizer({ sharedOffice, onOfficeChange }) {
+  // Use shared office from parent, fallback to 'Los Angeles' if not provided
+  const selectedOffice = sharedOffice || 'Los Angeles';
+  const setSelectedOffice = (office) => {
+    if (onOfficeChange) {
+      onOfficeChange(office);
+    }
+  };
   const [weekStart, setWeekStart] = useState('');
   const [minDays, setMinDays] = useState(7);
   const [isLoading, setIsLoading] = useState(false);

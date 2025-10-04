@@ -11,6 +11,7 @@ function App() {
   const [selectedOffice, setSelectedOffice] = useState('')
   const [selectedWeek, setSelectedWeek] = useState('')
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [optimizerOffice, setOptimizerOffice] = useState('Los Angeles') // Shared office state
   const [vehiclesUrl, setVehiclesUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/active_vehicles.rpt&init=csv')
   const [mediaPartnersUrl, setMediaPartnersUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/media_partners.rpt&init=csv')
   const [approvedRanksUrl, setApprovedRanksUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/approved_makes.rpt&init=csv')
@@ -698,12 +699,17 @@ function App() {
 
         {/* Optimizer Tab */}
         {activeTab === 'optimizer' && (
-          <Optimizer />
+          <Optimizer
+            sharedOffice={optimizerOffice}
+            onOfficeChange={setOptimizerOffice}
+          />
         )}
 
         {/* Calendar Tab */}
         {activeTab === 'calendar' && (
-          <Calendar />
+          <Calendar
+            sharedOffice={optimizerOffice}
+          />
         )}
         </div>
       </main>

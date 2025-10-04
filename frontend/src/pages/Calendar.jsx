@@ -12,8 +12,16 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-function Calendar() {
-  const [selectedOffice, setSelectedOffice] = useState('Los Angeles');
+function Calendar({ sharedOffice }) {
+  // Use shared office from parent, default to 'Los Angeles' if not provided
+  const [selectedOffice, setSelectedOffice] = useState(sharedOffice || 'Los Angeles');
+
+  // Update selectedOffice when sharedOffice prop changes
+  useEffect(() => {
+    if (sharedOffice) {
+      setSelectedOffice(sharedOffice);
+    }
+  }, [sharedOffice]);
   const [selectedMonth, setSelectedMonth] = useState('');
   const [activities, setActivities] = useState([]);
   const [isLoading, setIsLoading] = useState(false);

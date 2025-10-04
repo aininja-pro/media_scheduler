@@ -659,9 +659,9 @@ function Calendar({ sharedOffice }) {
             </div>
 
             {/* Gantt Chart Rows */}
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-gray-300">
               {displayData.map((item) => (
-                <div key={viewMode === 'vehicle' ? item.vin : item.person_id} className="flex hover:bg-gray-50 h-20">
+                <div key={viewMode === 'vehicle' ? item.vin : item.person_id} className="flex hover:bg-gray-50 h-16">
                   {/* Row info */}
                   <div className="w-64 flex-shrink-0 px-4 py-3 border-r flex items-center">
                     <button
@@ -700,7 +700,7 @@ function Calendar({ sharedOffice }) {
                         return (
                           <div
                             key={day}
-                            className={`flex-1 border-r border-gray-100 ${
+                            className={`flex-1 border-r border-gray-300 ${
                               isWeekend ? 'bg-blue-50' : ''
                             }`}
                           ></div>
@@ -720,7 +720,7 @@ function Calendar({ sharedOffice }) {
                           <button
                             key={idx}
                             onClick={() => viewMode === 'vehicle' && handleActivityClick(item.vin)}
-                            className={`absolute top-1/2 -translate-y-1/2 h-10 ${getActivityColor(activity.status)} ${hasChaining ? 'ring-2 ring-yellow-400 ring-offset-1' : ''} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer flex items-center gap-1 text-white text-xs font-semibold px-3 overflow-hidden`}
+                            className={`absolute top-1/2 -translate-y-1/2 h-7 ${getActivityColor(activity.status)} ${hasChaining ? 'ring-2 ring-yellow-400 ring-offset-1' : ''} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer flex items-center gap-1 text-white text-xs font-semibold px-2 overflow-hidden`}
                             style={{ left: barStyle.left, width: barStyle.width, minWidth: '20px' }}
                             title={`${label}\n${formatActivityDate(activity.start_date)} - ${formatActivityDate(activity.end_date)}\n${location ? location.label : ''}${hasChaining ? '\n⛓️ Chaining opportunity!' : ''}`}
                           >

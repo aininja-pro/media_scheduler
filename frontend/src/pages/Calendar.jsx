@@ -559,7 +559,9 @@ function Calendar({ sharedOffice }) {
               {/* Days column */}
               <div className="flex-1 flex">
                 {daysInMonth.map(day => {
-                  const date = new Date(selectedMonth + '-' + String(day).padStart(2, '0'));
+                  // Parse date correctly in local timezone
+                  const [year, month] = selectedMonth.split('-');
+                  const date = new Date(parseInt(year), parseInt(month) - 1, day);
                   const dayOfWeek = date.getDay();
                   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
@@ -567,7 +569,7 @@ function Calendar({ sharedOffice }) {
                     <div
                       key={day}
                       className={`flex-1 text-center text-xs py-3 border-r ${
-                        isWeekend ? 'bg-gray-50 text-gray-500' : 'text-gray-600'
+                        isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-gray-600'
                       }`}
                     >
                       {day}
@@ -610,7 +612,9 @@ function Calendar({ sharedOffice }) {
                     {/* Day grid */}
                     <div className="absolute inset-0 flex">
                       {daysInMonth.map(day => {
-                        const date = new Date(selectedMonth + '-' + String(day).padStart(2, '0'));
+                        // Parse date correctly in local timezone
+                        const [year, month] = selectedMonth.split('-');
+                        const date = new Date(parseInt(year), parseInt(month) - 1, day);
                         const dayOfWeek = date.getDay();
                         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
@@ -618,7 +622,7 @@ function Calendar({ sharedOffice }) {
                           <div
                             key={day}
                             className={`flex-1 border-r border-gray-100 ${
-                              isWeekend ? 'bg-gray-50' : ''
+                              isWeekend ? 'bg-blue-50' : ''
                             }`}
                           ></div>
                         );

@@ -582,9 +582,9 @@ function Calendar({ sharedOffice }) {
             {/* Gantt Chart Rows */}
             <div className="divide-y divide-gray-200">
               {displayData.map((item) => (
-                <div key={viewMode === 'vehicle' ? item.vin : item.person_id} className="flex hover:bg-gray-50">
+                <div key={viewMode === 'vehicle' ? item.vin : item.person_id} className="flex hover:bg-gray-50 h-20">
                   {/* Row info */}
-                  <div className="w-64 flex-shrink-0 px-4 py-3 border-r">
+                  <div className="w-64 flex-shrink-0 px-4 py-3 border-r flex items-center">
                     <button
                       onClick={() => viewMode === 'vehicle' && handleActivityClick(item.vin)}
                       className="text-left w-full group"
@@ -608,9 +608,9 @@ function Calendar({ sharedOffice }) {
                   </div>
 
                   {/* Timeline bars */}
-                  <div className="flex-1 relative h-16">
-                    {/* Day grid */}
-                    <div className="absolute inset-0 flex h-full">
+                  <div className="flex-1 relative">
+                    {/* Day grid with weekend backgrounds */}
+                    <div className="absolute inset-0 flex">
                       {daysInMonth.map(day => {
                         // Parse date correctly in local timezone
                         const [year, month] = selectedMonth.split('-');
@@ -621,7 +621,7 @@ function Calendar({ sharedOffice }) {
                         return (
                           <div
                             key={day}
-                            className={`flex-1 h-full border-r border-gray-100 ${
+                            className={`flex-1 border-r border-gray-100 ${
                               isWeekend ? 'bg-blue-50' : ''
                             }`}
                           ></div>

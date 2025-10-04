@@ -49,8 +49,32 @@ function Optimizer() {
     return monday.toISOString().split('T')[0];
   };
 
+  // Track if data was loaded from cache
+  const [dataSource, setDataSource] = useState(null); // 'cache' or 'fresh'
+
+  // Initialize from sessionStorage on mount
   useEffect(() => {
-    setWeekStart(getCurrentMonday());
+    const savedOffice = sessionStorage.getItem('optimizer_office');
+    const savedWeekStart = sessionStorage.getItem('optimizer_week_start');
+    const savedMinDays = sessionStorage.getItem('optimizer_min_days');
+    const savedMetrics = sessionStorage.getItem('optimizer_metrics');
+    const savedRunResult = sessionStorage.getItem('optimizer_run_result');
+
+    if (savedOffice) setSelectedOffice(savedOffice);
+    if (savedWeekStart) {
+      setWeekStart(savedWeekStart);
+    } else {
+      setWeekStart(getCurrentMonday());
+    }
+    if (savedMinDays) setMinDays(parseInt(savedMinDays));
+
+    if (savedMetrics) {
+      setMetrics(JSON.parse(savedMetrics));
+      setDataSource('cache');
+    }
+    if (savedRunResult) {
+      setRunResult(JSON.parse(savedRunResult));
+    }
   }, []);
 
   // Load offices from database
@@ -75,62 +99,82 @@ function Optimizer() {
     loadOffices();
   }, []);
 
-  // Auto-load on component mount and when parameters change
-  useEffect(() => {
-    const loadMetrics = async () => {
-      if (!selectedOffice || !weekStart) {
-        return;
+  // Manual load function (no longer auto-loads)
+  const loadOfficeData = async () => {
+    if (!selectedOffice || !weekStart) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    setLoadingStage('loading-vehicles');
+
+    // Clear old assignments and selection when loading new data
+    setRunResult(null);
+    setSelectedDay(null);
+    setAssignmentFilter('');
+    sessionStorage.removeItem('optimizer_run_result');
+
+    console.log(`Loading metrics for ${selectedOffice} week of ${weekStart}`);
+
+    try {
+      // Simulate progress through different stages for visual feedback
+      await new Promise(resolve => setTimeout(resolve, 100));
+      setLoadingStage('loading-partners');
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+      setLoadingStage('loading-brands');
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+      setLoadingStage('loading-availability');
+
+      const params = new URLSearchParams({
+        office: selectedOffice,
+        week_start: weekStart,
+        min_days: minDays
+      });
+
+      setLoadingStage('calculating-metrics');
+      const response = await fetch(`http://localhost:8081/api/ui/phase7/overview?${params}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to load metrics');
       }
 
-      setIsLoading(true);
-      setError('');
-      setLoadingStage('loading-vehicles');
+      console.log('Metrics loaded:', data);
+      setMetrics(data);
+      setDataSource('fresh');
 
-      // Clear old assignments and selection when office changes
-      setRunResult(null);
-      setSelectedDay(null);
-      setAssignmentFilter('');
+      // Save to sessionStorage
+      sessionStorage.setItem('optimizer_office', selectedOffice);
+      sessionStorage.setItem('optimizer_week_start', weekStart);
+      sessionStorage.setItem('optimizer_min_days', minDays.toString());
+      sessionStorage.setItem('optimizer_metrics', JSON.stringify(data));
+    } catch (err) {
+      setError(err.message);
+      setMetrics(null);
+    } finally {
+      setIsLoading(false);
+      setLoadingStage('');
+    }
+  };
 
-      console.log(`Loading metrics for ${selectedOffice} week of ${weekStart}`);
+  // Clear cached data and reset to defaults
+  const clearCachedData = () => {
+    sessionStorage.removeItem('optimizer_office');
+    sessionStorage.removeItem('optimizer_week_start');
+    sessionStorage.removeItem('optimizer_min_days');
+    sessionStorage.removeItem('optimizer_metrics');
+    sessionStorage.removeItem('optimizer_run_result');
 
-      try {
-        // Simulate progress through different stages for visual feedback
-        await new Promise(resolve => setTimeout(resolve, 100));
-        setLoadingStage('loading-partners');
-
-        await new Promise(resolve => setTimeout(resolve, 100));
-        setLoadingStage('loading-brands');
-
-        await new Promise(resolve => setTimeout(resolve, 100));
-        setLoadingStage('loading-availability');
-
-        const params = new URLSearchParams({
-          office: selectedOffice,
-          week_start: weekStart,
-          min_days: minDays
-        });
-
-        setLoadingStage('calculating-metrics');
-        const response = await fetch(`http://localhost:8081/api/ui/phase7/overview?${params}`);
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.detail || 'Failed to load metrics');
-        }
-
-        console.log('Metrics loaded:', data);
-        setMetrics(data);
-      } catch (err) {
-        setError(err.message);
-        setMetrics(null);
-      } finally {
-        setIsLoading(false);
-        setLoadingStage('');
-      }
-    };
-
-    loadMetrics();
-  }, [selectedOffice, weekStart, minDays]);
+    setMetrics(null);
+    setRunResult(null);
+    setDataSource(null);
+    setSelectedDay(null);
+    setAssignmentFilter('');
+    setError('');
+  };
 
   const formatWeekRange = () => {
     if (!weekStart) return '';
@@ -301,6 +345,9 @@ function Optimizer() {
       setRunResult(data);
       console.log('Full runResult:', data);
       console.log('Run result:', data);
+
+      // Save run result to sessionStorage
+      sessionStorage.setItem('optimizer_run_result', JSON.stringify(data));
 
     } catch (err) {
       setError(err.message);
@@ -479,22 +526,54 @@ function Optimizer() {
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                onClick={loadOfficeData}
+                disabled={isLoading}
+                className={`px-4 py-1.5 rounded text-sm font-medium ${
+                  isLoading
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {isLoading && loadingStage ? 'Loading...' : 'Load Data'}
+              </button>
+
+              {dataSource === 'cache' && (
+                <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                  📦 Cached Data
+                </span>
+              )}
+              {dataSource === 'fresh' && (
+                <span className="inline-flex items-center rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
+                  ✓ Fresh Data
+                </span>
+              )}
+
+              {metrics && (
+                <button
+                  onClick={clearCachedData}
+                  className="text-xs text-gray-500 hover:text-gray-700 underline"
+                  title="Clear cached data and reset"
+                >
+                  Clear
+                </button>
+              )}
+
               <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
                 Seed: 42
               </span>
-              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                Data: live
-              </span>
+
               <button
                 onClick={runOptimizer}
-                disabled={isLoading}
+                disabled={isLoading || !metrics}
                 className={`px-6 py-1.5 rounded text-sm font-medium ${
-                  isLoading
+                  isLoading || !metrics
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                 }`}
+                title={!metrics ? 'Load office data first' : ''}
               >
-                {isLoading ? 'Running...' : 'Run Optimizer'}
+                {isLoading && progressStage ? 'Running...' : 'Run Optimizer'}
               </button>
 
               {/* Optional status chips */}

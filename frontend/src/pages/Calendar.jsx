@@ -51,6 +51,10 @@ function Calendar({ sharedOffice }) {
   const [vehicleContext, setVehicleContext] = useState(null);
   const [loadingVehicleContext, setLoadingVehicleContext] = useState(false);
 
+  // Chaining opportunities
+  const [chainingOpportunities, setChainingOpportunities] = useState(null);
+  const [loadingChains, setLoadingChains] = useState(false);
+
   // Partner context for partner view
   const [selectedPartnerId, setSelectedPartnerId] = useState(null);
   const [partnerContext, setPartnerContext] = useState(null);
@@ -340,6 +344,29 @@ function Calendar({ sharedOffice }) {
         };
 
         setVehicleContext(context);
+
+        // Fetch chaining opportunities if vehicle has current activity
+        if (current && selectedOffice) {
+          setLoadingChains(true);
+          try {
+            const params = new URLSearchParams({
+              office: selectedOffice,
+              max_distance: 50
+            });
+            const chainResponse = await fetch(`http://localhost:8081/api/ui/phase7/vehicle-chains/${vin}?${params}`);
+            if (chainResponse.ok) {
+              const chainData = await chainResponse.json();
+              setChainingOpportunities(chainData);
+            }
+          } catch (err) {
+            console.error('Failed to fetch chaining opportunities:', err);
+            setChainingOpportunities(null);
+          } finally {
+            setLoadingChains(false);
+          }
+        } else {
+          setChainingOpportunities(null);
+        }
       } else {
         await fetchVehicleContext(vin);
       }
@@ -353,22 +380,18 @@ function Calendar({ sharedOffice }) {
     setLoadingPartnerContext(true);
 
     try {
-      // Build context from calendar activities data
-      const partnerActivities = activities.filter(a => a.person_id === partnerId);
+      // Get ALL activities for this partner - same data source as Gantt chart
+      // Use == to handle string/number type mismatch
+      const partnerActivities = activities.filter(a => a.person_id == partnerId);
 
       if (partnerActivities.length > 0) {
         const sortedActivities = [...partnerActivities].sort((a, b) =>
           new Date(a.start_date) - new Date(b.start_date)
         );
 
-        const now = new Date();
-        const previous = sortedActivities.filter(a => new Date(a.end_date) < now).pop();
-        const next = sortedActivities.find(a => new Date(a.start_date) > now);
-        const current = sortedActivities.find(a => {
-          const start = new Date(a.start_date);
-          const end = new Date(a.end_date);
-          return now >= start && now <= end;
-        });
+        // Filter by status - matching Gantt chart colors exactly
+        const currentLoans = sortedActivities.filter(a => a.status === 'active');
+        const recommendedLoans = sortedActivities.filter(a => a.status === 'planned');
 
         const partnerAddress = partnerActivities[0].partner_address;
         const office = partnerActivities[0].office;
@@ -396,35 +419,32 @@ function Calendar({ sharedOffice }) {
           region: partnerActivities[0].region || 'N/A',
           partner_address: partnerAddress || 'N/A',
           distance_info: distanceInfo,
-          current_activity: current ? {
-            vin: current.vin,
-            make: current.make,
-            model: current.model,
-            start_date: current.start_date,
-            end_date: current.end_date,
-            status: current.status
-          } : null,
-          previous_activity: previous ? {
-            vin: previous.vin,
-            make: previous.make,
-            model: previous.model,
-            start_date: previous.start_date,
-            end_date: previous.end_date,
-            status: previous.status
-          } : null,
-          next_activity: next ? {
-            vin: next.vin,
-            make: next.make,
-            model: next.model,
-            start_date: next.start_date,
-            end_date: next.end_date,
-            status: next.status
-          } : null,
+          current_loans: currentLoans.map(loan => ({
+            vin: loan.vin,
+            make: loan.make,
+            model: loan.model,
+            start_date: loan.start_date,
+            end_date: loan.end_date,
+            status: loan.status
+          })),
+          recommended_loans: recommendedLoans.map(loan => ({
+            vin: loan.vin,
+            make: loan.make,
+            model: loan.model,
+            start_date: loan.start_date,
+            end_date: loan.end_date,
+            status: loan.status
+          })),
           timeline: sortedActivities
         };
 
         setPartnerContext(context);
+      } else {
+        setPartnerContext(null);
       }
+    } catch (error) {
+      console.error('Error in handlePartnerClick:', error);
+      setPartnerContext(null);
     } finally {
       setLoadingPartnerContext(false);
     }
@@ -435,6 +455,7 @@ function Calendar({ sharedOffice }) {
     setVehicleContext(null);
     setSelectedPartnerId(null);
     setPartnerContext(null);
+    setChainingOpportunities(null);
   };
 
   // Parse date string as local date (YYYY-MM-DD)
@@ -502,21 +523,21 @@ function Calendar({ sharedOffice }) {
           type: 'local',
           label: `🏠 Local (${distance || '?'} mi)`,
           badge: '🏠',
-          color: 'yellow'
+          color: null  // Don't override bar color, just show badge
         };
       } else if (locationType === 'remote') {
         return {
           type: 'remote',
           label: `✈️ Remote (${distance || '?'} mi)`,
           badge: '✈️',
-          color: 'red'
+          color: null  // Don't override bar color, just show badge
         };
       }
       return {
         type: 'partner',
         label: `📍 With ${activity.partner_name}`,
         badge: '📍',
-        color: 'blue'
+        color: null  // Don't override bar color
       };
     }
 
@@ -530,22 +551,18 @@ function Calendar({ sharedOffice }) {
           type: 'local-planned',
           label: `📅 Local (${distance || '?'} mi)`,
           badge: '🏠',
-          color: 'yellow'
+          color: null  // Don't override bar color, just show badge
         };
       } else if (locationType === 'remote') {
         return {
           type: 'remote-planned',
           label: `📅 Remote (${distance || '?'} mi)`,
           badge: '✈️',
-          color: 'red'
+          color: null  // Don't override bar color, just show badge
         };
       }
-      return {
-        type: 'planned',
-        label: '📅 Scheduled',
-        badge: '📅',
-        color: 'gray'
-      };
+      // If we don't have distance info, don't return a color - let it use default green for 'planned'
+      return null;
     }
 
     // If completed, vehicle should be back at office
@@ -854,12 +871,42 @@ function Calendar({ sharedOffice }) {
 
             {/* Gantt Chart Rows */}
             <div className="divide-y divide-gray-300">
-              {displayData.map((item) => (
-                <div key={viewMode === 'vehicle' ? item.vin : item.person_id} className="flex hover:bg-gray-50 h-16">
+              {displayData.map((item) => {
+                // Calculate how many rows we need based on overlapping activities
+                const filteredActs = item.activities.filter(activity => activityOverlapsMonth(activity));
+
+                // Detect overlaps and assign row positions
+                const activitiesWithRows = filteredActs.map((activity, idx) => {
+                  // Check if this activity overlaps with any previous activity
+                  let rowIndex = 0;
+                  const actStart = parseLocalDate(activity.start_date);
+                  const actEnd = parseLocalDate(activity.end_date);
+
+                  for (let i = 0; i < idx; i++) {
+                    const prevAct = filteredActs[i];
+                    const prevStart = parseLocalDate(prevAct.start_date);
+                    const prevEnd = parseLocalDate(prevAct.end_date);
+
+                    // Check if dates overlap
+                    if (actStart <= prevEnd && actEnd >= prevStart) {
+                      rowIndex = Math.max(rowIndex, (filteredActs[i].rowIndex || 0) + 1);
+                    }
+                  }
+
+                  activity.rowIndex = rowIndex;
+                  return activity;
+                });
+
+                const maxRows = Math.max(1, ...activitiesWithRows.map(a => (a.rowIndex || 0) + 1));
+                const rowHeight = maxRows * 32; // 32px per row (h-8)
+
+                return (
+                <div key={viewMode === 'vehicle' ? item.vin : item.person_id} className="flex hover:bg-gray-50" style={{ height: `${rowHeight + 32}px` }}>
                   {/* Row info */}
                   <div className="w-64 flex-shrink-0 px-4 py-3 border-r flex items-center">
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         if (viewMode === 'vehicle') {
                           handleActivityClick(item.vin);
                         } else {
@@ -923,25 +970,28 @@ function Calendar({ sharedOffice }) {
                     </div>
 
                     {/* Activity bars */}
-                    {item.activities
-                      .filter(activity => activityOverlapsMonth(activity))
-                      .map((activity, idx, filteredActivities) => {
+                    {activitiesWithRows.map((activity, idx) => {
                         const barStyle = getBarStyle(activity);
                         const label = viewMode === 'vehicle' ? activity.partner_name : `${activity.make} ${activity.model}`;
                         const location = getVehicleLocation(activity);
                         const hasChaining = viewMode === 'vehicle' && detectChainingOpportunity(item.activities, item.activities.indexOf(activity));
+                        const topOffset = 16 + (activity.rowIndex * 32); // Start at 16px from top, then 32px per row
+
+                        const color = getActivityColor(activity.status, location?.color);
+
                         return (
                           <button
                             key={idx}
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               if (viewMode === 'vehicle') {
                                 handleActivityClick(item.vin);
                               } else {
                                 handlePartnerClick(item.person_id, item.partner_name);
                               }
                             }}
-                            className={`absolute top-1/2 -translate-y-1/2 h-7 ${getActivityColor(activity.status, location?.color)} ${hasChaining ? 'ring-2 ring-yellow-400 ring-offset-1' : ''} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer flex items-center gap-1 text-white text-xs font-semibold px-2 overflow-hidden`}
-                            style={{ left: barStyle.left, width: barStyle.width, minWidth: '20px' }}
+                            className={`absolute h-7 ${color} ${hasChaining ? 'ring-2 ring-yellow-400 ring-offset-1' : ''} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 hover:z-10 transition-all cursor-pointer flex items-center gap-1 text-white text-xs font-semibold px-2 overflow-hidden`}
+                            style={{ left: barStyle.left, width: barStyle.width, minWidth: '20px', top: `${topOffset}px` }}
                             title={`${label}\n${formatActivityDate(activity.start_date)} - ${formatActivityDate(activity.end_date)}\n${location ? location.label : ''}${hasChaining ? '\n⛓️ Chaining opportunity!' : ''}`}
                           >
                             {location?.badge && <span className="text-sm">{location.badge}</span>}
@@ -952,7 +1002,8 @@ function Calendar({ sharedOffice }) {
                       })}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1120,6 +1171,73 @@ function Calendar({ sharedOffice }) {
                       </div>
                     </div>
                   )}
+
+                  {/* Next Best Chains */}
+                  {vehicleContext.current_activity && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+                        ⛓️ Next Best Chains
+                        <span className="text-xs font-normal text-gray-400">(within 50 mi)</span>
+                      </h3>
+                      {loadingChains ? (
+                        <div className="flex items-center justify-center py-8">
+                          <svg className="animate-spin h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        </div>
+                      ) : chainingOpportunities?.success && chainingOpportunities.nearby_partners?.length > 0 ? (
+                        <div className="bg-gradient-to-br from-yellow-50 to-amber-50 border border-yellow-200 rounded-lg p-4">
+                          <div className="mb-3">
+                            <p className="text-xs text-gray-600 mb-1">
+                              Currently with: <span className="font-medium text-gray-900">{chainingOpportunities.current_partner.name}</span>
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Nearby partners approved for <span className="font-medium">{chainingOpportunities.vehicle_make}</span>:
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            {chainingOpportunities.nearby_partners.map((partner, idx) => (
+                              <div key={idx} className="bg-white rounded-lg p-3 shadow-sm border border-yellow-200 hover:border-yellow-400 transition-colors">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-900 truncate">{partner.name}</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">{partner.region || 'N/A'}</p>
+                                    {partner.address && (
+                                      <p className="text-xs text-gray-400 mt-1 truncate">{partner.address}</p>
+                                    )}
+                                  </div>
+                                  <div className="ml-3 flex-shrink-0 text-right">
+                                    <p className="text-sm font-semibold text-yellow-700">{partner.distance_miles} mi</p>
+                                    <p className="text-xs text-gray-500">away</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-3 pt-3 border-t border-yellow-200">
+                            <p className="text-xs text-gray-500 italic">
+                              💡 Tip: Chain this vehicle to a nearby partner to reduce deadhead miles
+                            </p>
+                          </div>
+                        </div>
+                      ) : chainingOpportunities?.success && chainingOpportunities.nearby_partners?.length === 0 ? (
+                        <div className="bg-gray-50 rounded-lg p-4 text-center">
+                          <p className="text-sm text-gray-500">No nearby partners within 50 miles</p>
+                          <p className="text-xs text-gray-400 mt-1">approved for {chainingOpportunities.vehicle_make}</p>
+                        </div>
+                      ) : !chainingOpportunities?.success && chainingOpportunities?.message ? (
+                        <div className="bg-gray-50 rounded-lg p-4 text-center">
+                          <p className="text-sm text-gray-500">{chainingOpportunities.message}</p>
+                        </div>
+                      ) : (
+                        <div className="bg-gray-50 rounded-lg p-4 text-center">
+                          <p className="text-sm text-gray-500">Chaining opportunities unavailable</p>
+                          <p className="text-xs text-gray-400 mt-1">Vehicle must have active loan to calculate chains</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-12 text-gray-500">
@@ -1177,6 +1295,23 @@ function Calendar({ sharedOffice }) {
                         <span className="text-sm text-gray-600">Region:</span>
                         <span className="text-sm font-medium text-gray-900">{partnerContext.region}</span>
                       </div>
+                      {partnerContext.distance_info && partnerContext.distance_info.success && (
+                        <div className="flex justify-between items-center border-t pt-2 mt-2">
+                          <span className="text-sm text-gray-600">Distance:</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                              partnerContext.distance_info.location_type === 'local'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {partnerContext.distance_info.location_type === 'local' ? '🏠 Local' : '✈️ Remote'}
+                            </span>
+                            <span className="text-sm font-medium text-gray-900">
+                              {partnerContext.distance_info.distance_miles} mi
+                            </span>
+                          </div>
+                        </div>
+                      )}
                       {partnerContext.partner_address && partnerContext.partner_address !== 'N/A' && (
                         <div className="border-t pt-2 mt-2">
                           <div className="flex items-start">
@@ -1186,20 +1321,6 @@ function Calendar({ sharedOffice }) {
                             <div className="flex-1">
                               <p className="text-xs text-gray-500 font-medium">Address</p>
                               <p className="text-sm text-gray-900 mt-0.5">{partnerContext.partner_address}</p>
-                              {partnerContext.distance_info && partnerContext.distance_info.success && (
-                                <div className="mt-2 flex items-center gap-2">
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                    partnerContext.distance_info.location_type === 'local'
-                                      ? 'bg-green-100 text-green-800'
-                                      : 'bg-amber-100 text-amber-800'
-                                  }`}>
-                                    {partnerContext.distance_info.location_type === 'local' ? '🏠 Local' : '✈️ Remote'}
-                                  </span>
-                                  <span className="text-xs text-gray-600">
-                                    📏 {partnerContext.distance_info.distance_miles} miles from office
-                                  </span>
-                                </div>
-                              )}
                             </div>
                           </div>
                         </div>
@@ -1207,73 +1328,71 @@ function Calendar({ sharedOffice }) {
                     </div>
                   </div>
 
-                  {/* Current Activity */}
-                  {partnerContext.current_activity && (
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Current Loan</h3>
-                      <div className="bg-blue-50 border-2 border-blue-400 rounded-lg p-4">
-                        <div className="flex items-start">
-                          <svg className="w-5 h-5 text-blue-600 mt-0.5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                          </svg>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-blue-900">🚗 {partnerContext.current_activity.make} {partnerContext.current_activity.model}</p>
-                            <p className="text-xs text-blue-700 mt-1">
-                              {formatActivityDate(partnerContext.current_activity.start_date)} - {formatActivityDate(partnerContext.current_activity.end_date)}
-                            </p>
-                            <p className="text-xs text-blue-600 mt-1 font-mono">VIN: {partnerContext.current_activity.vin}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Previous Activity */}
+                  {/* Current Loans (Active) */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Previous Loan</h3>
-                    {partnerContext.previous_activity ? (
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-start">
-                          <svg className="w-5 h-5 text-gray-600 mt-0.5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                          </svg>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-gray-900">{partnerContext.previous_activity.make} {partnerContext.previous_activity.model}</p>
-                            <p className="text-xs text-gray-600 mt-1">
-                              {formatActivityDate(partnerContext.previous_activity.start_date)} - {formatActivityDate(partnerContext.previous_activity.end_date)}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1 font-mono">VIN: {partnerContext.previous_activity.vin}</p>
+                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
+                      Current Loan{partnerContext.current_loans?.length > 1 ? 's' : ''}
+                      {partnerContext.current_loans?.length > 0 && (
+                        <span className="ml-2 text-xs font-normal text-gray-400">({partnerContext.current_loans.length})</span>
+                      )}
+                    </h3>
+                    {partnerContext.current_loans && partnerContext.current_loans.length > 0 ? (
+                      <div className="space-y-2">
+                        {partnerContext.current_loans.map((loan, idx) => (
+                          <div key={idx} className="bg-blue-50 border-2 border-blue-400 rounded-lg p-4">
+                            <div className="flex items-start">
+                              <svg className="w-5 h-5 text-blue-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                              </svg>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-blue-900">🚗 {loan.make} {loan.model}</p>
+                                <p className="text-xs text-blue-700 mt-1">
+                                  {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)}
+                                </p>
+                                <p className="text-xs text-blue-600 mt-1 font-mono truncate">VIN: {loan.vin}</p>
+                              </div>
+                            </div>
                           </div>
-                        </div>
+                        ))}
                       </div>
                     ) : (
                       <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-lg border border-gray-200">
-                        <p className="text-sm">No previous activity</p>
+                        <p className="text-sm">No active loans</p>
                       </div>
                     )}
                   </div>
 
-                  {/* Next Activity */}
+                  {/* Recommended Loans (Planned) */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Upcoming Loan</h3>
-                    {partnerContext.next_activity ? (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <div className="flex items-start">
-                          <svg className="w-5 h-5 text-green-600 mt-0.5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                          </svg>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-green-900">{partnerContext.next_activity.make} {partnerContext.next_activity.model}</p>
-                            <p className="text-xs text-green-700 mt-1">
-                              {formatActivityDate(partnerContext.next_activity.start_date)} - {formatActivityDate(partnerContext.next_activity.end_date)}
-                            </p>
-                            <p className="text-xs text-green-600 mt-1 font-mono">VIN: {partnerContext.next_activity.vin}</p>
+                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
+                      Recommended Loan{partnerContext.recommended_loans?.length > 1 ? 's' : ''}
+                      {partnerContext.recommended_loans?.length > 0 && (
+                        <span className="ml-2 text-xs font-normal text-gray-400">({partnerContext.recommended_loans.length})</span>
+                      )}
+                    </h3>
+                    {partnerContext.recommended_loans && partnerContext.recommended_loans.length > 0 ? (
+                      <div className="space-y-2">
+                        {partnerContext.recommended_loans.map((loan, idx) => (
+                          <div key={idx} className="bg-green-50 border-2 border-green-400 rounded-lg p-4">
+                            <div className="flex items-start">
+                              <svg className="w-5 h-5 text-green-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                              </svg>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-green-900">🚗 {loan.make} {loan.model}</p>
+                                <p className="text-xs text-green-700 mt-1">
+                                  {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)}
+                                </p>
+                                <p className="text-xs text-green-600 mt-1 font-mono truncate">VIN: {loan.vin}</p>
+                              </div>
+                            </div>
                           </div>
-                        </div>
+                        ))}
                       </div>
                     ) : (
                       <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-lg border border-gray-200">
-                        <p className="text-sm">No upcoming activity</p>
+                        <p className="text-sm">No planned loans yet</p>
+                        <p className="text-xs mt-1">Run the optimizer to get recommendations</p>
                       </div>
                     )}
                   </div>

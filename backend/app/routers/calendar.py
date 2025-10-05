@@ -128,8 +128,17 @@ async def get_calendar_activity(
         # 4. Format responses
         activities = []
 
-        # Past loans
+        # Past loans - check if actually completed or still active
         for loan in past_loans:
+            loan_start = pd.to_datetime(loan.get('start_date')).date()
+            loan_end = pd.to_datetime(loan.get('end_date')).date()
+
+            # If loan is currently happening (today is between start and end), it's active
+            if loan_start <= today <= loan_end:
+                status = 'active'
+            else:
+                status = 'completed'
+
             activities.append({
                 'vin': loan.get('vin'),
                 'make': loan.get('make'),
@@ -141,7 +150,7 @@ async def get_calendar_activity(
                 'partner_address': loan.get('partner_address'),
                 'region': loan.get('region'),
                 'office': loan.get('office'),
-                'status': 'completed',
+                'status': status,
                 'activity_type': 'Media Loan',
                 'published': loan.get('clips_received') == '1.0'
             })

@@ -972,3 +972,175 @@ async def get_partner_distance(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
+
+
+@router.get("/vehicle-chains/{vin}")
+async def get_vehicle_chaining_opportunities(
+    vin: str,
+    office: str = Query(..., description="Office name"),
+    max_distance: float = Query(50, description="Maximum distance in miles for chaining candidates")
+) -> Dict[str, Any]:
+    """
+    Get nearby partner chaining opportunities for a vehicle currently on loan.
+
+    Returns partners within max_distance from the vehicle's current location,
+    filtered by approved makes and sorted by distance.
+    """
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        # 1. Find vehicle's current location (which partner they're with)
+        activity_response = db.client.table('current_activity')\
+            .select('*')\
+            .eq('vehicle_vin', vin)\
+            .order('start_date', desc=True)\
+            .limit(1)\
+            .execute()
+
+        if not activity_response.data or len(activity_response.data) == 0:
+            return {
+                "success": False,
+                "message": "Vehicle has no current activity - cannot determine location for chaining"
+            }
+
+        current_activity = activity_response.data[0]
+        current_partner_id = current_activity.get('person_id') or current_activity.get('to_field')
+
+        if not current_partner_id:
+            return {
+                "success": False,
+                "message": "Cannot determine current partner location"
+            }
+
+        # 2. Get current partner's coordinates
+        current_partner_response = db.client.table('media_partners')\
+            .select('*')\
+            .eq('person_id', current_partner_id)\
+            .eq('office', office)\
+            .execute()
+
+        if not current_partner_response.data:
+            return {
+                "success": False,
+                "message": "Current partner not found"
+            }
+
+        current_partner = current_partner_response.data[0]
+        current_lat = current_partner.get('latitude')
+        current_lon = current_partner.get('longitude')
+
+        if not current_lat or not current_lon:
+            return {
+                "success": False,
+                "message": "Current partner does not have coordinates - cannot calculate chaining distances"
+            }
+
+        # 3. Get vehicle make to filter approved partners
+        vehicle_response = db.client.table('vehicles')\
+            .select('make')\
+            .eq('vin', vin)\
+            .execute()
+
+        if not vehicle_response.data:
+            return {
+                "success": False,
+                "message": "Vehicle not found"
+            }
+
+        vehicle_make = vehicle_response.data[0]['make']
+
+        # 4. Get all partners for this office with approved make
+        approved_response = db.client.table('approved_makes')\
+            .select('person_id')\
+            .eq('make', vehicle_make)\
+            .execute()
+
+        if not approved_response.data:
+            return {
+                "success": True,
+                "message": f"No partners approved for {vehicle_make}",
+                "current_partner": {
+                    "person_id": current_partner_id,
+                    "name": current_partner.get('name'),
+                    "latitude": current_lat,
+                    "longitude": current_lon
+                },
+                "nearby_partners": []
+            }
+
+        approved_partner_ids = [row['person_id'] for row in approved_response.data]
+
+        # 5. Get all partners in office with coordinates
+        partners_response = db.client.table('media_partners')\
+            .select('*')\
+            .eq('office', office)\
+            .execute()
+
+        if not partners_response.data:
+            return {
+                "success": True,
+                "current_partner": {
+                    "person_id": current_partner_id,
+                    "name": current_partner.get('name'),
+                    "latitude": current_lat,
+                    "longitude": current_lon
+                },
+                "nearby_partners": []
+            }
+
+        # 6. Calculate distances to all approved partners with coordinates
+        from ..utils.geocoding import calculate_distance
+
+        nearby_partners = []
+        for partner in partners_response.data:
+            # Skip current partner
+            if partner['person_id'] == current_partner_id:
+                continue
+
+            # Only include approved partners
+            if partner['person_id'] not in approved_partner_ids:
+                continue
+
+            partner_lat = partner.get('latitude')
+            partner_lon = partner.get('longitude')
+
+            if not partner_lat or not partner_lon:
+                continue
+
+            # Calculate distance from current location
+            distance = calculate_distance(current_lat, current_lon, partner_lat, partner_lon)
+
+            # Filter by max distance
+            if distance <= max_distance:
+                nearby_partners.append({
+                    "person_id": partner['person_id'],
+                    "name": partner['name'],
+                    "distance_miles": round(distance, 1),
+                    "latitude": partner_lat,
+                    "longitude": partner_lon,
+                    "region": partner.get('region'),
+                    "address": partner.get('address')
+                })
+
+        # Sort by distance
+        nearby_partners.sort(key=lambda x: x['distance_miles'])
+
+        return {
+            "success": True,
+            "vehicle_make": vehicle_make,
+            "current_partner": {
+                "person_id": current_partner_id,
+                "name": current_partner.get('name'),
+                "latitude": current_lat,
+                "longitude": current_lon
+            },
+            "nearby_partners": nearby_partners[:10]  # Limit to top 10 nearest
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()

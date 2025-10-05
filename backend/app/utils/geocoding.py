@@ -6,7 +6,13 @@ import requests
 from typing import Optional, Tuple
 import math
 
-GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', 'AIzaSyBHy38SahWmFPNToFU8IWlH2NeKScPcCCo')
+
+def get_api_key() -> str:
+    """Get Google Maps API key from environment variable."""
+    api_key = os.getenv('GOOGLE_MAPS_API_KEY')
+    if not api_key:
+        raise ValueError("GOOGLE_MAPS_API_KEY environment variable is not set")
+    return api_key
 
 
 def geocode_address(address: str) -> Optional[Tuple[float, float]]:
@@ -26,7 +32,7 @@ def geocode_address(address: str) -> Optional[Tuple[float, float]]:
         url = 'https://maps.googleapis.com/maps/api/geocode/json'
         params = {
             'address': address,
-            'key': GOOGLE_MAPS_API_KEY
+            'key': get_api_key()
         }
 
         response = requests.get(url, params=params, timeout=5)

@@ -93,9 +93,9 @@ function Calendar({ sharedOffice }) {
     }
   }, [selectedOffice, selectedMonth]);
 
-  // Fetch distances for all partners when in partner view
+  // Fetch distances for all partners (needed for both vehicle and partner views)
   useEffect(() => {
-    if (viewMode === 'partner' && selectedOffice && activities.length > 0) {
+    if (selectedOffice && activities.length > 0) {
       const fetchDistances = async () => {
         const distances = {};
 
@@ -125,7 +125,7 @@ function Calendar({ sharedOffice }) {
 
       fetchDistances();
     }
-  }, [viewMode, selectedOffice, activities]);
+  }, [selectedOffice, activities]);
 
   const loadActivities = async () => {
     if (!selectedOffice || !selectedMonth) return;
@@ -458,7 +458,18 @@ function Calendar({ sharedOffice }) {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const getActivityColor = (status) => {
+  const getActivityColor = (status, locationColor) => {
+    // Use location-based color if provided (for vehicle view)
+    if (locationColor && viewMode === 'vehicle') {
+      switch (locationColor) {
+        case 'green': return 'bg-gradient-to-br from-green-500 to-green-600 border-2 border-green-700';
+        case 'yellow': return 'bg-gradient-to-br from-yellow-400 to-yellow-500 border-2 border-yellow-600';
+        case 'red': return 'bg-gradient-to-br from-red-500 to-red-600 border-2 border-red-700';
+        case 'gray': return 'bg-gradient-to-br from-gray-400 to-gray-500 border-2 border-gray-600';
+      }
+    }
+
+    // Default status-based colors
     switch (status) {
       case 'completed': return 'bg-gradient-to-br from-gray-400 to-gray-500 border-2 border-gray-600';
       case 'active': return 'bg-gradient-to-br from-blue-500 to-blue-600 border-2 border-blue-700';
@@ -478,18 +489,75 @@ function Calendar({ sharedOffice }) {
 
   // Determine vehicle location based on activity
   const getVehicleLocation = (activity) => {
+    // Get distance info if available
+    const distanceInfo = partnerDistances[activity.person_id];
+
     // If active, vehicle is with the partner
     if (activity.status === 'active') {
-      return { type: 'partner', label: `📍 With ${activity.partner_name}` };
+      const locationType = distanceInfo?.location_type || 'unknown';
+      const distance = distanceInfo?.distance_miles;
+
+      if (locationType === 'local') {
+        return {
+          type: 'local',
+          label: `🏠 Local (${distance || '?'} mi)`,
+          badge: '🏠',
+          color: 'yellow'
+        };
+      } else if (locationType === 'remote') {
+        return {
+          type: 'remote',
+          label: `✈️ Remote (${distance || '?'} mi)`,
+          badge: '✈️',
+          color: 'red'
+        };
+      }
+      return {
+        type: 'partner',
+        label: `📍 With ${activity.partner_name}`,
+        badge: '📍',
+        color: 'blue'
+      };
     }
+
     // If planned, vehicle will be picked up
     if (activity.status === 'planned') {
-      return { type: 'planned', label: '📅 Scheduled' };
+      const locationType = distanceInfo?.location_type || 'unknown';
+      const distance = distanceInfo?.distance_miles;
+
+      if (locationType === 'local') {
+        return {
+          type: 'local-planned',
+          label: `📅 Local (${distance || '?'} mi)`,
+          badge: '🏠',
+          color: 'yellow'
+        };
+      } else if (locationType === 'remote') {
+        return {
+          type: 'remote-planned',
+          label: `📅 Remote (${distance || '?'} mi)`,
+          badge: '✈️',
+          color: 'red'
+        };
+      }
+      return {
+        type: 'planned',
+        label: '📅 Scheduled',
+        badge: '📅',
+        color: 'gray'
+      };
     }
-    // If completed, check if it's local (same office) or remote
+
+    // If completed, vehicle should be back at office
     if (activity.status === 'completed') {
-      return { type: 'office', label: '🏢 At Office' };
+      return {
+        type: 'office',
+        label: '🏢 At Office',
+        badge: '🏢',
+        color: 'green'
+      };
     }
+
     return null;
   };
 
@@ -872,11 +940,11 @@ function Calendar({ sharedOffice }) {
                                 handlePartnerClick(item.person_id, item.partner_name);
                               }
                             }}
-                            className={`absolute top-1/2 -translate-y-1/2 h-7 ${getActivityColor(activity.status)} ${hasChaining ? 'ring-2 ring-yellow-400 ring-offset-1' : ''} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer flex items-center gap-1 text-white text-xs font-semibold px-2 overflow-hidden`}
+                            className={`absolute top-1/2 -translate-y-1/2 h-7 ${getActivityColor(activity.status, location?.color)} ${hasChaining ? 'ring-2 ring-yellow-400 ring-offset-1' : ''} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer flex items-center gap-1 text-white text-xs font-semibold px-2 overflow-hidden`}
                             style={{ left: barStyle.left, width: barStyle.width, minWidth: '20px' }}
                             title={`${label}\n${formatActivityDate(activity.start_date)} - ${formatActivityDate(activity.end_date)}\n${location ? location.label : ''}${hasChaining ? '\n⛓️ Chaining opportunity!' : ''}`}
                           >
-                            {location && activity.status === 'active' && <span>📍</span>}
+                            {location?.badge && <span className="text-sm">{location.badge}</span>}
                             {hasChaining && <span>⛓️</span>}
                             <span className="truncate">{label}</span>
                           </button>

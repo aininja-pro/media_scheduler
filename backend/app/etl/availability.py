@@ -100,19 +100,16 @@ def has_overlapping_activity(vin: str, target_date: date, activity_df: pd.DataFr
         return False
 
     # Check each activity for date overlap
+    # Any activity with valid dates blocks availability during that period
     for _, activity in vin_activities.iterrows():
-        activity_type = activity.get('activity_type', '')
         start_date = activity.get('start_date')
         end_date = activity.get('end_date')
 
-        # Skip activities that don't block availability (case-insensitive check)
-        if activity_type.lower() not in {'loan', 'service', 'hold', 'event', 'storage'}:
-            continue
-
-        # Convert dates to date objects
+        # Skip activities with missing dates
         if pd.isna(start_date) or pd.isna(end_date):
             continue
 
+        # Convert dates to date objects
         if isinstance(start_date, str):
             start_date = parse_date_string(start_date)
         elif isinstance(start_date, datetime):
@@ -124,6 +121,7 @@ def has_overlapping_activity(vin: str, target_date: date, activity_df: pd.DataFr
             end_date = end_date.date()
 
         # Check if target_date overlaps with activity period
+        # If there's any activity during this date, the vehicle is not available
         if start_date <= target_date <= end_date:
             return True
 

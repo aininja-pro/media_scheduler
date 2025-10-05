@@ -184,6 +184,25 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             default_cooldown_days=30
         )
 
+        # 4a. Filter out partner-VIN combinations that already exist in current_activity
+        # This prevents suggesting the same vehicle to the same partner twice in the same window
+        if not current_activity_df.empty and not triples_post.empty:
+            # Create set of existing (person_id, vin) pairs
+            existing_pairs = set(
+                zip(current_activity_df['person_id'], current_activity_df['vin'])
+            )
+            # Filter out triples that match existing pairs
+            pre_filter_count = len(triples_post)
+            triples_post = triples_post[
+                ~triples_post.apply(
+                    lambda row: (row['person_id'], row['vin']) in existing_pairs,
+                    axis=1
+                )
+            ].copy()
+            filtered_count = pre_filter_count - len(triples_post)
+            if filtered_count > 0:
+                print(f"  Filtered {filtered_count} triples with existing partner-VIN combinations")
+
         # 4b. Calculate publication rates from loan history
         publication_df = compute_publication_rate_24m(
             loan_history_df=loan_history_df,

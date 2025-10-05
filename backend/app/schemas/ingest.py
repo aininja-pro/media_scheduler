@@ -172,6 +172,7 @@ class LoanHistoryIngest(BaseModel):
     name: str
     clips_received: Optional[str] = None
     partner_address: Optional[str] = None
+    region: Optional[str] = None  # NEW: Region field
 
     @field_validator('activity_id', 'vin', 'person_id', mode='before')
     @classmethod
@@ -219,6 +220,7 @@ class CurrentActivityIngest(BaseModel):
     end_date: date
     to_field: Optional[str] = None
     partner_address: Optional[str] = None
+    region: Optional[str] = None  # NEW: Region field
 
     @field_validator('activity_id', 'person_id', 'vehicle_vin', mode='before')
     @classmethod

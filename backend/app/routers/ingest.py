@@ -857,7 +857,7 @@ async def ingest_loan_history_from_url(url: str, db: DatabaseService = Depends(g
             
         df = pd.read_csv(StringIO(response.text), header=None, names=[
             'Activity_ID', 'VIN', 'Person_ID', 'Make', 'Model', 'Year', 'Model_Short_Name',
-            'Start_Date', 'End_Date', 'Clips_Received', 'Office', 'Name', 'Partner_Address'
+            'Start_Date', 'End_Date', 'Clips_Received', 'Office', 'Name', 'Partner_Address', 'Region'
         ])
         
         # Optimize: Process in chunks and use vectorized operations
@@ -894,7 +894,8 @@ async def ingest_loan_history_from_url(url: str, db: DatabaseService = Depends(g
                         'clips_received': str(record['Clips_Received']).strip() if record['Clips_Received'] else None,
                         'office': str(record['Office']).strip(),
                         'name': str(record['Name']).strip(),
-                        'partner_address': str(record['Partner_Address']).strip() if record.get('Partner_Address') else None
+                        'partner_address': str(record['Partner_Address']).strip() if record.get('Partner_Address') else None,
+                        'region': str(record['Region']).strip() if record.get('Region') else None
                     }
                     
                     # Quick validation - skip if missing required fields
@@ -943,7 +944,7 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
             logger.info(f"Download complete! Processing CSV data...")
             
         df = pd.read_csv(StringIO(response.text), header=None, names=[
-            'Activity_ID', 'Person_ID', 'Vehicle_VIN', 'Activity_Type', 'Start_Date', 'End_Date', 'To', 'Partner_Address'
+            'Activity_ID', 'Person_ID', 'Vehicle_VIN', 'Activity_Type', 'Start_Date', 'End_Date', 'To', 'Partner_Address', 'Region'
         ])
 
         df = df.fillna('')  # Replace NaN with empty strings
@@ -978,7 +979,8 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
                     'start_date': str(record['Start_Date']).strip(),
                     'end_date': str(record['End_Date']).strip(),
                     'partner_address': str(record['Partner_Address']).strip() if record.get('Partner_Address') else None,
-                    'to_field': str(record['To']).strip() if record['To'] else None
+                    'to_field': str(record['To']).strip() if record['To'] else None,
+                    'region': str(record['Region']).strip() if record.get('Region') else None
                 }
 
                 # Quick validation - skip if missing required fields

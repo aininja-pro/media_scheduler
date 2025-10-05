@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 // Haversine distance calculation (in miles)
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -29,6 +29,9 @@ function Calendar({ sharedOffice }) {
 
   // View mode toggle
   const [viewMode, setViewMode] = useState('vehicle'); // 'vehicle' or 'partner'
+
+  // Partner distances cache
+  const [partnerDistances, setPartnerDistances] = useState({});
 
   // Filters
   const [vinFilter, setVinFilter] = useState('');
@@ -89,6 +92,40 @@ function Calendar({ sharedOffice }) {
       loadActivities();
     }
   }, [selectedOffice, selectedMonth]);
+
+  // Fetch distances for all partners when in partner view
+  useEffect(() => {
+    if (viewMode === 'partner' && selectedOffice && activities.length > 0) {
+      const fetchDistances = async () => {
+        const distances = {};
+
+        // Get unique partners from activities
+        const uniquePartners = [...new Set(activities.map(a => a.person_id))];
+
+        for (const personId of uniquePartners) {
+          try {
+            const params = new URLSearchParams({
+              person_id: personId,
+              office: selectedOffice
+            });
+            const response = await fetch(`http://localhost:8081/api/ui/phase7/partner-distance?${params}`);
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success) {
+                distances[personId] = data;
+              }
+            }
+          } catch (err) {
+            console.error(`Failed to fetch distance for partner ${personId}:`, err);
+          }
+        }
+
+        setPartnerDistances(distances);
+      };
+
+      fetchDistances();
+    }
+  }, [viewMode, selectedOffice, activities]);
 
   const loadActivities = async () => {
     if (!selectedOffice || !selectedMonth) return;
@@ -776,6 +813,20 @@ function Calendar({ sharedOffice }) {
                             {item.partner_name}
                           </h3>
                           <p className="text-xs text-gray-500">ID: {item.person_id}</p>
+                          {partnerDistances[item.person_id] && (
+                            <div className="flex items-center gap-1 mt-1">
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                partnerDistances[item.person_id].location_type === 'local'
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {partnerDistances[item.person_id].location_type === 'local' ? '🏠' : '✈️'}
+                              </span>
+                              <span className="text-xs text-gray-600">
+                                {partnerDistances[item.person_id].distance_miles} mi
+                              </span>
+                            </div>
+                          )}
                         </>
                       )}
                     </button>

@@ -333,13 +333,32 @@ function Calendar({ sharedOffice }) {
           return now >= start && now <= end;
         });
 
+        const partnerAddress = partnerActivities[0].partner_address;
+        const office = partnerActivities[0].office;
+
+        // Fetch distance from office using cached lat/lon from media_partners
+        let distanceInfo = null;
+        try {
+          const params = new URLSearchParams({
+            person_id: partnerId,
+            office: office
+          });
+          const distanceResponse = await fetch(`http://localhost:8081/api/ui/phase7/partner-distance?${params}`);
+          if (distanceResponse.ok) {
+            distanceInfo = await distanceResponse.json();
+          }
+        } catch (err) {
+          console.error('Failed to fetch distance:', err);
+        }
+
         // Build context object with timeline
         const context = {
           person_id: partnerId,
           partner_name: partnerName,
-          office: partnerActivities[0].office,
+          office: office,
           region: partnerActivities[0].region || 'N/A',
-          partner_address: partnerActivities[0].partner_address || 'N/A',
+          partner_address: partnerAddress || 'N/A',
+          distance_info: distanceInfo,
           current_activity: current ? {
             vin: current.vin,
             make: current.make,
@@ -735,7 +754,13 @@ function Calendar({ sharedOffice }) {
                   {/* Row info */}
                   <div className="w-64 flex-shrink-0 px-4 py-3 border-r flex items-center">
                     <button
-                      onClick={() => viewMode === 'vehicle' && handleActivityClick(item.vin)}
+                      onClick={() => {
+                        if (viewMode === 'vehicle') {
+                          handleActivityClick(item.vin);
+                        } else {
+                          handlePartnerClick(item.person_id, item.partner_name);
+                        }
+                      }}
                       className="text-left w-full group"
                     >
                       {viewMode === 'vehicle' ? (
@@ -1042,6 +1067,20 @@ function Calendar({ sharedOffice }) {
                             <div className="flex-1">
                               <p className="text-xs text-gray-500 font-medium">Address</p>
                               <p className="text-sm text-gray-900 mt-0.5">{partnerContext.partner_address}</p>
+                              {partnerContext.distance_info && partnerContext.distance_info.success && (
+                                <div className="mt-2 flex items-center gap-2">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                    partnerContext.distance_info.location_type === 'local'
+                                      ? 'bg-green-100 text-green-800'
+                                      : 'bg-amber-100 text-amber-800'
+                                  }`}>
+                                    {partnerContext.distance_info.location_type === 'local' ? '🏠 Local' : '✈️ Remote'}
+                                  </span>
+                                  <span className="text-xs text-gray-600">
+                                    📏 {partnerContext.distance_info.distance_miles} miles from office
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>

@@ -19,6 +19,7 @@ function App() {
   const [currentActivityUrl, setCurrentActivityUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/current_vehicle_activity.rpt&init=csv')
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingMediaPartners, setIsLoadingMediaPartners] = useState(false)
+  const [mediaPartnersProgress, setMediaPartnersProgress] = useState({ step: '', progress: 0 })
   const [isLoadingApprovedRanks, setIsLoadingApprovedRanks] = useState(false)
   const [isLoadingLoanHistory, setIsLoadingLoanHistory] = useState(false)
   const [isLoadingCurrentActivity, setIsLoadingCurrentActivity] = useState(false)
@@ -53,25 +54,46 @@ function App() {
 
   const handleMediaPartnersUpdate = async () => {
     setIsLoadingMediaPartners(true)
+    setMediaPartnersProgress({ step: 'Starting...', progress: 0 })
+
     try {
-      const response = await fetch(`http://localhost:8081/ingest/media_partners/url?url=${encodeURIComponent(mediaPartnersUrl)}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-      
-      const result = await response.json()
-      
-      if (response.ok) {
-        alert(`Success! Processed ${result.rows_processed} media partners`)
-      } else {
-        alert(`Error: ${result.detail}`)
+      const eventSource = new EventSource(
+        `http://localhost:8081/ingest/media_partners/url/stream?url=${encodeURIComponent(mediaPartnersUrl)}`
+      )
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+
+          if (data.status === 'progress') {
+            setMediaPartnersProgress({ step: data.step, progress: data.progress })
+          } else if (data.status === 'complete') {
+            setMediaPartnersProgress({ step: data.message, progress: 100 })
+            alert(`Success! ${data.message}`)
+            eventSource.close()
+            setIsLoadingMediaPartners(false)
+          } else if (data.status === 'error') {
+            setMediaPartnersProgress({ step: `Error: ${data.message}`, progress: 0 })
+            alert(`Error: ${data.message}`)
+            eventSource.close()
+            setIsLoadingMediaPartners(false)
+          }
+        } catch (e) {
+          console.error('Failed to parse SSE data:', e)
+        }
+      }
+
+      eventSource.onerror = (error) => {
+        console.error('EventSource error:', error)
+        setMediaPartnersProgress({ step: 'Connection error', progress: 0 })
+        alert('Network error: Connection to server failed')
+        eventSource.close()
+        setIsLoadingMediaPartners(false)
       }
     } catch (error) {
       alert(`Network error: ${error.message}`)
-    } finally {
       setIsLoadingMediaPartners(false)
+      setMediaPartnersProgress({ step: '', progress: 0 })
     }
   }
 
@@ -447,13 +469,27 @@ function App() {
                             placeholder="Enter DriveShop media partners URL..."
                           />
                         </div>
-                        <button 
+                        <button
                           onClick={handleMediaPartnersUpdate}
                           disabled={isLoadingMediaPartners}
                           className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
                         >
-                          {isLoadingMediaPartners ? 'Fetching...' : 'Update Media Partners Data'}
+                          {isLoadingMediaPartners ? 'Processing...' : 'Update Media Partners Data'}
                         </button>
+                        {isLoadingMediaPartners && mediaPartnersProgress.step && (
+                          <div className="mt-3 space-y-2">
+                            <div className="flex justify-between text-xs text-gray-600">
+                              <span>{mediaPartnersProgress.step}</span>
+                              <span>{mediaPartnersProgress.progress}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div
+                                className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${mediaPartnersProgress.progress}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : csvType.id === 'approved_makes' ? (
                       /* Special handling for Approved Ranks - URL input */

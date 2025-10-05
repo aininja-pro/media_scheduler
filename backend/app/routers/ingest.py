@@ -4,11 +4,14 @@ CSV Ingest API endpoints for uploading and validating data.
 import pandas as pd
 import httpx
 from fastapi import APIRouter, UploadFile, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from typing import Dict, Any, List
 from io import StringIO, BytesIO
 import logging
 import sys
 import os
+import json
+import asyncio
 
 from ..schemas.ingest import INGEST_SCHEMAS
 from ..services.database import get_database, DatabaseService
@@ -608,6 +611,219 @@ async def ingest_approved_makes_from_url(url: str, db: DatabaseService = Depends
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
+@router.get("/media_partners/url/stream")
+async def ingest_media_partners_from_url_stream(url: str):
+    """
+    Fetch and ingest media partners data with streaming progress updates.
+    """
+    async def generate_progress():
+        db = DatabaseService()
+        await db.initialize()
+
+        try:
+            # Send immediate start message
+            yield f"data: {json.dumps({'status': 'progress', 'step': 'Starting...', 'progress': 5})}\n\n"
+            await asyncio.sleep(0)  # Force yield
+
+            # Step 1: Fetch CSV
+            yield f"data: {json.dumps({'status': 'progress', 'step': 'Fetching CSV from URL...', 'progress': 10})}\n\n"
+            await asyncio.sleep(0)  # Force yield
+
+            headers = {
+                'User-Agent': 'curl/8.7.1',
+                'Accept': '*/*',
+            }
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                csv_content = response.text
+
+            yield f"data: {json.dumps({'status': 'progress', 'step': 'Parsing CSV data...', 'progress': 20})}\n\n"
+            await asyncio.sleep(0)  # Force yield
+
+            # Parse CSV
+            expected_headers = [
+                'Person_ID', 'Name', 'Address', 'Office', 'Default loan region', 'Notes / Instructions'
+            ]
+
+            df = pd.read_csv(StringIO(csv_content), header=None, names=expected_headers)
+
+            if df.empty:
+                yield f"data: {json.dumps({'status': 'error', 'message': 'CSV data is empty'})}\n\n"
+                return
+
+            # Validate rows
+            yield f"data: {json.dumps({'status': 'progress', 'step': f'Validating {len(df)} rows...', 'progress': 30})}\n\n"
+            await asyncio.sleep(0)
+
+            schema_class = INGEST_SCHEMAS["media_partners"]
+            validated_rows = []
+            validation_errors = []
+            total_rows = len(df)
+
+            for index, row in df.iterrows():
+                try:
+                    row_dict = row.to_dict()
+                    for key, value in row_dict.items():
+                        if pd.isna(value):
+                            row_dict[key] = None
+
+                    csv_header_mapping = {
+                        'Person_ID': 'person_id',
+                        'Name': 'name',
+                        'Address': 'address',
+                        'Office': 'office',
+                        'Default loan region': 'default_loan_region',
+                        'Notes / Instructions': 'notes_instructions'
+                    }
+
+                    normalized_dict = {}
+                    for csv_header, value in row_dict.items():
+                        schema_field = csv_header_mapping.get(csv_header)
+                        if schema_field:
+                            normalized_dict[schema_field] = value
+
+                    validated_row = schema_class(**normalized_dict)
+                    validated_rows.append(validated_row)
+
+                    # Progress update every 50 rows
+                    if (index + 1) % 50 == 0:
+                        progress = 30 + int(((index + 1) / total_rows) * 10)
+                        yield f"data: {json.dumps({'status': 'progress', 'step': f'Validated {index + 1}/{total_rows} rows...', 'progress': progress})}\n\n"
+                        await asyncio.sleep(0)
+
+                except Exception as e:
+                    validation_errors.append({
+                        "row": index + 2,
+                        "error": str(e),
+                        "data": dict(row_dict) if len(str(e)) < 200 else "Data too large to display"
+                    })
+
+                    if len(validation_errors) >= 5:
+                        break
+
+            if validation_errors:
+                yield f"data: {json.dumps({'status': 'error', 'message': 'Validation errors found', 'errors': validation_errors})}\n\n"
+                return
+
+            # Insert data
+            yield f"data: {json.dumps({'status': 'progress', 'step': 'Clearing existing media_partners data...', 'progress': 40})}\n\n"
+            await asyncio.sleep(0)
+
+            delete_result = db.client.table('media_partners').delete().neq('person_id', '').execute()
+            logger.info(f"Deleted {len(delete_result.data)} existing media partner records")
+
+            yield f"data: {json.dumps({'status': 'progress', 'step': f'Inserting {len(validated_rows)} records...', 'progress': 50})}\n\n"
+            await asyncio.sleep(0)
+
+            upsert_result = await db.upsert_records(
+                table_name="media_partners",
+                records=validated_rows
+            )
+
+            # Update preferred days
+            yield f"data: {json.dumps({'status': 'progress', 'step': 'Analyzing preferred days from loan history...', 'progress': 60})}\n\n"
+            await asyncio.sleep(0)
+
+            preferred_days_count = 0
+            try:
+                preferred_df = analyze_preferred_days(min_loans=5, min_confidence=0.40)
+
+                if not preferred_df.empty:
+                    yield f"data: {json.dumps({'status': 'progress', 'step': f'Updating {len(preferred_df)} preferred days...', 'progress': 70})}\n\n"
+                    await asyncio.sleep(0)
+
+                    for _, row in preferred_df.iterrows():
+                        person_id = row['person_id']
+                        office = row['office']
+                        preferred_day = row['preferred_day']
+                        confidence = row['confidence']
+
+                        try:
+                            db.client.table('media_partners').update({
+                                'preferred_day_of_week': preferred_day,
+                                'preferred_day_confidence': round(confidence * 100, 1)
+                            }).eq('person_id', person_id).eq('office', office).execute()
+                            preferred_days_count += 1
+                        except Exception as update_error:
+                            logger.warning(f"Could not update preferred day for person_id={person_id}, office={office}: {update_error}")
+                else:
+                    yield f"data: {json.dumps({'status': 'progress', 'step': 'No partners met criteria for preferred days', 'progress': 70})}\n\n"
+                    await asyncio.sleep(0)
+
+            except Exception as pref_error:
+                logger.warning(f"Preferred days auto-update failed (non-critical): {pref_error}")
+                yield f"data: {json.dumps({'status': 'progress', 'step': 'Preferred days update failed (non-critical)', 'progress': 70})}\n\n"
+                await asyncio.sleep(0)
+
+            # Geocode addresses
+            yield f"data: {json.dumps({'status': 'progress', 'step': 'Geocoding partner addresses...', 'progress': 80})}\n\n"
+            await asyncio.sleep(0)
+
+            from ..utils.geocoding import geocode_address
+
+            geocoded_count = 0
+            total_to_geocode = len([r for r in validated_rows if r.address and r.address != 'N/A'])
+
+            try:
+                for idx, validated_row in enumerate(validated_rows):
+                    address = validated_row.address
+                    person_id = validated_row.person_id
+                    office = validated_row.office
+
+                    if address and address != 'N/A':
+                        coords = geocode_address(address)
+                        if coords:
+                            lat, lon = coords
+                            try:
+                                db.client.table('media_partners')\
+                                    .update({'latitude': lat, 'longitude': lon})\
+                                    .eq('person_id', person_id)\
+                                    .eq('office', office)\
+                                    .execute()
+                                geocoded_count += 1
+
+                                # Update progress every 10 partners
+                                if geocoded_count % 10 == 0:
+                                    progress = 80 + int((geocoded_count / total_to_geocode) * 15)
+                                    yield f"data: {json.dumps({'status': 'progress', 'step': f'Geocoded {geocoded_count}/{total_to_geocode} addresses...', 'progress': progress})}\n\n"
+                                    await asyncio.sleep(0)
+                            except Exception as update_error:
+                                logger.warning(f"Could not update lat/lon for person_id={person_id}, office={office}: {update_error}")
+
+                yield f"data: {json.dumps({'status': 'progress', 'step': f'Geocoded {geocoded_count} addresses', 'progress': 95})}\n\n"
+                await asyncio.sleep(0)
+
+            except Exception as geo_error:
+                logger.warning(f"Geocoding failed (non-critical): {geo_error}")
+                yield f"data: {json.dumps({'status': 'progress', 'step': 'Geocoding failed (non-critical)', 'progress': 95})}\n\n"
+                await asyncio.sleep(0)
+
+            # Complete
+            result = {
+                'status': 'complete',
+                'table': 'media_partners',
+                'rows_processed': len(validated_rows),
+                'rows_affected': upsert_result.get('rows_affected', 0),
+                'preferred_days_updated': preferred_days_count,
+                'geocoded_partners': geocoded_count,
+                'message': f'Successfully processed {len(validated_rows)} media partners. Updated {preferred_days_count} preferred days and geocoded {geocoded_count} addresses.',
+                'progress': 100
+            }
+
+            yield f"data: {json.dumps(result)}\n\n"
+            await asyncio.sleep(0)
+
+        except Exception as e:
+            logger.error(f"Error in media_partners ingestion: {str(e)}")
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
+        finally:
+            await db.close()
+
+    return StreamingResponse(generate_progress(), media_type="text/event-stream")
+
+
 @router.post("/media_partners/url")
 async def ingest_media_partners_from_url(
     url: str,
@@ -767,6 +983,38 @@ async def ingest_media_partners_from_url(
             except Exception as pref_error:
                 logger.warning(f"Preferred days auto-update failed (non-critical): {pref_error}")
 
+            # Geocode partner addresses and update lat/lon
+            logger.info("Geocoding partner addresses and updating lat/lon...")
+            from ..utils.geocoding import geocode_address
+
+            geocoded_count = 0
+            try:
+                # Get all partners that were just inserted
+                for validated_row in validated_rows:
+                    address = validated_row.address
+                    person_id = validated_row.person_id
+                    office = validated_row.office
+
+                    # Only geocode if we have an address
+                    if address and address != 'N/A':
+                        coords = geocode_address(address)
+                        if coords:
+                            lat, lon = coords
+                            try:
+                                db.client.table('media_partners')\
+                                    .update({'latitude': lat, 'longitude': lon})\
+                                    .eq('person_id', person_id)\
+                                    .eq('office', office)\
+                                    .execute()
+                                geocoded_count += 1
+                            except Exception as update_error:
+                                logger.warning(f"Could not update lat/lon for person_id={person_id}, office={office}: {update_error}")
+
+                logger.info(f"✓ Geocoded {geocoded_count} partner addresses")
+
+            except Exception as geo_error:
+                logger.warning(f"Geocoding failed (non-critical): {geo_error}")
+
             return {
                 "table": "media_partners",
                 "source": "url",
@@ -774,8 +1022,9 @@ async def ingest_media_partners_from_url(
                 "rows_processed": len(validated_rows),
                 "rows_affected": upsert_result.get("rows_affected", 0),
                 "preferred_days_updated": preferred_days_count,
+                "geocoded_partners": geocoded_count,
                 "status": "success",
-                "message": f"Successfully fetched and processed {len(validated_rows)} media partners from URL. Auto-updated {preferred_days_count} preferred days."
+                "message": f"Successfully fetched and processed {len(validated_rows)} media partners from URL. Auto-updated {preferred_days_count} preferred days and geocoded {geocoded_count} addresses."
             }
             
         except Exception as e:
@@ -1004,7 +1253,7 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
         # Now insert fresh data
         upsert_result = await db.upsert_records(table_name="current_activity", records=validated_rows)
         logger.info(f"Upload complete! {upsert_result.get('rows_affected', 0)} records affected.")
-        
+
         return {
             "table": "current_activity",
             "rows_processed": len(validated_rows),

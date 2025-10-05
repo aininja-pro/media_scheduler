@@ -17,6 +17,7 @@ from ..solver.dynamic_capacity import load_capacity_calendar
 from ..solver.ortools_solver_v6 import solve_with_all_constraints
 from ..solver.ortools_solver_v2 import add_score_to_triples
 from ..etl.publication import compute_publication_rate_24m, compute_recency_scores
+from ..utils.geocoding import get_distance_from_office
 
 router = APIRouter(prefix="/ui/phase7", tags=["UI Phase 7"])
 
@@ -896,6 +897,77 @@ async def get_overview(
             }
         }
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
+
+@router.get("/partner-distance")
+async def get_partner_distance(
+    person_id: int = Query(..., description="Partner person_id"),
+    office: str = Query(..., description="Office name")
+) -> Dict[str, Any]:
+    """
+    Calculate distance from partner to office using cached lat/lon from media_partners table.
+
+    Returns distance in miles and location type (local/remote).
+    """
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        # Get office coordinates
+        office_response = db.client.table('offices').select('latitude, longitude').eq('name', office).execute()
+
+        if not office_response.data or len(office_response.data) == 0:
+            raise HTTPException(status_code=404, detail=f"Office '{office}' not found")
+
+        office_data = office_response.data[0]
+        office_lat = office_data['latitude']
+        office_lon = office_data['longitude']
+
+        if not office_lat or not office_lon:
+            raise HTTPException(status_code=400, detail=f"Office '{office}' does not have coordinates")
+
+        # Get partner coordinates from media_partners table
+        partner_response = db.client.table('media_partners')\
+            .select('latitude, longitude')\
+            .eq('person_id', person_id)\
+            .eq('office', office)\
+            .execute()
+
+        if not partner_response.data or len(partner_response.data) == 0:
+            return {
+                "success": False,
+                "message": "Partner not found in media_partners table"
+            }
+
+        partner_data = partner_response.data[0]
+        partner_lat = partner_data.get('latitude')
+        partner_lon = partner_data.get('longitude')
+
+        if not partner_lat or not partner_lon:
+            return {
+                "success": False,
+                "message": "Partner does not have cached coordinates. Please re-ingest media_partners to geocode."
+            }
+
+        # Calculate distance using Haversine formula
+        from ..utils.geocoding import calculate_distance
+
+        distance = calculate_distance(office_lat, office_lon, partner_lat, partner_lon)
+        location_type = 'local' if distance < 50 else 'remote'
+
+        return {
+            "success": True,
+            "distance_miles": round(distance, 1),
+            "location_type": location_type,
+            "partner_latitude": partner_lat,
+            "partner_longitude": partner_lon
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:

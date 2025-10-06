@@ -1339,3 +1339,188 @@ async def get_partner_day_candidates(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
+
+
+@router.get("/partner-intelligence")
+async def get_partner_intelligence(
+    person_id: int = Query(..., description="Partner person_id"),
+    office: str = Query(..., description="Office name")
+) -> Dict[str, Any]:
+    """
+    Get comprehensive intelligence data for a specific partner.
+
+    Returns:
+    - Partner stats (publication rate, total loans, last loan date, cooldown status)
+    - Approved makes with ranks
+    - Recent loan history (last 10 loans)
+    - Scheduled assignments (upcoming calendar)
+    - Current active loans
+    """
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        # 1. Get partner info
+        partner_response = db.client.table('media_partners')\
+            .select('*')\
+            .eq('person_id', person_id)\
+            .eq('office', office)\
+            .execute()
+
+        if not partner_response.data:
+            raise HTTPException(status_code=404, detail="Partner not found")
+
+        partner = partner_response.data[0]
+
+        # 2. Get loan history for stats
+        loan_history_response = db.client.table('loan_history')\
+            .select('*')\
+            .eq('person_id', person_id)\
+            .order('start_date', desc=True)\
+            .limit(100)\
+            .execute()
+
+        loan_history_df = pd.DataFrame(loan_history_response.data) if loan_history_response.data else pd.DataFrame()
+
+        # Calculate stats
+        total_loans = len(loan_history_df)
+        publication_rate = 0.0
+        avg_clips = 0.0
+        last_loan_date = None
+        cooldown_until = None
+        cooldown_active = False
+
+        if not loan_history_df.empty:
+            # Publication rate
+            if 'clips_received' in loan_history_df.columns:
+                published = loan_history_df['clips_received'].apply(
+                    lambda x: str(x) == '1.0' if pd.notna(x) else False
+                ).sum()
+                publication_rate = published / total_loans if total_loans > 0 else 0.0
+
+            # Last loan date and cooldown (14 days)
+            if 'end_date' in loan_history_df.columns:
+                last_end = pd.to_datetime(loan_history_df['end_date']).max()
+                if pd.notna(last_end):
+                    last_loan_date = last_end.date()
+                    cooldown_until = last_loan_date + timedelta(days=14)
+                    cooldown_active = cooldown_until > datetime.now().date()
+
+        # 3. Get approved makes
+        approved_response = db.client.table('approved_makes')\
+            .select('*')\
+            .eq('person_id', person_id)\
+            .execute()
+
+        approved_makes = []
+        if approved_response.data:
+            for row in approved_response.data:
+                approved_makes.append({
+                    'make': row['make'],
+                    'rank': row.get('rank', 3)
+                })
+
+        # Sort by rank
+        approved_makes.sort(key=lambda x: x['rank'])
+
+        # 4. Get recent loan history (last 10)
+        recent_loans = []
+        if not loan_history_df.empty and len(loan_history_df) > 0:
+            for _, loan in loan_history_df.head(10).iterrows():
+                published = False
+                if 'clips_received' in loan and pd.notna(loan['clips_received']):
+                    published = str(loan['clips_received']) == '1.0'
+
+                recent_loans.append({
+                    'make': loan.get('make'),
+                    'start_date': str(loan.get('start_date')) if pd.notna(loan.get('start_date')) else None,
+                    'end_date': str(loan.get('end_date')) if pd.notna(loan.get('end_date')) else None,
+                    'published': published,
+                    'clips_count': int(loan.get('clips_count', 0)) if pd.notna(loan.get('clips_count')) else 0
+                })
+
+        # 5. Get scheduled assignments (upcoming)
+        today = datetime.now().date()
+        scheduled_response = db.client.table('scheduled_assignments')\
+            .select('*')\
+            .eq('person_id', person_id)\
+            .eq('office', office)\
+            .gte('start_day', str(today))\
+            .order('start_day')\
+            .execute()
+
+        upcoming_assignments = []
+        if scheduled_response.data:
+            for assignment in scheduled_response.data:
+                upcoming_assignments.append({
+                    'vin': assignment['vin'],
+                    'make': assignment.get('make'),
+                    'model': assignment.get('model'),
+                    'year': assignment.get('year'),
+                    'start_day': assignment['start_day'],
+                    'end_day': assignment['end_day'],
+                    'status': assignment.get('status', 'optimizer'),
+                    'score': assignment.get('score', 0)
+                })
+
+        # 6. Get current active loans with vehicle details
+        active_response = db.client.table('current_activity')\
+            .select('*')\
+            .eq('person_id', person_id)\
+            .gte('end_date', str(today))\
+            .execute()
+
+        current_loans = []
+        if active_response.data:
+            for activity in active_response.data:
+                # Get vehicle make/model from vehicles table
+                vin = activity.get('vehicle_vin')
+                make, model = None, None
+                if vin:
+                    try:
+                        vehicle_response = db.client.table('vehicles')\
+                            .select('make, model')\
+                            .eq('vin', vin)\
+                            .execute()
+                        if vehicle_response.data:
+                            make = vehicle_response.data[0].get('make')
+                            model = vehicle_response.data[0].get('model')
+                    except Exception as e:
+                        logger.warning(f"Could not fetch vehicle details for VIN {vin}: {e}")
+
+                current_loans.append({
+                    'vehicle_vin': vin,
+                    'make': make,
+                    'model': model,
+                    'start_date': activity.get('start_date'),
+                    'end_date': activity.get('end_date')
+                })
+
+        return {
+            "success": True,
+            "partner": {
+                "person_id": partner['person_id'],
+                "name": partner['name'],
+                "office": partner['office'],
+                "address": partner.get('address')
+            },
+            "stats": {
+                "total_loans": total_loans,
+                "publication_rate": round(publication_rate, 3),
+                "avg_clips": round(avg_clips, 2),
+                "last_loan_date": str(last_loan_date) if last_loan_date else None,
+                "cooldown_active": cooldown_active,
+                "cooldown_until": str(cooldown_until) if cooldown_until else None
+            },
+            "approved_makes": approved_makes,
+            "recent_loans": recent_loans,
+            "upcoming_assignments": upcoming_assignments,
+            "current_loans": current_loans
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()

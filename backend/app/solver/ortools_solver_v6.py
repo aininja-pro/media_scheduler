@@ -97,7 +97,9 @@ def solve_with_all_constraints(
     w_preferred_day: float = 0,  # Weight for preferred day match (0=off)
     # General
     seed: int = 42,
-    verbose: bool = True
+    verbose: bool = True,
+    # Database client for querying current activity
+    db_client = None
 ) -> Dict[str, Any]:
     """
     Complete OR-Tools solver with all phases (7.2 through 7.6).
@@ -125,6 +127,7 @@ def solve_with_all_constraints(
         max_per_partner_per_day: Max vehicles per partner per start day (0=unlimited, default=1)
         seed: Random seed for determinism
         verbose: Print detailed progress
+        db_client: Supabase client for querying current_activity (optional)
 
     Returns:
         Dictionary with selected assignments, all summaries, and metadata
@@ -219,19 +222,79 @@ def solve_with_all_constraints(
             print(f"  - {len(special_days['reduced_capacity'])} reduced capacity days")
 
     # === HARD CONSTRAINT 3: Max Vehicles per Partner per Day ===
+    # Query current_activity to get existing active loans
+    active_count_by_partner_day = {}
+
+    if db_client and max_per_partner_per_day > 0:
+        try:
+            # Calculate week end date
+            week_end_date = week_start_date + timedelta(days=6)
+
+            # Query current_activity for loans that overlap with target week
+            active_response = db_client.table('current_activity')\
+                .select('person_id, start_date, end_date')\
+                .lte('start_date', str(week_end_date.date()))\
+                .gte('end_date', str(week_start_date.date()))\
+                .execute()
+
+            if active_response.data:
+                # Build dictionary of active loan counts by (partner, date)
+                for loan in active_response.data:
+                    person_id = loan.get('person_id')
+                    start_date = pd.to_datetime(loan.get('start_date')).date()
+                    end_date = pd.to_datetime(loan.get('end_date')).date()
+
+                    if not person_id:
+                        continue
+
+                    # For each day this loan covers in the target week
+                    current_date = max(start_date, week_start_date.date())
+                    end_check = min(end_date, week_end_date.date())
+
+                    while current_date <= end_check:
+                        key = (person_id, current_date)
+                        active_count_by_partner_day[key] = active_count_by_partner_day.get(key, 0) + 1
+                        current_date += timedelta(days=1)
+
+                if verbose and active_count_by_partner_day:
+                    existing_conflicts = len(active_count_by_partner_day)
+                    print(f"  Found {existing_conflicts} (partner, day) combinations with existing active loans")
+        except Exception as e:
+            if verbose:
+                print(f"  Warning: Could not query current_activity: {e}")
+
     # Group by (person_id, start_day) to enforce max vehicles per partner per start day
     partner_day_groups = office_triples.groupby(['person_id', 'start_day']).groups
 
     if max_per_partner_per_day > 0:  # 0 = unlimited
+        blocked_count = 0
+        reduced_count = 0
+
         for (person_id, start_day), indices in partner_day_groups.items():
-            if len(indices) > max_per_partner_per_day:
+            # Check if partner already has active loans on this start_day
+            start_day_date = pd.to_datetime(start_day).date()
+            existing_count = active_count_by_partner_day.get((person_id, start_day_date), 0)
+            available_slots = max_per_partner_per_day - existing_count
+
+            if available_slots <= 0:
+                # Partner already at max capacity - block all new assignments for this day
+                model.Add(sum(y[i] for i in indices) == 0)
+                blocked_count += 1
+            elif len(indices) > available_slots:
+                # Partner has some slots left, but fewer than total candidates
+                model.Add(sum(y[i] for i in indices) <= available_slots)
+                reduced_count += 1
+            elif len(indices) > max_per_partner_per_day:
+                # No existing loans, apply normal constraint
                 model.Add(sum(y[i] for i in indices) <= max_per_partner_per_day)
 
         if verbose:
             multi_option_groups = sum(1 for indices in partner_day_groups.values() if len(indices) > max_per_partner_per_day)
             print(f"  Added partner-day constraints: max {max_per_partner_per_day} vehicle(s) per partner per day")
-            print(f"  - {len(partner_day_groups)} unique (partner, day) combinations")
-            print(f"  - {multi_option_groups} combinations constrained by this limit")
+            print(f"  - {len(partner_day_groups)} unique (partner, day) combinations in optimizer")
+            print(f"  - {blocked_count} combinations blocked due to existing active loans")
+            print(f"  - {reduced_count} combinations with reduced capacity due to existing loans")
+            print(f"  - {multi_option_groups} combinations constrained by normal limit")
     else:
         if verbose:
             print(f"  No partner-day constraint (unlimited vehicles per partner per day)")

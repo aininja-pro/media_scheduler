@@ -5,6 +5,7 @@ import PublicationRates from './pages/PublicationRates.jsx'
 import ScheduleGeneration from './pages/ScheduleGeneration.jsx'
 import Optimizer from './pages/Optimizer.jsx'
 import Calendar from './pages/Calendar.jsx'
+import Partners from './pages/Partners.jsx'
 import './App.css'
 
 function App() {
@@ -336,6 +337,16 @@ function App() {
                 }`}
               >
                 Calendar
+              </button>
+              <button
+                onClick={() => setActiveTab('partners')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'partners'
+                    ? 'bg-white text-black'
+                    : 'bg-gray-600 text-white hover:bg-gray-500'
+                }`}
+              >
+                Partners
               </button>
           </nav>
         </div>
@@ -745,6 +756,13 @@ function App() {
         {activeTab === 'calendar' && (
           <Calendar
             sharedOffice={optimizerOffice}
+          />
+        )}
+
+        {/* Partners Tab */}
+        {activeTab === 'partners' && (
+          <Partners
+            office={optimizerOffice}
           />
         )}
         </div>

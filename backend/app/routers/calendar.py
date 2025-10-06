@@ -272,3 +272,95 @@ async def save_schedule(request: SaveScheduleRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
+
+
+class ScheduleAssignmentRequest(BaseModel):
+    vin: str
+    person_id: int
+    start_day: str
+    office: str
+    week_start: str
+    partner_name: str = ""
+    make: str = ""
+    model: str = ""
+
+
+@router.post("/schedule-assignment")
+async def schedule_manual_assignment(request: ScheduleAssignmentRequest) -> Dict[str, Any]:
+    """
+    Manually schedule a vehicle assignment to a partner.
+    
+    Saves to scheduled_assignments table with status='manual' to distinguish
+    from optimizer-generated assignments.
+    """
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        start_day = pd.to_datetime(request.start_day).date()
+        end_day = start_day + timedelta(days=7)
+        week_start = pd.to_datetime(request.week_start).date()
+
+        # Get vehicle and partner info if not provided
+        if not request.make or not request.model:
+            vehicle_response = db.client.table('vehicles')\
+                .select('make, model')\
+                .eq('vin', request.vin)\
+                .execute()
+            
+            if vehicle_response.data:
+                request.make = vehicle_response.data[0].get('make', '')
+                request.model = vehicle_response.data[0].get('model', '')
+
+        if not request.partner_name:
+            partner_response = db.client.table('media_partners')\
+                .select('name')\
+                .eq('person_id', request.person_id)\
+                .execute()
+            
+            if partner_response.data:
+                request.partner_name = partner_response.data[0].get('name', '')
+
+        # Check if this assignment already exists
+        existing_response = db.client.table('scheduled_assignments')\
+            .select('*')\
+            .eq('vin', request.vin)\
+            .eq('person_id', request.person_id)\
+            .eq('start_day', str(start_day))\
+            .eq('office', request.office)\
+            .execute()
+
+        if existing_response.data:
+            return {
+                'success': False,
+                'message': 'This assignment already exists'
+            }
+
+        # Insert new assignment
+        assignment = {
+            'vin': request.vin,
+            'person_id': request.person_id,
+            'start_day': str(start_day),
+            'end_day': str(end_day),
+            'make': request.make,
+            'model': request.model,
+            'office': request.office,
+            'partner_name': request.partner_name,
+            'score': 0,  # Manual assignments don't have optimizer scores
+            'optimizer_run_id': None,
+            'week_start': str(week_start),
+            'status': 'manual'  # Mark as manually created
+        }
+
+        db.client.table('scheduled_assignments').insert(assignment).execute()
+
+        return {
+            'success': True,
+            'message': 'Assignment scheduled successfully',
+            'assignment': assignment
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()

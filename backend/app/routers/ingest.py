@@ -3,7 +3,7 @@ CSV Ingest API endpoints for uploading and validating data.
 """
 import pandas as pd
 import httpx
-from fastapi import APIRouter, UploadFile, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any, List
 from io import StringIO, BytesIO
@@ -1264,3 +1264,37 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/partners/search")
+async def search_partners(
+    office: str = Query(..., description="Office name"),
+    query: str = Query(..., description="Search query")
+):
+    """Search media partners by name for autocomplete"""
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        response = db.client.table('media_partners')\
+            .select('person_id, name, address, office')\
+            .eq('office', office)\
+            .ilike('name', f'%{query}%')\
+            .limit(1000)\
+            .execute()
+
+        # Convert person_id to int for each partner
+        partners = response.data if response.data else []
+        for partner in partners:
+            if 'person_id' in partner and partner['person_id']:
+                partner['person_id'] = int(partner['person_id'])
+
+        return {
+            "success": True,
+            "partners": partners
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()

@@ -12,6 +12,10 @@ export default function Partners({ office }) {
   const [loadingIntelligence, setLoadingIntelligence] = useState(false)
   const [scheduling, setScheduling] = useState(false)
   const [message, setMessage] = useState('')
+  const [selectedMonth, setSelectedMonth] = useState('')
+  const [selectedPartnerId, setSelectedPartnerId] = useState(null)
+  const [partnerContext, setPartnerContext] = useState(null)
+  const [loadingPartnerContext, setLoadingPartnerContext] = useState(false)
 
   // Load all partners on mount
   useEffect(() => {
@@ -26,6 +30,14 @@ export default function Partners({ office }) {
     const monday = new Date(today)
     monday.setDate(today.getDate() - today.getDay() + (today.getDay() === 0 ? -6 : 1))
     setSelectedDate(monday.toISOString().split('T')[0])
+  }, [])
+
+  // Set current month as default for calendar
+  useEffect(() => {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = String(now.getMonth() + 1).padStart(2, '0')
+    setSelectedMonth(`${year}-${month}`)
   }, [])
 
   // Load partner intelligence when partner is selected
@@ -169,6 +181,87 @@ export default function Partners({ office }) {
       case 3: return 'bg-green-100 text-green-800 border-green-300'
       case 4: return 'bg-gray-100 text-gray-800 border-gray-300'
       default: return 'bg-gray-100 text-gray-800 border-gray-300'
+    }
+  }
+
+  const handleBarClick = async () => {
+    if (!selectedPartner || !partnerIntelligence) return;
+
+    setSelectedPartnerId(selectedPartner.person_id)
+    setLoadingPartnerContext(true)
+
+    try {
+      // Build context from partnerIntelligence data
+      const context = {
+        person_id: selectedPartner.person_id,
+        partner_name: partnerIntelligence.partner.name,
+        office: partnerIntelligence.partner.office,
+        region: 'N/A',
+        partner_address: partnerIntelligence.partner.address || 'N/A',
+        distance_info: null,
+        current_loans: partnerIntelligence.current_loans.map(loan => ({
+          vin: loan.vehicle_vin,
+          make: loan.make,
+          model: loan.model,
+          start_date: loan.start_date,
+          end_date: loan.end_date,
+          status: 'active'
+        })),
+        recommended_loans: partnerIntelligence.upcoming_assignments.map(assignment => ({
+          vin: assignment.vin,
+          make: assignment.make,
+          model: assignment.model,
+          start_date: assignment.start_day,
+          end_date: assignment.end_day,
+          status: assignment.status
+        })),
+        timeline: [
+          ...partnerIntelligence.recent_loans.map(loan => ({
+            make: loan.make,
+            model: '',
+            start_date: loan.start_date,
+            end_date: loan.end_date,
+            status: 'completed'
+          })),
+          ...partnerIntelligence.current_loans.map(loan => ({
+            make: loan.make,
+            model: loan.model,
+            start_date: loan.start_date,
+            end_date: loan.end_date,
+            status: 'active'
+          })),
+          ...partnerIntelligence.upcoming_assignments.map(assignment => ({
+            make: assignment.make,
+            model: assignment.model,
+            start_date: assignment.start_day,
+            end_date: assignment.end_day,
+            status: 'planned'
+          }))
+        ]
+      }
+
+      setPartnerContext(context)
+    } catch (error) {
+      console.error('Error building partner context:', error)
+      setPartnerContext(null)
+    } finally {
+      setLoadingPartnerContext(false)
+    }
+  }
+
+  const closeSidePanel = () => {
+    setSelectedPartnerId(null)
+    setPartnerContext(null)
+  }
+
+  const formatActivityDate = (dateStr) => {
+    if (!dateStr) return 'N/A'
+    try {
+      const date = new Date(dateStr)
+      if (isNaN(date.getTime())) return 'Invalid Date'
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    } catch {
+      return 'Invalid Date'
     }
   }
 
@@ -507,35 +600,35 @@ export default function Partners({ office }) {
                 </div>
               ) : partnerIntelligence ? (
                 <div className="bg-white shadow rounded-lg p-6 overflow-x-auto">
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">📅 {partnerIntelligence.partner.name}'s Calendar</h3>
+                  {/* Calendar Header with Month Selector */}
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-medium text-gray-900">📅 {partnerIntelligence.partner.name}'s Calendar</h3>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700">Month:</label>
+                      <input
+                        type="month"
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                        className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
 
                   {/* Calendar Grid */}
                   {(() => {
+                    if (!selectedMonth) return null;
+
+                    const [year, month] = selectedMonth.split('-');
+                    const currentYear = parseInt(year);
+                    const currentMonth = parseInt(month) - 1; // JavaScript months are 0-indexed
                     const today = new Date();
-                    const currentMonth = today.getMonth();
-                    const currentYear = today.getFullYear();
                     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
 
                     // Collect all assignments for this month
                     const assignments = [];
 
-                    // Recent loans
-                    partnerIntelligence.recent_loans.forEach(loan => {
-                      if (loan.start_date) {
-                        const start = new Date(loan.start_date);
-                        const end = loan.end_date ? new Date(loan.end_date) : new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-                        if (start.getMonth() === currentMonth && start.getFullYear() === currentYear) {
-                          assignments.push({
-                            type: 'past',
-                            make: loan.make,
-                            start,
-                            end,
-                            published: loan.published
-                          });
-                        }
-                      }
-                    });
+                    // Don't show recent_loans in calendar - they're historical data from loan_history table
+                    // Calendar tab only shows current_activity and scheduled_assignments, so we match that
 
                     // Active loans
                     partnerIntelligence.current_loans.forEach(loan => {
@@ -577,22 +670,23 @@ export default function Partners({ office }) {
                     });
 
                     return (
-                      <div className="min-w-[800px]">
+                      <div className="min-w-[800px] border-2 rounded-lg overflow-hidden">
                         {/* Header Row - Day Numbers */}
-                        <div className="flex border-b-2 border-gray-300">
-                          <div className="w-32 flex-shrink-0 p-2 font-semibold text-sm text-gray-700">
-                            {today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                        <div className="flex border-b-2 border-b-gray-400 bg-gray-50">
+                          <div className="w-32 flex-shrink-0 p-2 border-r font-semibold text-sm text-gray-700">
+                            {new Date(currentYear, currentMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                           </div>
                           {Array.from({ length: daysInMonth }, (_, i) => {
                             const day = i + 1;
                             const date = new Date(currentYear, currentMonth, day);
-                            const isToday = date.toDateString() === today.toDateString();
+                            const dayOfWeek = date.getDay();
+                            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
                             return (
                               <div
                                 key={day}
-                                className={`flex-1 min-w-[30px] text-center p-1 text-xs font-medium ${
-                                  isToday ? 'bg-blue-100 text-blue-900' : 'text-gray-600'
+                                className={`flex-1 text-center text-xs py-3 border-r ${
+                                  isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-gray-600'
                                 }`}
                               >
                                 {day}
@@ -602,19 +696,46 @@ export default function Partners({ office }) {
                         </div>
 
                         {/* Assignment Rows */}
-                        <div className="relative h-48">
+                        <div className="relative h-48 flex">
+                          {/* Month label spacer - matches header width */}
+                          <div className="w-32 flex-shrink-0 border-r"></div>
+
+                          {/* Day grid area */}
+                          <div className="flex-1 relative">
+                            {/* Day grid with weekend backgrounds and vertical lines */}
+                            <div className="absolute inset-0 flex">
+                              {Array.from({ length: daysInMonth }, (_, i) => {
+                                const day = i + 1;
+                                const date = new Date(currentYear, currentMonth, day);
+                                const dayOfWeek = date.getDay();
+                                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+                                return (
+                                  <div
+                                    key={day}
+                                    className={`flex-1 border-r border-gray-300 ${
+                                      isWeekend ? 'bg-blue-50' : ''
+                                    }`}
+                                  ></div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Assignment bars */}
                           {assignments.map((assign, idx) => {
                             const startDay = assign.start.getDate();
                             const endDay = assign.end.getDate();
                             const startMonth = assign.start.getMonth();
                             const endMonth = assign.end.getMonth();
 
-                            // Calculate position
+                            // Calculate position - use same logic as Calendar.jsx
                             const actualStartDay = startMonth < currentMonth ? 1 : startDay;
                             const actualEndDay = endMonth > currentMonth ? daysInMonth : endDay;
-                            const dayWidth = 100 / daysInMonth;
-                            const left = (actualStartDay - 0.5) * dayWidth;
-                            const width = (actualEndDay - actualStartDay) * dayWidth;
+                            const totalDays = daysInMonth;
+
+                            // Center bars on start/end dates (0.5 offset to bisect the day squares)
+                            const left = ((actualStartDay - 0.5) / totalDays) * 100;
+                            const width = ((actualEndDay - actualStartDay) / totalDays) * 100;
                             const top = (idx % 5) * 32 + 16;
 
                             // Match Calendar.jsx color scheme exactly
@@ -639,11 +760,12 @@ export default function Partners({ office }) {
                             }
 
                             return (
-                              <div
+                              <button
                                 key={idx}
+                                onClick={handleBarClick}
                                 className={`absolute h-7 ${barColor} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer px-2 flex items-center text-white text-xs font-semibold overflow-hidden whitespace-nowrap`}
                                 style={{
-                                  left: `calc(8rem + ${left}%)`,
+                                  left: `${left}%`,
                                   width: `${width}%`,
                                   minWidth: '20px',
                                   top: `${top}px`
@@ -651,9 +773,10 @@ export default function Partners({ office }) {
                                 title={`${assign.make || 'Vehicle'} ${assign.model || ''} ${assign.vin ? `(VIN: ${assign.vin})` : ''}\n${assign.start.toLocaleDateString()} - ${assign.end.toLocaleDateString()}\n${assign.status === 'manual' ? 'Manual Assignment' : 'Optimizer Assignment'}`}
                               >
                                 <span className="truncate">{label}</span>
-                              </div>
+                              </button>
                             );
                           })}
+                          </div>
                         </div>
                       </div>
                     );
@@ -734,6 +857,161 @@ export default function Partners({ office }) {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Partner Context Side Panel */}
+        {selectedPartnerId && partnerContext && (
+          <div className="fixed right-0 top-0 z-40 h-full">
+            <div className="bg-white w-96 h-full shadow-2xl overflow-y-auto border-l border-gray-200">
+              <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900">Partner Context</h2>
+                <button
+                  onClick={closeSidePanel}
+                  className="text-gray-400 hover:text-gray-600 focus:outline-none"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="p-6">
+                {loadingPartnerContext ? (
+                  <div className="flex items-center justify-center py-12">
+                    <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Partner Info */}
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Partner Details</h3>
+                      <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-600">Name:</span>
+                          <span className="text-sm font-medium text-gray-900">{partnerContext.partner_name}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-600">Partner ID:</span>
+                          <span className="text-sm font-mono font-medium text-gray-900">{partnerContext.person_id}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-600">Office:</span>
+                          <span className="text-sm font-medium text-gray-900">{partnerContext.office}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-600">Region:</span>
+                          <span className="text-sm font-medium text-gray-900">{partnerContext.region}</span>
+                        </div>
+                        {partnerContext.partner_address && partnerContext.partner_address !== 'N/A' && (
+                          <div className="border-t pt-2 mt-2">
+                            <div className="flex items-start">
+                              <svg className="w-4 h-4 text-blue-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                              </svg>
+                              <div className="flex-1">
+                                <p className="text-xs text-gray-500 font-medium">Address</p>
+                                <p className="text-sm text-gray-900 mt-0.5">{partnerContext.partner_address}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Current Loans (Active) */}
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
+                        Current Loan{partnerContext.current_loans?.length > 1 ? 's' : ''}
+                        {partnerContext.current_loans?.length > 0 && (
+                          <span className="ml-2 text-xs font-normal text-gray-400">({partnerContext.current_loans.length})</span>
+                        )}
+                      </h3>
+                      {partnerContext.current_loans && partnerContext.current_loans.length > 0 ? (
+                        <div className="space-y-2">
+                          {partnerContext.current_loans.map((loan, idx) => (
+                            <div key={idx} className="bg-blue-50 border-2 border-blue-400 rounded-lg p-4">
+                              <div className="flex items-start">
+                                <svg className="w-5 h-5 text-blue-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                                </svg>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-blue-900">🚗 {loan.make} {loan.model}</p>
+                                  <p className="text-xs text-blue-700 mt-1">
+                                    {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)}
+                                  </p>
+                                  <p className="text-xs text-blue-600 mt-1 font-mono truncate">VIN: {loan.vin}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-lg border border-gray-200">
+                          <p className="text-sm">No active loans</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Recommended Loans (Planned) */}
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
+                        Recommended Loan{partnerContext.recommended_loans?.length > 1 ? 's' : ''}
+                        {partnerContext.recommended_loans?.length > 0 && (
+                          <span className="ml-2 text-xs font-normal text-gray-400">({partnerContext.recommended_loans.length})</span>
+                        )}
+                      </h3>
+                      {partnerContext.recommended_loans && partnerContext.recommended_loans.length > 0 ? (
+                        <div className="space-y-2">
+                          {partnerContext.recommended_loans.map((loan, idx) => (
+                            <div key={idx} className="bg-green-50 border-2 border-green-400 rounded-lg p-4">
+                              <div className="flex items-start">
+                                <svg className="w-5 h-5 text-green-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                                </svg>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-green-900">🚗 {loan.make} {loan.model}</p>
+                                  <p className="text-xs text-green-700 mt-1">
+                                    {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)}
+                                  </p>
+                                  <p className="text-xs text-green-600 mt-1 font-mono truncate">VIN: {loan.vin}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-lg border border-gray-200">
+                          <p className="text-sm">No planned loans yet</p>
+                          <p className="text-xs mt-1">Run the optimizer to get recommendations</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Timeline */}
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Activity Timeline</h3>
+                      <div className="space-y-2">
+                        {partnerContext.timeline.map((act, idx) => (
+                          <div key={idx} className="flex items-center text-xs bg-gray-50 rounded p-2">
+                            <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
+                              act.status === 'active' ? 'bg-blue-500' :
+                              act.status === 'planned' ? 'bg-green-500' :
+                              'bg-gray-400'
+                            }`}></span>
+                            <span className="flex-1 font-medium text-gray-900">{act.make} {act.model}</span>
+                            <span className="text-gray-500">{formatActivityDate(act.start_date)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

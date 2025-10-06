@@ -1464,10 +1464,11 @@ async def get_partner_intelligence(
                 })
 
         # 6. Get current active loans with vehicle details
+        # Use > instead of >= to exclude loans that ended yesterday or earlier
         active_response = db.client.table('current_activity')\
             .select('*')\
             .eq('person_id', person_id)\
-            .gte('end_date', str(today))\
+            .gt('end_date', str(today))\
             .execute()
 
         current_loans = []

@@ -1387,8 +1387,6 @@ async def get_partner_intelligence(
         publication_rate = 0.0
         avg_clips = 0.0
         last_loan_date = None
-        cooldown_until = None
-        cooldown_active = False
 
         if not loan_history_df.empty:
             # Publication rate
@@ -1398,13 +1396,11 @@ async def get_partner_intelligence(
                 ).sum()
                 publication_rate = published / total_loans if total_loans > 0 else 0.0
 
-            # Last loan date and cooldown (14 days)
+            # Last loan date
             if 'end_date' in loan_history_df.columns:
                 last_end = pd.to_datetime(loan_history_df['end_date']).max()
                 if pd.notna(last_end):
                     last_loan_date = last_end.date()
-                    cooldown_until = last_loan_date + timedelta(days=14)
-                    cooldown_active = cooldown_until > datetime.now().date()
 
         # 3. Get approved makes
         approved_response = db.client.table('approved_makes')\
@@ -1517,9 +1513,7 @@ async def get_partner_intelligence(
                 "total_loans": total_loans,
                 "publication_rate": round(publication_rate, 3),
                 "avg_clips": round(avg_clips, 2),
-                "last_loan_date": str(last_loan_date) if last_loan_date else None,
-                "cooldown_active": cooldown_active,
-                "cooldown_until": str(cooldown_until) if cooldown_until else None
+                "last_loan_date": str(last_loan_date) if last_loan_date else None
             },
             "approved_makes": approved_makes,
             "recent_loans": recent_loans,

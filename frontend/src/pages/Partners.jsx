@@ -218,13 +218,16 @@ export default function Partners({ office }) {
         })),
         timeline: [
           ...partnerIntelligence.recent_loans.map(loan => ({
+            vin: loan.vin,
             make: loan.make,
-            model: '',
+            model: loan.model,
             start_date: loan.start_date,
             end_date: loan.end_date,
+            published: loan.published,
             status: 'completed'
           })),
           ...partnerIntelligence.current_loans.map(loan => ({
+            vin: loan.vin,
             make: loan.make,
             model: loan.model,
             start_date: loan.start_date,
@@ -232,13 +235,14 @@ export default function Partners({ office }) {
             status: 'active'
           })),
           ...partnerIntelligence.upcoming_assignments.map(assignment => ({
+            vin: assignment.vin,
             make: assignment.make,
             model: assignment.model,
             start_date: assignment.start_day,
             end_date: assignment.end_day,
             status: 'planned'
           }))
-        ]
+        ].sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
       }
 
       setPartnerContext(context)
@@ -522,11 +526,12 @@ export default function Partners({ office }) {
                           if (loan.start_date) {
                             const startDate = new Date(loan.start_date);
                             const endDate = loan.end_date ? new Date(loan.end_date) : new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
-                            const isPast = endDate < today;
 
                             timeline.push({
                               type: 'past',
+                              vin: loan.vin,
                               make: loan.make,
+                              model: loan.model,
                               start: startDate,
                               end: endDate,
                               published: loan.published,
@@ -540,6 +545,8 @@ export default function Partners({ office }) {
                           timeline.push({
                             type: 'active',
                             vin: loan.vehicle_vin,
+                            make: loan.make,
+                            model: loan.model,
                             start: new Date(loan.start_date),
                             end: new Date(loan.end_date),
                             sortDate: new Date(loan.start_date)
@@ -550,6 +557,7 @@ export default function Partners({ office }) {
                         partnerIntelligence.upcoming_assignments.slice(0, 8).forEach(assignment => {
                           timeline.push({
                             type: 'scheduled',
+                            vin: assignment.vin,
                             make: assignment.make,
                             model: assignment.model,
                             start: new Date(assignment.start_day),
@@ -562,52 +570,61 @@ export default function Partners({ office }) {
                         // Sort by date
                         timeline.sort((a, b) => b.sortDate - a.sortDate);
 
-                        return timeline.slice(0, 12).map((item, idx) => (
-                          <div
-                            key={idx}
-                            className={`rounded-lg p-3 border ${
-                              item.type === 'past'
-                                ? 'bg-gray-50 border-gray-200'
-                                : item.type === 'active'
-                                ? 'bg-green-50 border-green-300'
-                                : item.status === 'manual'
-                                ? 'bg-blue-50 border-blue-200'
-                                : 'bg-indigo-50 border-indigo-200'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-sm font-medium ${
-                                    item.type === 'past' ? 'text-gray-600' : 'text-gray-900'
-                                  }`}>
-                                    {item.make || `VIN ...${item.vin?.slice(-6)}`} {item.model || ''}
-                                  </span>
-                                  {item.type === 'scheduled' && (
-                                    <span className={`text-xs px-1.5 py-0.5 rounded ${
-                                      item.status === 'manual'
-                                        ? 'bg-blue-200 text-blue-800'
-                                        : 'bg-indigo-200 text-indigo-800'
-                                    }`}>
-                                      {item.status === 'manual' ? 'M' : 'O'}
+                        return timeline.slice(0, 12).map((item, idx) => {
+                          // Match calendar color scheme: Blue = Active, Green = Scheduled/Planned, Gray = Past
+                          let bgColor, borderColor, statusLabel, statusColor;
+
+                          if (item.type === 'past') {
+                            bgColor = 'bg-gray-50';
+                            borderColor = 'border-gray-300';
+                            statusLabel = 'Past';
+                            statusColor = 'text-gray-600';
+                          } else if (item.type === 'active') {
+                            bgColor = 'bg-blue-50';
+                            borderColor = 'border-blue-400';
+                            statusLabel = 'Active';
+                            statusColor = 'text-blue-700';
+                          } else {
+                            // scheduled/proposed by optimizer
+                            bgColor = 'bg-green-50';
+                            borderColor = 'border-green-400';
+                            statusLabel = 'Proposed';
+                            statusColor = 'text-green-700';
+                          }
+
+                          return (
+                            <div
+                              key={idx}
+                              className={`rounded-lg p-3 border-2 ${bgColor} ${borderColor}`}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-sm font-semibold text-gray-900 truncate">
+                                      {item.make} {item.model || ''}
                                     </span>
-                                  )}
-                                  {item.type === 'past' && item.published && (
-                                    <svg className="h-3 w-3 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                    </svg>
+                                    {item.type === 'past' && item.published && (
+                                      <span className="text-xs bg-green-100 text-green-800 px-1.5 py-0.5 rounded font-medium">✓</span>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-gray-600 mb-1">
+                                    {item.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {item.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                  </div>
+                                  {item.vin && (
+                                    <div className="text-xs text-gray-500 font-mono">
+                                      VIN: {item.vin}
+                                    </div>
                                   )}
                                 </div>
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {item.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {item.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                </div>
+                                {statusLabel && (
+                                  <span className={`text-xs font-semibold ${statusColor} whitespace-nowrap`}>
+                                    {statusLabel}
+                                  </span>
+                                )}
                               </div>
-                              {item.type === 'active' && (
-                                <span className="text-xs font-medium text-green-700">Active</span>
-                              )}
                             </div>
-                          </div>
-                        ));
+                          );
+                        });
                       })()}
                     </div>
                   </div>
@@ -1026,13 +1043,28 @@ export default function Partners({ office }) {
                     <div>
                       <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Activity Timeline</h3>
                       <div className="space-y-2">
-                        {partnerContext.timeline.map((act, idx) => (
-                          <div key={idx} className="flex items-center text-xs bg-gray-50 rounded p-2">
-                            <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
-                              act.status === 'active' ? 'bg-blue-500' :
-                              act.status === 'planned' ? 'bg-green-500' :
-                              'bg-gray-400'
-                            }`}></span>
+                        {/* Active items first */}
+                        {partnerContext.timeline.filter(act => act.status === 'active').map((act, idx) => (
+                          <div key={`active-${idx}`} className="flex items-center text-xs bg-gray-50 rounded p-2">
+                            <span className="inline-block w-2 h-2 rounded-full mr-2 bg-blue-500"></span>
+                            <span className="flex-1 font-medium text-gray-900">{act.make} {act.model}</span>
+                            <span className="text-gray-500">{formatActivityDate(act.start_date)}</span>
+                          </div>
+                        ))}
+
+                        {/* Proposed/Planned items second */}
+                        {partnerContext.timeline.filter(act => act.status === 'planned').map((act, idx) => (
+                          <div key={`planned-${idx}`} className="flex items-center text-xs bg-gray-50 rounded p-2">
+                            <span className="inline-block w-2 h-2 rounded-full mr-2 bg-green-500"></span>
+                            <span className="flex-1 font-medium text-gray-900">{act.make} {act.model}</span>
+                            <span className="text-gray-500">{formatActivityDate(act.start_date)}</span>
+                          </div>
+                        ))}
+
+                        {/* Past items last */}
+                        {partnerContext.timeline.filter(act => act.status === 'completed').map((act, idx) => (
+                          <div key={`completed-${idx}`} className="flex items-center text-xs bg-gray-50 rounded p-2">
+                            <span className="inline-block w-2 h-2 rounded-full mr-2 bg-gray-400"></span>
                             <span className="flex-1 font-medium text-gray-900">{act.make} {act.model}</span>
                             <span className="text-gray-500">{formatActivityDate(act.start_date)}</span>
                           </div>

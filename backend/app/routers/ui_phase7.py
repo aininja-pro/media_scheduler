@@ -1423,16 +1423,24 @@ async def get_partner_intelligence(
         # Sort by rank
         approved_makes.sort(key=lambda x: x['rank'])
 
-        # 4. Get recent loan history (last 10)
+        # 4. Get recent loan history (last 6 months) with full vehicle details
         recent_loans = []
         if not loan_history_df.empty and len(loan_history_df) > 0:
-            for _, loan in loan_history_df.head(10).iterrows():
+            # Filter to last 6 months
+            six_months_ago = datetime.now().date() - timedelta(days=180)
+            recent_df = loan_history_df[
+                pd.to_datetime(loan_history_df['start_date']) >= pd.Timestamp(six_months_ago)
+            ]
+
+            for _, loan in recent_df.head(10).iterrows():
                 published = False
                 if 'clips_received' in loan and pd.notna(loan['clips_received']):
                     published = str(loan['clips_received']) == '1.0'
 
                 recent_loans.append({
+                    'vin': loan.get('vin') if pd.notna(loan.get('vin')) else None,
                     'make': loan.get('make'),
+                    'model': loan.get('model') if pd.notna(loan.get('model')) else None,
                     'start_date': str(loan.get('start_date')) if pd.notna(loan.get('start_date')) else None,
                     'end_date': str(loan.get('end_date')) if pd.notna(loan.get('end_date')) else None,
                     'published': published,

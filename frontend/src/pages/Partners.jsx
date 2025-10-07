@@ -16,6 +16,7 @@ export default function Partners({ office }) {
   const [selectedPartnerId, setSelectedPartnerId] = useState(null)
   const [partnerContext, setPartnerContext] = useState(null)
   const [loadingPartnerContext, setLoadingPartnerContext] = useState(false)
+  const [partnerSearchQuery, setPartnerSearchQuery] = useState('')
 
   // Load all partners on mount
   useEffect(() => {
@@ -314,10 +315,11 @@ export default function Partners({ office }) {
 
         {/* Partner Selection */}
         <div className="bg-white shadow rounded-lg p-6 mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Select Partner
+          </label>
+
           <Listbox value={selectedPartner} onChange={handlePartnerChange} disabled={!office || loadingPartners}>
-            <Listbox.Label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Partner
-            </Listbox.Label>
             <div className="relative">
               <Listbox.Button className="relative w-full cursor-pointer rounded-lg bg-white py-3 pl-4 pr-10 text-left border-2 border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed transition-all duration-200 hover:border-gray-400">
                 <span className="block truncate font-medium text-gray-900">
@@ -342,33 +344,61 @@ export default function Partners({ office }) {
                 leaveFrom="opacity-100"
                 leaveTo="opacity-0"
               >
-                <Listbox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
-                  {allPartners.map((partner) => (
-                    <Listbox.Option
-                      key={partner.person_id}
-                      value={partner}
-                      className={({ active }) =>
-                        `relative cursor-pointer select-none py-3 pl-10 pr-4 ${
-                          active ? 'bg-indigo-50 text-indigo-900' : 'text-gray-900'
-                        }`
-                      }
-                    >
-                      {({ selected, active }) => (
-                        <>
-                          <span className={`block truncate ${selected ? 'font-semibold' : 'font-normal'}`}>
-                            {partner.name} - {partner.address}
-                          </span>
-                          {selected ? (
-                            <span className={`absolute inset-y-0 left-0 flex items-center pl-3 ${active ? 'text-indigo-600' : 'text-indigo-600'}`}>
-                              <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                              </svg>
+                <Listbox.Options className="absolute z-10 mt-1 w-full rounded-lg bg-white text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                  {/* Search input inside dropdown */}
+                  <div className="sticky top-0 bg-white p-2 border-b border-gray-200">
+                    <input
+                      type="text"
+                      placeholder="Type to search..."
+                      value={partnerSearchQuery}
+                      onChange={(e) => setPartnerSearchQuery(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="block w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Scrollable partner list */}
+                  <div className="max-h-60 overflow-auto py-1">
+                    {allPartners
+                      .filter(partner =>
+                        partner.name.toLowerCase().includes(partnerSearchQuery.toLowerCase()) ||
+                        partner.address?.toLowerCase().includes(partnerSearchQuery.toLowerCase())
+                      )
+                      .map((partner) => (
+                      <Listbox.Option
+                        key={partner.person_id}
+                        value={partner}
+                        className={({ active }) =>
+                          `relative cursor-pointer select-none py-3 pl-10 pr-4 ${
+                            active ? 'bg-indigo-50 text-indigo-900' : 'text-gray-900'
+                          }`
+                        }
+                      >
+                        {({ selected, active }) => (
+                          <>
+                            <span className={`block truncate ${selected ? 'font-semibold' : 'font-normal'}`}>
+                              {partner.name} - {partner.address}
                             </span>
-                          ) : null}
-                        </>
-                      )}
-                    </Listbox.Option>
-                  ))}
+                            {selected ? (
+                              <span className={`absolute inset-y-0 left-0 flex items-center pl-3 ${active ? 'text-indigo-600' : 'text-indigo-600'}`}>
+                                <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                </svg>
+                              </span>
+                            ) : null}
+                          </>
+                        )}
+                      </Listbox.Option>
+                    ))}
+                    {allPartners.filter(partner =>
+                      partner.name.toLowerCase().includes(partnerSearchQuery.toLowerCase()) ||
+                      partner.address?.toLowerCase().includes(partnerSearchQuery.toLowerCase())
+                    ).length === 0 && (
+                      <div className="px-4 py-6 text-center text-sm text-gray-500">
+                        No partners found matching "{partnerSearchQuery}"
+                      </div>
+                    )}
+                  </div>
                 </Listbox.Options>
               </Transition>
             </div>

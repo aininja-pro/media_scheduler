@@ -406,3 +406,45 @@ async def schedule_manual_assignment(request: ScheduleAssignmentRequest) -> Dict
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
+
+
+
+@router.delete("/clear-planned")
+async def clear_planned_assignments(
+    office: str = Query(..., description="Office name"),
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)")
+) -> Dict[str, Any]:
+    """
+    Clear all planned assignments for a given office and date range.
+    This removes stale optimizer recommendations from the calendar view.
+    """
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        # Delete planned assignments in the date range for this office
+        result = db.client.table("scheduled_assignments")\
+            .delete()\
+            .eq("office", office)\
+            .eq("status", "planned")\
+            .gte("start_day", start_date)\
+            .lte("start_day", end_date)\
+            .execute()
+
+        deleted_count = len(result.data) if result.data else 0
+
+        return {
+            "success": True,
+            "office": office,
+            "start_date": start_date,
+            "end_date": end_date,
+            "deleted_count": deleted_count,
+            "message": f"Cleared {deleted_count} planned assignments"
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
+

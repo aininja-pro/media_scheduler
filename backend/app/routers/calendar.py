@@ -128,9 +128,24 @@ async def get_calendar_activity(
         # 4. Format responses
         activities = []
 
+        # Build a set of (vin, start_date) from active loans to avoid duplicates
+        active_loan_keys = set()
+        for loan in active_loans:
+            vin = loan.get('vehicle_vin') or loan.get('vin')
+            start = loan.get('start_date')
+            if vin and start:
+                active_loan_keys.add((vin, start))
+
         # Past loans - check if actually completed or still active
         for loan in past_loans:
-            loan_start = pd.to_datetime(loan.get('start_date')).date()
+            vin = loan.get('vin')
+            start_date = loan.get('start_date')
+
+            # Skip if this loan is already in active_loans (avoid duplicates)
+            if (vin, start_date) in active_loan_keys:
+                continue
+
+            loan_start = pd.to_datetime(start_date).date()
             loan_end = pd.to_datetime(loan.get('end_date')).date()
 
             # If loan is currently happening (today is between start and end), it's active
@@ -173,23 +188,50 @@ async def get_calendar_activity(
                 'published': False
             })
 
-        # Planned loans
+        # Planned loans - only include if they don't conflict with active/past
+        # Build a set of (vin, date_range) tuples for existing activities
+        existing_activities = set()
+        for activity in activities:
+            vin = activity['vin']
+            start = pd.to_datetime(activity['start_date']).date()
+            end = pd.to_datetime(activity['end_date']).date()
+            # Add all dates in the range
+            current_date = start
+            while current_date <= end:
+                existing_activities.add((vin, current_date))
+                current_date += timedelta(days=1)
+
         for loan in planned_loans:
-            activities.append({
-                'vin': loan.get('vin'),
-                'make': loan.get('make'),
-                'model': loan.get('model'),
-                'start_date': loan.get('start_day'),
-                'end_date': loan.get('end_day'),
-                'person_id': loan.get('person_id'),
-                'partner_name': loan.get('partner_name'),
-                'office': loan.get('office'),
-                'status': 'planned',
-                'activity_type': 'Planned Loan',
-                'optimizer_run_id': loan.get('optimizer_run_id'),
-                'score': loan.get('score'),
-                'published': False
-            })
+            vin = loan.get('vin')
+            start = pd.to_datetime(loan.get('start_day')).date()
+            end = pd.to_datetime(loan.get('end_day')).date()
+
+            # Check if this planned activity conflicts with existing activities
+            has_conflict = False
+            current_date = start
+            while current_date <= end:
+                if (vin, current_date) in existing_activities:
+                    has_conflict = True
+                    break
+                current_date += timedelta(days=1)
+
+            # Only add if no conflict
+            if not has_conflict:
+                activities.append({
+                    'vin': loan.get('vin'),
+                    'make': loan.get('make'),
+                    'model': loan.get('model'),
+                    'start_date': loan.get('start_day'),
+                    'end_date': loan.get('end_day'),
+                    'person_id': loan.get('person_id'),
+                    'partner_name': loan.get('partner_name'),
+                    'office': loan.get('office'),
+                    'status': 'planned',
+                    'activity_type': 'Planned Loan',
+                    'optimizer_run_id': loan.get('optimizer_run_id'),
+                    'score': loan.get('score'),
+                    'published': False
+                })
 
         # Sort by VIN then start date
         activities.sort(key=lambda x: (x['vin'], x['start_date']))

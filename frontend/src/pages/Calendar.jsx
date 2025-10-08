@@ -571,7 +571,7 @@ function Calendar({ sharedOffice }) {
         type: 'office',
         label: '🏢 At Office',
         badge: '🏢',
-        color: 'green'
+        color: null  // Don't override - completed should always be grey
       };
     }
 

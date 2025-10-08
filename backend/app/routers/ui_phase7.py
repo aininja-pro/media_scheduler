@@ -66,6 +66,7 @@ class RunRequest(BaseModel):
     engagement_priority: int = 50  # Engagement Priority slider (0-100: 0=dormant, 50=neutral, 100=momentum)
     max_per_partner_per_day: int = 1  # Max vehicles per partner per day (0=unlimited, 1=default)
     prefer_normal_days: bool = False  # Prioritize Partner Normal Days toggle
+    daily_capacities: Optional[Dict[str, int]] = None  # Daily capacity overrides from UI
 
 
 @router.post("/run")
@@ -74,6 +75,9 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
     Run Phase 7 optimizer using all implemented constraints.
     Returns assignments with actual start days distributed across the week.
     """
+    print(f"\n=== RUN OPTIMIZER CALLED ===")
+    print(f"Request daily_capacities: {request.daily_capacities}")
+    print(f"Request dict: {request.dict()}")
 
     db = DatabaseService()
     await db.initialize()
@@ -148,6 +152,34 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             office=request.office,
             week_start=request.week_start
         )
+
+        # Override capacity with UI settings if provided
+        print(f"DEBUG: daily_capacities from request: {request.daily_capacities}")
+        if request.daily_capacities:
+            print(f"DEBUG: Overriding capacities with UI values")
+            week_start_date = pd.to_datetime(request.week_start)
+
+            # Map day names to offsets: mon=0, tue=1, etc.
+            day_offset_map = {
+                'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3,
+                'fri': 4, 'sat': 5, 'sun': 6
+            }
+
+            for day_key, capacity_value in request.daily_capacities.items():
+                if day_key in day_offset_map:
+                    day_offset = day_offset_map[day_key]
+                    target_date = (week_start_date + timedelta(days=day_offset)).date()
+
+                    if target_date in capacity_map:
+                        old_value = capacity_map[target_date]
+                        capacity_map[target_date] = capacity_value
+                        print(f"  Override {day_key} ({target_date}) capacity from {old_value} to {capacity_value} slots")
+                    else:
+                        print(f"  Warning: {day_key} ({target_date}) not found in capacity_map")
+                else:
+                    print(f"  Warning: Unknown day key '{day_key}'")
+        else:
+            print(f"DEBUG: No daily_capacities override provided, using defaults")
 
         # 3. Build feasible triples using Phase 7.1
         triples_pre = build_feasible_start_day_triples(
@@ -285,7 +317,8 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             solver_time_limit_s=30,  # Increased from 10s for 58k triples
             seed=request.seed,
             verbose=True,  # Enable to see what's happening
-            db_client=db.client  # Pass database client for querying current_activity
+            db_client=db.client,  # Pass database client for querying current_activity
+            capacity_map_override=capacity_map  # Pass the modified capacity map with UI overrides
         )
 
         # 7. Format response
@@ -312,6 +345,14 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         # Format assignments and count by day
         assignments = []
         starts_by_day = {'mon': 0, 'tue': 0, 'wed': 0, 'thu': 0, 'fri': 0, 'sat': 0, 'sun': 0}
+        capacity_by_day = {'mon': 0, 'tue': 0, 'wed': 0, 'thu': 0, 'fri': 0, 'sat': 0, 'sun': 0}
+
+        # Extract capacity from capacity_map
+        week_start_date = pd.to_datetime(request.week_start)
+        day_names = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+        for day_offset, day_name in enumerate(day_names):
+            target_date = (week_start_date + timedelta(days=day_offset)).date()
+            capacity_by_day[day_name] = capacity_map.get(target_date, 0)
 
         for assignment in selected_assignments:
             # Count by day of week
@@ -439,6 +480,7 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             'partners_used': len(set(a['person_id'] for a in assignments)) if assignments else 0,
             'assignments': assignments,
             'starts_by_day': starts_by_day,
+            'capacity_by_day': capacity_by_day,  # Add capacity info for frontend
             # Pass through converted summaries
             'cap_summary': cap_summary,
             'fairness_summary': fairness_summary,

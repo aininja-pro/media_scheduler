@@ -41,6 +41,18 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   const [hoveredVin, setHoveredVin] = useState(null);
   const [hoverContext, setHoverContext] = useState(null);
 
+  // Daily capacity settings
+  const [capacityExpanded, setCapacityExpanded] = useState(false);
+  const [dailyCapacities, setDailyCapacities] = useState({
+    mon: 15,
+    tue: 15,
+    wed: 15,
+    thu: 15,
+    fri: 15,
+    sat: 0,
+    sun: 0
+  });
+
   // Load offices from database
   const [offices, setOffices] = useState([]);
 
@@ -321,22 +333,28 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
       setProgressStage('solving');
 
       // Use Phase 7 run endpoint
+      const requestBody = {
+        office: selectedOffice,
+        week_start: weekStart,
+        seed: 42,
+        rank_weight: rankWeight,  // Partner Quality slider value
+        geo_match: geoMatch,  // Local Priority slider value
+        pub_rate: pubRate,  // Publishing Success slider value
+        engagement_priority: historyBonus,  // Engagement Priority slider value
+        max_per_partner_per_day: maxPerPartnerPerDay,  // Max vehicles per partner per day
+        prefer_normal_days: preferNormalDays,  // Prioritize Partner Normal Days toggle
+        daily_capacities: dailyCapacities  // Daily capacity overrides from UI
+      };
+
+      console.log('Sending daily_capacities to optimizer:', dailyCapacities);
+      console.log('Full request body:', requestBody);
+
       const response = await fetch('http://localhost:8081/api/ui/phase7/run', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          office: selectedOffice,
-          week_start: weekStart,
-          seed: 42,
-          rank_weight: rankWeight,  // Partner Quality slider value
-          geo_match: geoMatch,  // Local Priority slider value
-          pub_rate: pubRate,  // Publishing Success slider value
-          engagement_priority: historyBonus,  // Engagement Priority slider value
-          max_per_partner_per_day: maxPerPartnerPerDay,  // Max vehicles per partner per day
-          prefer_normal_days: preferNormalDays  // Prioritize Partner Normal Days toggle
-        })
+        body: JSON.stringify(requestBody)
       });
 
       setProgressStage('processing-results');
@@ -679,6 +697,125 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
         </div>
       )}
 
+      {/* Daily Capacity Settings */}
+      {metrics && (
+        <div className="bg-white border-b">
+          <button
+            onClick={() => setCapacityExpanded(!capacityExpanded)}
+            className="w-full px-6 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-lg">📊</span>
+              <span className="text-sm font-semibold text-gray-900">Daily Capacity Settings</span>
+              <span className="text-xs text-gray-500">
+                Currently: {Object.values(dailyCapacities).reduce((a, b) => a + b, 0)}/week
+              </span>
+            </div>
+            <svg
+              className={`w-5 h-5 text-gray-400 transition-transform ${capacityExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {capacityExpanded && (
+            <div className="px-6 py-4 border-t bg-gray-50">
+              {/* Controls Row */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  <label className="text-sm font-medium text-gray-700">
+                    Weekly Total:
+                  </label>
+                  <input
+                    type="number"
+                    value={Object.values(dailyCapacities).reduce((a, b) => a + b, 0)}
+                    readOnly
+                    className="w-20 px-3 py-1 border border-gray-300 rounded-md bg-gray-100 text-sm font-semibold text-gray-900"
+                  />
+                  <span className="text-sm text-gray-500">slots</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setDailyCapacities({
+                        mon: 15,
+                        tue: 15,
+                        wed: 15,
+                        thu: 15,
+                        fri: 15,
+                        sat: 0,
+                        sun: 0
+                      });
+                    }}
+                    className="px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                  >
+                    Reset to Defaults
+                  </button>
+                  <button
+                    onClick={() => {
+                      const avgValue = Math.floor(Object.values(dailyCapacities).reduce((a, b) => a + b, 0) / 7);
+                      setDailyCapacities({
+                        mon: avgValue,
+                        tue: avgValue,
+                        wed: avgValue,
+                        thu: avgValue,
+                        fri: avgValue,
+                        sat: avgValue,
+                        sun: avgValue
+                      });
+                    }}
+                    className="px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                  >
+                    Distribute Evenly
+                  </button>
+                </div>
+              </div>
+
+              {/* Daily Inputs Grid */}
+              <div className="grid grid-cols-7 gap-3">
+                {[
+                  { key: 'mon', label: 'Monday' },
+                  { key: 'tue', label: 'Tuesday' },
+                  { key: 'wed', label: 'Wednesday' },
+                  { key: 'thu', label: 'Thursday' },
+                  { key: 'fri', label: 'Friday' },
+                  { key: 'sat', label: 'Saturday' },
+                  { key: 'sun', label: 'Sunday' }
+                ].map((day) => (
+                  <div key={day.key} className="flex flex-col">
+                    <label className="text-xs font-medium text-gray-700 mb-1">
+                      {day.label}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="50"
+                      value={dailyCapacities[day.key]}
+                      onChange={(e) => {
+                        const value = Math.max(0, Math.min(50, parseInt(e.target.value) || 0));
+                        setDailyCapacities({
+                          ...dailyCapacities,
+                          [day.key]: value
+                        });
+                      }}
+                      className="px-3 py-2 border border-gray-300 rounded-md text-sm font-semibold text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Info Text */}
+              <p className="mt-4 text-xs text-gray-500">
+                💡 These capacity limits control how many vehicles can start loans on each day of the week. Changes will apply on the next optimizer run.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main Content Area */}
       <div className="flex h-full">
         {/* Left Panel - Schedule Settings */}
@@ -869,7 +1006,8 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                   if (runResult?.starts_by_day) {
                     usedSlots = runResult.starts_by_day[day.key] || 0;
                   }
-                  const totalSlots = capacity?.slots ?? 0;
+                  // Use capacity from runResult if available (which includes UI overrides), otherwise fall back to metrics
+                  const totalSlots = runResult?.capacity_by_day?.[day.key] ?? capacity?.slots ?? 0;
                   const isFull = usedSlots >= totalSlots && totalSlots > 0;
                   const isNearCapacity = usedSlots > totalSlots * 0.8 && !isFull && totalSlots > 0;
 

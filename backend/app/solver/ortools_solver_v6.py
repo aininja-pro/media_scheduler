@@ -99,7 +99,9 @@ def solve_with_all_constraints(
     seed: int = 42,
     verbose: bool = True,
     # Database client for querying current activity
-    db_client = None
+    db_client = None,
+    # Capacity override from UI
+    capacity_map_override: Optional[Dict] = None
 ) -> Dict[str, Any]:
     """
     Complete OR-Tools solver with all phases (7.2 through 7.6).
@@ -194,11 +196,18 @@ def solve_with_all_constraints(
     week_start_date = pd.to_datetime(week_start)
 
     # Load dynamic capacity calendar with day-specific slots
-    capacity_map, notes_map = load_capacity_calendar(
-        ops_capacity_df=ops_capacity_df,
-        office=office,
-        week_start=week_start
-    )
+    # Use override from UI if provided, otherwise load from database
+    if capacity_map_override is not None:
+        capacity_map = capacity_map_override
+        notes_map = {}  # No notes when using UI override
+        if verbose:
+            print(f"  Using capacity override from UI")
+    else:
+        capacity_map, notes_map = load_capacity_calendar(
+            ops_capacity_df=ops_capacity_df,
+            office=office,
+            week_start=week_start
+        )
 
     # Apply capacity constraints
     start_day_groups = office_triples.groupby('start_day').groups

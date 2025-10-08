@@ -88,6 +88,8 @@ def solve_with_all_constraints(
     enforce_missing_budget: bool = False,
     # Partner-day constraint
     max_per_partner_per_day: int = 1,
+    # Partner-week constraint
+    max_per_partner_per_week: int = 2,
     # Objective shaping parameters
     w_rank: float = DEFAULT_W_RANK,
     w_geo: float = DEFAULT_W_GEO,
@@ -307,6 +309,26 @@ def solve_with_all_constraints(
     else:
         if verbose:
             print(f"  No partner-day constraint (unlimited vehicles per partner per day)")
+
+    # === HARD CONSTRAINT 4: Max Vehicles per Partner per Week ===
+    # Group by person_id to enforce max vehicles per partner for the entire week
+    partner_week_groups = office_triples.groupby('person_id').groups
+
+    if max_per_partner_per_week > 0:  # 0 = unlimited
+        constrained_partners = 0
+        for person_id, indices in partner_week_groups.items():
+            if len(indices) > max_per_partner_per_week:
+                # Partner has more candidate assignments than the weekly limit
+                model.Add(sum(y[i] for i in indices) <= max_per_partner_per_week)
+                constrained_partners += 1
+
+        if verbose:
+            print(f"  Added partner-week constraints: max {max_per_partner_per_week} vehicle(s) per partner per week")
+            print(f"  - {len(partner_week_groups)} unique partners in optimizer")
+            print(f"  - {constrained_partners} partners with more than {max_per_partner_per_week} candidate assignments")
+    else:
+        if verbose:
+            print(f"  No partner-week constraint (unlimited vehicles per partner per week)")
 
     # === SOFT CONSTRAINT 1: Tier Caps (7.4s) ===
     cap_penalty_terms, cap_info = add_soft_tier_cap_penalties(

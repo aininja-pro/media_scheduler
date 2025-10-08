@@ -411,6 +411,22 @@ function Calendar({ sharedOffice }) {
           console.error('Failed to fetch distance:', err);
         }
 
+        // Fetch approved makes from partner-intelligence endpoint
+        let approvedMakes = [];
+        try {
+          const intelligenceParams = new URLSearchParams({
+            person_id: partnerId,
+            office: office
+          });
+          const intelligenceResponse = await fetch(`http://localhost:8081/api/ui/phase7/partner-intelligence?${intelligenceParams}`);
+          if (intelligenceResponse.ok) {
+            const intelligenceData = await intelligenceResponse.json();
+            approvedMakes = intelligenceData.approved_makes || [];
+          }
+        } catch (err) {
+          console.error('Failed to fetch partner intelligence:', err);
+        }
+
         // Build context object with timeline
         const context = {
           person_id: partnerId,
@@ -419,6 +435,7 @@ function Calendar({ sharedOffice }) {
           region: partnerActivities[0].region || 'N/A',
           partner_address: partnerAddress || 'N/A',
           distance_info: distanceInfo,
+          approved_makes: approvedMakes,
           current_loans: currentLoans.map(loan => ({
             vin: loan.vin,
             make: loan.make,
@@ -456,6 +473,40 @@ function Calendar({ sharedOffice }) {
     setSelectedPartnerId(null);
     setPartnerContext(null);
     setChainingOpportunities(null);
+  };
+
+  // Helper function for tier badge colors
+  const getTierBadgeColor = (rank) => {
+    // Handle both numeric (1,2,3,4) and letter-based (A, A+, B, C, D) ranks
+    const normalizedRank = typeof rank === 'string' ? rank.toUpperCase().trim() : rank;
+
+    // Check for A+ (premium tier) - GREEN background with DARK GREEN border
+    if (normalizedRank === 'A+') {
+      return 'bg-green-100 text-green-800 border-green-600'
+    }
+
+    // Check for A variants (A, etc) - GREEN (best tier)
+    if (normalizedRank === 1 || normalizedRank === 'TA' || normalizedRank === 'A' ||
+        (typeof normalizedRank === 'string' && normalizedRank.startsWith('A'))) {
+      return 'bg-green-100 text-green-800 border-green-300'
+    }
+
+    switch(normalizedRank) {
+      case 2:
+      case 'TB':
+      case 'B':
+        return 'bg-blue-100 text-blue-800 border-blue-300'
+      case 3:
+      case 'TC':
+      case 'C':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300'
+      case 4:
+      case 'TD':
+      case 'D':
+        return 'bg-gray-100 text-gray-800 border-gray-300'
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-300'
+    }
   };
 
   // Parse date string as local date (YYYY-MM-DD)
@@ -1327,6 +1378,26 @@ function Calendar({ sharedOffice }) {
                       )}
                     </div>
                   </div>
+
+                  {/* Approved Makes */}
+                  {partnerContext.approved_makes && partnerContext.approved_makes.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Approved Makes</h3>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <div className="flex flex-wrap gap-2">
+                          {partnerContext.approved_makes.map((item) => (
+                            <span
+                              key={item.make}
+                              className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getTierBadgeColor(item.rank)}`}
+                            >
+                              {item.make}
+                              <span className="ml-1.5 text-xs">{item.rank}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Current Loans (Active) */}
                   <div>

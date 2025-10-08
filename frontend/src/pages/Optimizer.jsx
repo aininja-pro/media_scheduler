@@ -32,6 +32,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   const [cooldownDays, setCooldownDays] = useState(30);
   const [enforceBudgetHard, setEnforceBudgetHard] = useState(false);
   const [maxPerPartnerPerDay, setMaxPerPartnerPerDay] = useState(1);
+  const [maxPerPartnerPerWeek, setMaxPerPartnerPerWeek] = useState(2);
   const [preferNormalDays, setPreferNormalDays] = useState(false);
 
   // Vehicle context state
@@ -342,6 +343,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
         pub_rate: pubRate,  // Publishing Success slider value
         engagement_priority: historyBonus,  // Engagement Priority slider value
         max_per_partner_per_day: maxPerPartnerPerDay,  // Max vehicles per partner per day
+        max_per_partner_per_week: maxPerPartnerPerWeek,  // Max vehicles per partner per week
         prefer_normal_days: preferNormalDays,  // Prioritize Partner Normal Days toggle
         daily_capacities: dailyCapacities  // Daily capacity overrides from UI
       };
@@ -951,6 +953,24 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                   </select>
                   <div className="text-xs text-gray-500 mt-1">
                     Limits how many vehicles can start on the same day for one partner
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-gray-200">
+                  <label className="text-sm text-gray-600 mb-2 block">Max Vehicles per Partner per Week</label>
+                  <select
+                    value={maxPerPartnerPerWeek}
+                    onChange={(e) => setMaxPerPartnerPerWeek(parseInt(e.target.value))}
+                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="1">1</option>
+                    <option value="2">2 (Recommended)</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="0">Unlimited</option>
+                  </select>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Limits total vehicles assigned to one partner during the entire week
                   </div>
                 </div>
                 <div className="pt-2 border-t border-gray-200">

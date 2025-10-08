@@ -176,12 +176,35 @@ export default function Partners({ office }) {
   }
 
   const getTierBadgeColor = (rank) => {
-    switch(rank) {
-      case 1: return 'bg-yellow-100 text-yellow-800 border-yellow-300'
-      case 2: return 'bg-blue-100 text-blue-800 border-blue-300'
-      case 3: return 'bg-green-100 text-green-800 border-green-300'
-      case 4: return 'bg-gray-100 text-gray-800 border-gray-300'
-      default: return 'bg-gray-100 text-gray-800 border-gray-300'
+    // Handle both numeric (1,2,3,4) and letter-based (A, A+, B, C, D) ranks
+    const normalizedRank = typeof rank === 'string' ? rank.toUpperCase().trim() : rank;
+
+    // Check for A+ (premium tier) - GREEN background with DARK GREEN border
+    if (normalizedRank === 'A+') {
+      return 'bg-green-100 text-green-800 border-green-600'
+    }
+
+    // Check for A variants (A, etc) - GREEN (best tier)
+    if (normalizedRank === 1 || normalizedRank === 'TA' || normalizedRank === 'A' ||
+        (typeof normalizedRank === 'string' && normalizedRank.startsWith('A'))) {
+      return 'bg-green-100 text-green-800 border-green-300'
+    }
+
+    switch(normalizedRank) {
+      case 2:
+      case 'TB':
+      case 'B':
+        return 'bg-blue-100 text-blue-800 border-blue-300'
+      case 3:
+      case 'TC':
+      case 'C':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300'
+      case 4:
+      case 'TD':
+      case 'D':
+        return 'bg-gray-100 text-gray-800 border-gray-300'
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-300'
     }
   }
 
@@ -200,6 +223,7 @@ export default function Partners({ office }) {
         region: 'N/A',
         partner_address: partnerIntelligence.partner.address || 'N/A',
         distance_info: null,
+        approved_makes: partnerIntelligence.approved_makes || [],
         current_loans: partnerIntelligence.current_loans.map(loan => ({
           vin: loan.vehicle_vin,
           make: loan.make,
@@ -468,7 +492,7 @@ export default function Partners({ office }) {
                           className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getTierBadgeColor(item.rank)}`}
                         >
                           {item.make}
-                          <span className="ml-1.5 text-xs">T{item.rank}</span>
+                          <span className="ml-1.5 text-xs">{item.rank}</span>
                         </span>
                       ))}
                     </div>
@@ -1005,6 +1029,26 @@ export default function Partners({ office }) {
                         )}
                       </div>
                     </div>
+
+                    {/* Approved Makes */}
+                    {partnerContext.approved_makes && partnerContext.approved_makes.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Approved Makes</h3>
+                        <div className="bg-gray-50 rounded-lg p-4">
+                          <div className="flex flex-wrap gap-2">
+                            {partnerContext.approved_makes.map((item) => (
+                              <span
+                                key={item.make}
+                                className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getTierBadgeColor(item.rank)}`}
+                              >
+                                {item.make}
+                                <span className="ml-1.5 text-xs">{item.rank}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Current Loans (Active) */}
                     <div>

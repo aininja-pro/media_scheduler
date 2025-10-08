@@ -90,12 +90,10 @@ function Calendar({ sharedOffice }) {
     setSelectedMonth(`${year}-${month}`);
   }, []);
 
-  // Clear old planned assignments and load activities when office/month changes
+  // Load activities when office/month changes
   useEffect(() => {
     if (selectedOffice && selectedMonth) {
-      clearPlannedAssignments().then(() => {
-        loadActivities();
-      });
+      loadActivities();
     }
   }, [selectedOffice, selectedMonth]);
 
@@ -132,30 +130,6 @@ function Calendar({ sharedOffice }) {
       fetchDistances();
     }
   }, [selectedOffice, activities]);
-
-  const clearPlannedAssignments = async () => {
-    if (!selectedOffice || !selectedMonth) return;
-
-    try {
-      const [year, month] = selectedMonth.split('-');
-      const startDate = `${year}-${month}-01`;
-      const lastDay = new Date(year, month, 0).getDate();
-      const endDate = `${year}-${month}-${lastDay}`;
-
-      const params = new URLSearchParams({
-        office: selectedOffice,
-        start_date: startDate,
-        end_date: endDate
-      });
-
-      await fetch(`http://localhost:8081/api/calendar/clear-planned?${params}`, {
-        method: 'DELETE'
-      });
-      // Don't throw error if this fails - just continue to load activities
-    } catch (err) {
-      console.warn('Failed to clear planned assignments:', err);
-    }
-  };
 
   const loadActivities = async () => {
     if (!selectedOffice || !selectedMonth) return;

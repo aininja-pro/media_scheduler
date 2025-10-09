@@ -530,7 +530,7 @@ function Calendar({ sharedOffice }) {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const getActivityColor = (status, locationColor) => {
+  const getActivityColor = (activity, locationColor) => {
     // Use location-based color if provided (for vehicle view)
     if (locationColor && viewMode === 'vehicle') {
       switch (locationColor) {
@@ -542,10 +542,15 @@ function Calendar({ sharedOffice }) {
     }
 
     // Default status-based colors
-    switch (status) {
+    switch (activity.status) {
       case 'completed': return 'bg-gradient-to-br from-gray-400 to-gray-500 border-2 border-gray-600';
       case 'active': return 'bg-gradient-to-br from-blue-500 to-blue-600 border-2 border-blue-700';
-      case 'planned': return 'bg-gradient-to-br from-green-400 to-green-500 border-2 border-green-600';
+      case 'planned':
+        // Optimizer AI: solid border
+        return 'bg-gradient-to-br from-green-400 to-green-500 border-2 border-green-600';
+      case 'manual':
+        // Manual pick: dashed border to distinguish from optimizer
+        return 'bg-gradient-to-br from-green-400 to-green-500 border-2 border-dashed border-green-600';
       default: return 'bg-gradient-to-br from-gray-300 to-gray-400 border-2 border-gray-500';
     }
   };
@@ -554,7 +559,8 @@ function Calendar({ sharedOffice }) {
     switch (status) {
       case 'completed': return 'Past';
       case 'active': return 'Active';
-      case 'planned': return 'Planned';
+      case 'planned': return 'Proposed (AI)';
+      case 'manual': return 'Proposed (Manual)';
       default: return status;
     }
   };
@@ -854,8 +860,12 @@ function Calendar({ sharedOffice }) {
             <span className="text-gray-600">Active</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-green-400 rounded"></div>
-            <span className="text-gray-600">Planned</span>
+            <div className="w-4 h-4 bg-green-400 rounded border-2 border-green-600"></div>
+            <span className="text-gray-600">🤖 Proposed (AI)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-green-400 rounded border-2 border-dashed border-green-600"></div>
+            <span className="text-gray-600">Proposed (Manual)</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-lg">📍</span>
@@ -1028,7 +1038,7 @@ function Calendar({ sharedOffice }) {
                         const hasChaining = viewMode === 'vehicle' && detectChainingOpportunity(item.activities, item.activities.indexOf(activity));
                         const topOffset = 16 + (activity.rowIndex * 32); // Start at 16px from top, then 32px per row
 
-                        const color = getActivityColor(activity.status, location?.color);
+                        const color = getActivityColor(activity, location?.color);
 
                         return (
                           <button
@@ -1045,6 +1055,7 @@ function Calendar({ sharedOffice }) {
                             style={{ left: barStyle.left, width: barStyle.width, minWidth: '20px', top: `${topOffset}px` }}
                             title={`${label}\n${formatActivityDate(activity.start_date)} - ${formatActivityDate(activity.end_date)}\n${location ? location.label : ''}${hasChaining ? '\n⛓️ Chaining opportunity!' : ''}`}
                           >
+                            {activity.status === 'planned' && <span className="text-xs">🤖</span>}
                             {location?.badge && <span className="text-sm">{location.badge}</span>}
                             {hasChaining && <span>⛓️</span>}
                             <span className="truncate">{label}</span>

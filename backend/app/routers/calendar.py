@@ -107,11 +107,12 @@ async def get_calendar_activity(
         else:
             active_loans = []
 
-        # 3. Get PLANNED loans from scheduled_assignments
+        # 3. Get PLANNED/PROPOSED loans from scheduled_assignments
+        # Include both 'planned' (from optimizer) and 'manual' (from Partners tab)
         planned_query = db.client.table('scheduled_assignments')\
             .select('*')\
             .eq('office', office)\
-            .eq('status', 'planned')\
+            .in_('status', ['planned', 'manual'])\
             .gte('start_day', start_date)\
             .lte('start_day', end_date)
 

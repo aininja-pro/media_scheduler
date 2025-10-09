@@ -7,6 +7,7 @@ export default function Partners({ office }) {
   const [partnerIntelligence, setPartnerIntelligence] = useState(null)
   const [selectedDate, setSelectedDate] = useState('')
   const [candidates, setCandidates] = useState([])
+  const [partnerInsights, setPartnerInsights] = useState(null)
   const [loading, setLoading] = useState(false)
   const [loadingPartners, setLoadingPartners] = useState(false)
   const [loadingIntelligence, setLoadingIntelligence] = useState(false)
@@ -17,6 +18,7 @@ export default function Partners({ office }) {
   const [partnerContext, setPartnerContext] = useState(null)
   const [loadingPartnerContext, setLoadingPartnerContext] = useState(false)
   const [partnerSearchQuery, setPartnerSearchQuery] = useState('')
+  const [expandedVehicle, setExpandedVehicle] = useState(null)
 
   // Load all partners on mount
   useEffect(() => {
@@ -109,8 +111,12 @@ export default function Partners({ office }) {
 
       if (response.ok) {
         const data = await response.json()
+        console.log('Vehicle candidates response:', data)
         if (data.success) {
           setCandidates(data.candidates || [])
+          setPartnerInsights(data.partner_insights || null)
+          console.log('Partner insights:', data.partner_insights)
+          console.log('Candidates:', data.candidates)
           if (data.candidates.length === 0) {
             setMessage(data.message || 'No vehicles available for this date')
           }
@@ -524,6 +530,42 @@ export default function Partners({ office }) {
                     </div>
                   </div>
 
+                  {/* AI Insights Panel */}
+                  {partnerInsights && (
+                    <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg shadow border border-purple-200 p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">💡 Smart Insights</h3>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center">
+                          <span className="text-gray-700">
+                            • Publication rate: <strong>{(partnerInsights.publication_rate * 100).toFixed(1)}%</strong>
+                            {partnerInsights.publication_rate > 0.7 ? ' 📈 Above average!' : ''}
+                          </span>
+                        </div>
+                        <div className="flex items-center">
+                          <span className="text-gray-700">
+                            • Weekly assignments: <strong>{partnerInsights.weekly_count}/{partnerInsights.weekly_limit}</strong>
+                            {partnerInsights.weekly_count >= partnerInsights.weekly_limit ? ' ⚠️ At limit' : ''}
+                          </span>
+                        </div>
+                        {Object.keys(partnerInsights.make_performance || {}).length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-purple-200">
+                            <span className="text-gray-600 text-xs uppercase font-medium">Best Performing Makes:</span>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {Object.entries(partnerInsights.make_performance)
+                                .sort(([,a], [,b]) => b - a)
+                                .slice(0, 3)
+                                .map(([make, rate]) => (
+                                  <span key={make} className="text-xs bg-white px-2 py-1 rounded border border-purple-200">
+                                    {make}: {(rate * 100).toFixed(0)}%
+                                  </span>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Compact Timeline View */}
                   <div className="bg-white rounded-lg shadow p-6">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">📋 Quick View</h3>
@@ -597,11 +639,18 @@ export default function Partners({ office }) {
                             statusLabel = 'Active';
                             statusColor = 'text-blue-700';
                           } else {
-                            // scheduled/proposed by optimizer
+                            // scheduled/proposed (optimizer or manual)
                             bgColor = 'bg-green-50';
-                            borderColor = 'border-green-400';
-                            statusLabel = 'Proposed';
                             statusColor = 'text-green-700';
+
+                            // Distinguish between optimizer AI (status='planned') and manual picks (status='manual')
+                            if (item.status === 'manual') {
+                              borderColor = 'border-green-400 border-dashed'; // Dashed border for manual
+                              statusLabel = 'Proposed';
+                            } else {
+                              borderColor = 'border-green-400'; // Solid border for AI
+                              statusLabel = '🤖 Proposed';
+                            }
                           }
 
                           return (
@@ -916,46 +965,84 @@ export default function Partners({ office }) {
                     </p>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-2">
                     {candidates.map((candidate, idx) => (
                       <div
-                        key={idx}
-                        className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow duration-200"
+                        key={candidate.vin}
+                        className={`relative border-l-4 rounded-r-lg p-4 transition-all hover:shadow-md ${
+                          candidate.badge === 'EXCLUSIVE' ? 'border-yellow-400 bg-yellow-50' :
+                          candidate.badge === 'TOP PICK' ? 'border-green-400 bg-green-50' :
+                          candidate.badge === 'STRONG ALTERNATIVE' ? 'border-blue-400 bg-blue-50' :
+                          'border-gray-300 bg-white'
+                        }`}
                       >
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center mb-2">
-                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-800 text-sm font-semibold mr-3">
-                                {idx + 1}
-                              </span>
-                              <h4 className="text-lg font-semibold text-gray-900">
-                                {candidate.make} {candidate.model} {candidate.year}
-                              </h4>
-                            </div>
-                            <div className="ml-11 space-y-1">
-                              <div className="flex flex-wrap gap-3 text-sm text-gray-600">
-                                <span className="inline-flex items-center">
-                                  🔖 VIN: ...{candidate.vin.slice(-6)}
-                                </span>
-                                <span className="inline-flex items-center">
-                                  ⭐ Score: <strong className="ml-1 text-gray-900">{candidate.score}</strong>
-                                </span>
-                                <span className="inline-flex items-center">
-                                  🏆 Rank {candidate.rank}
-                                </span>
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                Base Score: {candidate.base_score} + Publication Bonus: {candidate.pub_bonus}
-                              </div>
-                            </div>
+                        <div className="grid grid-cols-12 gap-4 items-center">
+                          {/* Number */}
+                          <div className="col-span-1">
+                            <span className="w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center">
+                              {idx + 1}
+                            </span>
                           </div>
-                          <div className="mt-4 sm:mt-0 sm:ml-4">
+
+                          {/* Vehicle Name + Badge */}
+                          <div className="col-span-3">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-bold text-gray-900">
+                                {candidate.make} {candidate.model}
+                              </h4>
+                              {candidate.badge && (
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                                  candidate.badge === 'EXCLUSIVE' ? 'bg-yellow-500 text-white' :
+                                  candidate.badge === 'TOP PICK' ? 'bg-green-500 text-white' :
+                                  'bg-blue-500 text-white'
+                                }`}>
+                                  {candidate.badge === 'EXCLUSIVE' ? '⭐' : candidate.badge === 'TOP PICK' ? '🥇' : '🥈'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-500">{candidate.year}</div>
+                          </div>
+
+                          {/* Tier + Score */}
+                          <div className="col-span-2 text-center">
+                            <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium border mb-1 ${getTierBadgeColor(candidate.rank)}`}>
+                              {candidate.rank}
+                            </span>
+                            <div className="text-xs font-semibold text-blue-600">Score: {candidate.score}</div>
+                          </div>
+
+                          {/* VIN */}
+                          <div className="col-span-2">
+                            <div className="text-[10px] font-mono text-gray-500">{candidate.vin}</div>
+                          </div>
+
+                          {/* Vehicle History */}
+                          <div className="col-span-3">
+                            {candidate.history ? (
+                              <div className="text-xs text-gray-600">
+                                📋 {candidate.history.total_loans} loan{candidate.history.total_loans !== 1 ? 's' : ''} • {candidate.history.published}/{candidate.history.total_loans} published
+                                {candidate.history.last_loan_date && (
+                                  <span className="text-gray-500"> • Last: {new Date(candidate.history.last_loan_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-400">📋 No loan history</div>
+                            )}
+                            {candidate.impact_warnings && candidate.impact_warnings.length > 0 && (
+                              <div className="text-xs text-amber-700 font-medium mt-1">
+                                ⚠️ {candidate.impact_warnings.join(' • ')}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action */}
+                          <div className="col-span-1">
                             <button
                               onClick={() => handleScheduleVehicle(candidate)}
                               disabled={scheduling}
-                              className="w-full sm:w-auto inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                              className="w-full px-3 py-2 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
                             >
-                              ✅ Schedule This
+                              📅 Schedule
                             </button>
                           </div>
                         </div>

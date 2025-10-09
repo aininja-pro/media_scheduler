@@ -1237,7 +1237,58 @@ async def get_partner_day_candidates(
 
         vehicles_df = pd.DataFrame(vehicles_response.data)
 
-        # 3. Get approved makes for this partner
+        # Convert lifecycle date columns (required by build_availability_grid)
+        for date_col in ['in_service_date', 'expected_turn_in_date']:
+            if date_col in vehicles_df.columns:
+                vehicles_df[date_col] = pd.to_datetime(vehicles_df[date_col], errors='coerce').dt.date
+
+        # Calculate week_start (Monday of the target date's week)
+        week_start = target_date - timedelta(days=target_date.weekday())
+        week_end = week_start + timedelta(days=6)
+        week_start_str = week_start.strftime('%Y-%m-%d')
+
+        # 3. Get current activity for availability check
+        active_response = db.client.table('current_activity')\
+            .select('*')\
+            .execute()
+
+        if active_response.data:
+            activity_df = pd.DataFrame(active_response.data)
+            # Map vehicle_vin to vin for compatibility
+            if 'vehicle_vin' in activity_df.columns:
+                activity_df['vin'] = activity_df['vehicle_vin']
+            # Convert date columns
+            for date_col in ['start_date', 'end_date']:
+                if date_col in activity_df.columns:
+                    activity_df[date_col] = pd.to_datetime(activity_df[date_col], errors='coerce').dt.date
+        else:
+            activity_df = pd.DataFrame()
+
+        # 4. Use SAME availability logic as optimizer
+        availability_df = build_availability_grid(
+            vehicles_df=vehicles_df,
+            activity_df=activity_df,
+            week_start=week_start_str,
+            office=office
+        )
+
+        # Filter to vehicles available on target date
+        available_on_target = availability_df[
+            (availability_df['day'] == target_date) &
+            (availability_df['available'] == True)
+        ]
+
+        if available_on_target.empty:
+            return {
+                "success": True,
+                "partner": partner,
+                "candidates": [],
+                "message": "No vehicles available on this date"
+            }
+
+        available_vins = available_on_target['vin'].tolist()
+
+        # 5. Get approved makes for this partner
         approved_response = db.client.table('approved_makes')\
             .select('*')\
             .eq('person_id', person_id)\
@@ -1254,61 +1305,18 @@ async def get_partner_day_candidates(
         approved_makes = [row['make'] for row in approved_response.data]
         approved_df = pd.DataFrame(approved_response.data)
 
-        # Filter vehicles to approved makes
-        eligible_vehicles = vehicles_df[vehicles_df['make'].isin(approved_makes)].copy()
-
-        if eligible_vehicles.empty:
-            return {
-                "success": True,
-                "partner": partner,
-                "candidates": [],
-                "message": "No vehicles match partner's approved makes"
-            }
-
-        # 4. Check vehicle availability for target date (7-day loan)
-        week_start = target_date - timedelta(days=target_date.weekday())
-        week_end = week_start + timedelta(days=6)
-
-        # Get scheduled assignments
-        scheduled_response = db.client.table('scheduled_assignments')\
-            .select('vin, start_day, end_day')\
-            .eq('office', office)\
-            .gte('end_day', str(target_date))\
-            .lte('start_day', str(target_date + timedelta(days=6)))\
-            .execute()
-
-        # Get current activity
-        active_response = db.client.table('current_activity')\
-            .select('vehicle_vin, start_date, end_date')\
-            .gte('end_date', str(target_date))\
-            .lte('start_date', str(target_date + timedelta(days=6)))\
-            .execute()
-
-        # Build set of busy VINs on target date
-        busy_vins = set()
-        if scheduled_response.data:
-            for assignment in scheduled_response.data:
-                start = pd.to_datetime(assignment['start_day']).date()
-                end = pd.to_datetime(assignment['end_day']).date()
-                if start <= target_date <= end:
-                    busy_vins.add(assignment['vin'])
-
-        if active_response.data:
-            for activity in active_response.data:
-                start = pd.to_datetime(activity['start_date']).date()
-                end = pd.to_datetime(activity['end_date']).date()
-                if start <= target_date <= end:
-                    busy_vins.add(activity['vehicle_vin'])
-
-        # Filter to available vehicles
-        available_vehicles = eligible_vehicles[~eligible_vehicles['vin'].isin(busy_vins)].copy()
+        # Filter to vehicles that are both available AND approved for this partner
+        available_vehicles = vehicles_df[
+            (vehicles_df['vin'].isin(available_vins)) &
+            (vehicles_df['make'].isin(approved_makes))
+        ].copy()
 
         if available_vehicles.empty:
             return {
                 "success": True,
                 "partner": partner,
                 "candidates": [],
-                "message": "All eligible vehicles are busy on this date"
+                "message": "No available vehicles match partner's approved makes"
             }
 
         # 5. Calculate scores
@@ -1316,11 +1324,24 @@ async def get_partner_day_candidates(
         for row in approved_response.data:
             rank_map[row['make']] = row.get('rank', 3)
 
-        available_vehicles['rank'] = available_vehicles['make'].map(rank_map)
+        available_vehicles['rank'] = available_vehicles['make'].map(rank_map).fillna('C')
 
-        # Base score from rank
-        rank_score_map = {1: 1000, 2: 500, 3: 250, 4: 100}
-        available_vehicles['base_score'] = available_vehicles['rank'].map(rank_score_map)
+        # Base score from rank (handle both numeric and letter ranks)
+        def get_rank_score(rank):
+            if pd.isna(rank):
+                return 250
+            rank_str = str(rank).upper()
+            if rank_str.startswith('A'):
+                return 1000
+            elif rank_str in ['B', 'TB', '2']:
+                return 500
+            elif rank_str in ['C', 'TC', '3']:
+                return 250
+            elif rank_str in ['D', 'TD', '4']:
+                return 100
+            return 250
+
+        available_vehicles['base_score'] = available_vehicles['rank'].apply(get_rank_score)
 
         # 6. Get partner publication rate
         loan_history_response = db.client.table('loan_history')\
@@ -1345,21 +1366,163 @@ async def get_partner_day_candidates(
             available_vehicles['pub_bonus']
         )
 
+        # Get vehicle history (recent loans)
+        all_vins = available_vehicles['vin'].tolist()
+        vehicle_history_response = db.client.table('loan_history')\
+            .select('vin, person_id, start_date, end_date, clips_received')\
+            .in_('vin', all_vins)\
+            .order('start_date', desc=True)\
+            .limit(100)\
+            .execute()
+
+        vehicle_history_map = {}
+        if vehicle_history_response.data:
+            history_df = pd.DataFrame(vehicle_history_response.data)
+            for vin in all_vins:
+                vin_history = history_df[history_df['vin'] == vin].head(3)  # Last 3 loans
+                if not vin_history.empty:
+                    vehicle_history_map[vin] = vin_history.to_dict('records')
+
         # Sort and format
         available_vehicles = available_vehicles.sort_values('score', ascending=False)
 
+        # Get all approved_makes to calculate competition (no office filter - approved_makes doesn't have office column)
+        all_approved_response = db.client.table('approved_makes')\
+            .select('*')\
+            .execute()
+
+        all_approved_df = pd.DataFrame(all_approved_response.data) if all_approved_response.data else pd.DataFrame()
+
+        # Get partner's current week assignments to calculate weekly count
+        current_assignments_response = db.client.table('scheduled_assignments')\
+            .select('*')\
+            .eq('person_id', person_id)\
+            .eq('office', office)\
+            .gte('start_day', str(week_start))\
+            .lte('start_day', str(week_end))\
+            .execute()
+
+        partner_weekly_count = len(current_assignments_response.data) if current_assignments_response.data else 0
+
+        # Get week's tier slot usage
+        week_assignments_response = db.client.table('scheduled_assignments')\
+            .select('vin')\
+            .eq('office', office)\
+            .gte('start_day', str(week_start))\
+            .lte('start_day', str(week_end))\
+            .execute()
+
+        week_vins = [a['vin'] for a in week_assignments_response.data] if week_assignments_response.data else []
+        week_vehicles = vehicles_df[vehicles_df['vin'].isin(week_vins)] if week_vins else pd.DataFrame()
+
+        # Count tier usage
+        tier_counts = {}
+        if not week_vehicles.empty:
+            for make in week_vehicles['make'].unique():
+                make_approved = all_approved_df[all_approved_df['make'] == make]
+                if not make_approved.empty:
+                    rank = make_approved.iloc[0].get('rank', 'C')
+                    tier_counts[rank] = tier_counts.get(rank, 0) + 1
+
+        # Get partner's historical make performance
+        make_performance = {}
+        if loan_history_response.data:
+            history_df = pd.DataFrame(loan_history_response.data)
+            if 'make' in history_df.columns and 'clips_received' in history_df.columns:
+                for make in history_df['make'].unique():
+                    make_loans = history_df[history_df['make'] == make]
+                    published = make_loans['clips_received'].apply(
+                        lambda x: str(x) == '1.0' if pd.notna(x) else False
+                    ).sum()
+                    total = len(make_loans)
+                    make_performance[make] = round(published / total, 2) if total > 0 else 0
+
         candidates = []
-        for _, vehicle in available_vehicles.head(20).iterrows():
+        for idx, vehicle in available_vehicles.head(20).iterrows():
+            # Calculate competition (how many other partners approved for this make)
+            vehicle_make = vehicle['make']
+            competition_count = 0
+            if not all_approved_df.empty:
+                make_approvals = all_approved_df[all_approved_df['make'] == vehicle_make]
+                competition_count = len(make_approvals['person_id'].unique()) - 1  # Exclude this partner
+
+            # Determine if exclusive
+            is_exclusive = competition_count == 0
+
+            # Get make-specific publication rate
+            make_pub_rate = make_performance.get(vehicle_make, publication_rate)
+
+            # Build recommendation reasoning - ONLY show UNIQUE/MEANINGFUL info
+            reasons = []
+            badge = None
+
+            if is_exclusive:
+                reasons.append(f"Exclusive to this partner")
+                badge = "EXCLUSIVE"
+            elif idx == 0:
+                badge = "TOP PICK"
+            elif idx == 1:
+                badge = "STRONG ALTERNATIVE"
+
+            # Only show competition if it's VERY LOW (under 5 = rare opportunity)
+            if competition_count == 0:
+                badge = "EXCLUSIVE"
+                reasons.append(f"No other partners eligible")
+            elif competition_count > 0 and competition_count < 5:
+                reasons.append(f"Limited competition ({competition_count} partners)")
+
+            # Show make preference ONLY if significantly different from overall rate
+            # (i.e., partner performs BETTER with this make than their average)
+            if make_pub_rate > publication_rate + 0.15:  # 15% better than average
+                reasons.append(f"Partner excels with {vehicle_make} ({int(make_pub_rate * 100)}% vs {int(publication_rate * 100)}% avg)")
+
+            # If still no reasons, just leave it empty - the score/tier speaks for itself
+
+            # Impact analysis
+            vehicle_rank = vehicle.get('rank', 'C')
+            tier_used = tier_counts.get(vehicle_rank, 0)
+
+            impact_warnings = []
+            if partner_weekly_count >= 2:
+                impact_warnings.append("Partner at weekly limit (2/2)")
+            elif partner_weekly_count == 1:
+                impact_warnings.append("Will reach weekly limit (2/2)")
+
+            if vehicle_rank in ['A+', 'A'] and tier_used >= 8:
+                impact_warnings.append(f"High {vehicle_rank}-tier usage this week")
+
+            # Get vehicle history for this VIN
+            vin_history = vehicle_history_map.get(vehicle['vin'], [])
+            history_summary = None
+            if vin_history:
+                total_loans = len(vin_history)
+                published = sum(1 for h in vin_history if str(h.get('clips_received')) == '1.0')
+                pub_rate = published / total_loans if total_loans > 0 else 0
+                last_loan = vin_history[0] if vin_history else None
+                history_summary = {
+                    'total_loans': total_loans,
+                    'published': published,
+                    'pub_rate': pub_rate,
+                    'last_loan_date': last_loan.get('start_date') if last_loan else None
+                }
+
             candidates.append({
                 'vin': vehicle['vin'],
                 'make': vehicle['make'],
                 'model': vehicle.get('model', ''),
                 'year': vehicle.get('year'),
-                'rank': int(vehicle['rank']),
+                'rank': vehicle.get('rank', 'C'),
                 'score': int(vehicle['score']),
                 'base_score': int(vehicle['base_score']),
                 'pub_bonus': int(vehicle['pub_bonus']),
-                'availability': 'Available on ' + date
+                'availability': 'Available on ' + date,
+                'competition_count': competition_count,
+                'is_exclusive': is_exclusive,
+                'badge': badge,
+                'reasons': reasons,
+                'make_pub_rate': make_pub_rate,
+                'impact_warnings': impact_warnings,
+                'history': history_summary
             })
 
         return {
@@ -1374,7 +1537,14 @@ async def get_partner_day_candidates(
             },
             "target_date": date,
             "candidates": candidates,
-            "total_available": len(available_vehicles)
+            "total_available": len(available_vehicles),
+            "partner_insights": {
+                "weekly_count": partner_weekly_count,
+                "weekly_limit": 2,
+                "publication_rate": round(publication_rate, 2),
+                "make_performance": make_performance,
+                "tier_usage": tier_counts
+            }
         }
 
     except HTTPException:

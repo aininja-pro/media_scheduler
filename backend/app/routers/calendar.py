@@ -271,11 +271,12 @@ async def save_schedule(request: SaveScheduleRequest) -> Dict[str, Any]:
         run_id = str(uuid.uuid4())
         week_start = pd.to_datetime(request.week_start).date()
 
-        # Delete existing planned assignments for this week/office
+        # Delete ALL existing planned assignments for this office (not just this week)
+        # This prevents clutter from old optimizer runs
+        # Manual picks (status='manual') are preserved
         db.client.table('scheduled_assignments')\
             .delete()\
             .eq('office', request.office)\
-            .eq('week_start', str(week_start))\
             .eq('status', 'planned')\
             .execute()
 
@@ -401,6 +402,53 @@ async def schedule_manual_assignment(request: ScheduleAssignmentRequest) -> Dict
             'success': True,
             'message': 'Assignment scheduled successfully',
             'assignment': assignment
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
+
+@router.delete("/delete-assignment/{assignment_id}")
+async def delete_assignment(assignment_id: int) -> Dict[str, Any]:
+    """
+    Delete a scheduled assignment (typically manual picks from Partners tab).
+    Only allows deletion of status='manual' assignments.
+    """
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        # First check if assignment exists and is manual
+        check_response = db.client.table('scheduled_assignments')\
+            .select('*')\
+            .eq('assignment_id', assignment_id)\
+            .execute()
+
+        if not check_response.data:
+            return {
+                'success': False,
+                'message': 'Assignment not found'
+            }
+
+        assignment = check_response.data[0]
+
+        # Only allow deletion of manual assignments (not optimizer planned)
+        if assignment.get('status') != 'manual':
+            return {
+                'success': False,
+                'message': 'Only manual recommendations can be deleted from Partners tab'
+            }
+
+        # Delete the assignment
+        db.client.table('scheduled_assignments')\
+            .delete()\
+            .eq('assignment_id', assignment_id)\
+            .execute()
+
+        return {
+            'success': True,
+            'message': 'Assignment deleted successfully'
         }
 
     except Exception as e:

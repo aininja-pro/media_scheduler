@@ -496,11 +496,12 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             run_id = str(uuid.uuid4())
             week_start_date = pd.to_datetime(request.week_start).date()
 
-            # Delete existing planned assignments for this week/office
+            # Delete ALL existing planned assignments for this office (not just this week)
+            # This prevents clutter from old optimizer runs
+            # Manual picks (status='manual') are preserved
             db.client.table('scheduled_assignments')\
                 .delete()\
                 .eq('office', request.office)\
-                .eq('week_start', str(week_start_date))\
                 .eq('status', 'planned')\
                 .execute()
 
@@ -1671,13 +1672,14 @@ async def get_partner_intelligence(
         if scheduled_response.data:
             for assignment in scheduled_response.data:
                 upcoming_assignments.append({
+                    'assignment_id': assignment.get('assignment_id'),
                     'vin': assignment['vin'],
                     'make': assignment.get('make'),
                     'model': assignment.get('model'),
                     'year': assignment.get('year'),
                     'start_day': assignment['start_day'],
                     'end_day': assignment['end_day'],
-                    'status': assignment.get('status', 'optimizer'),
+                    'status': assignment.get('status', 'planned'),  # Default to 'planned' if not set
                     'score': assignment.get('score', 0)
                 })
 

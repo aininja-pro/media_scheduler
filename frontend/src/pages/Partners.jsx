@@ -181,6 +181,30 @@ export default function Partners({ office }) {
     }
   }
 
+  const handleDeleteAssignment = async (assignmentId) => {
+    if (!window.confirm('Remove this manual recommendation?')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignmentId}`, {
+        method: 'DELETE'
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setMessage('✅ Manual recommendation removed')
+        loadPartnerIntelligence() // Refresh intelligence data to update mini calendar
+      } else {
+        setMessage(`❌ ${result.message}`)
+      }
+    } catch (error) {
+      console.error('Error deleting assignment:', error)
+      setMessage('❌ Network error deleting assignment')
+    }
+  }
+
   const getTierBadgeColor = (rank) => {
     // Handle both numeric (1,2,3,4) and letter-based (A, A+, B, C, D) ranks
     const normalizedRank = typeof rank === 'string' ? rank.toUpperCase().trim() : rank;
@@ -611,6 +635,7 @@ export default function Partners({ office }) {
                         partnerIntelligence.upcoming_assignments.slice(0, 8).forEach(assignment => {
                           timeline.push({
                             type: 'scheduled',
+                            assignment_id: assignment.assignment_id,
                             vin: assignment.vin,
                             make: assignment.make,
                             model: assignment.model,
@@ -646,17 +671,19 @@ export default function Partners({ office }) {
                             // Distinguish between optimizer AI (status='planned') and manual picks (status='manual')
                             if (item.status === 'manual') {
                               borderColor = 'border-green-400 border-dashed'; // Dashed border for manual
-                              statusLabel = 'Proposed';
+                              statusLabel = '👤 Manual';
                             } else {
                               borderColor = 'border-green-400'; // Solid border for AI
-                              statusLabel = '🤖 Proposed';
+                              statusLabel = '🤖 AI';
                             }
                           }
 
                           return (
                             <div
                               key={idx}
-                              className={`rounded-lg p-3 border-2 ${bgColor} ${borderColor}`}
+                              className={`rounded-lg p-3 border-2 ${bgColor} ${borderColor} ${item.status === 'manual' ? 'cursor-pointer hover:opacity-75' : ''}`}
+                              onClick={item.status === 'manual' ? () => handleDeleteAssignment(item.assignment_id) : undefined}
+                              title={item.status === 'manual' ? 'Click to remove this manual pick' : ''}
                             >
                               <div className="flex items-start justify-between">
                                 <div className="flex-1 min-w-0">
@@ -816,6 +843,7 @@ export default function Partners({ office }) {
                           (start < new Date(currentYear, currentMonth, 1) && end > new Date(currentYear, currentMonth + 1, 0))) {
                         assignments.push({
                           type: 'scheduled',
+                          assignment_id: assignment.assignment_id,
                           make: assignment.make,
                           model: assignment.model,
                           status: assignment.status,
@@ -901,8 +929,12 @@ export default function Partners({ office }) {
                             } else if (assign.type === 'active') {
                               barColor = 'bg-gradient-to-br from-blue-500 to-blue-600 border-2 border-blue-700';
                             } else {
-                              // scheduled (planned)
-                              barColor = 'bg-gradient-to-br from-green-400 to-green-500 border-2 border-green-600';
+                              // scheduled: distinguish between AI (status='planned') and manual (status='manual')
+                              if (assign.status === 'manual') {
+                                barColor = 'bg-gradient-to-br from-green-400 to-green-500 border-2 border-dashed border-green-600';
+                              } else {
+                                barColor = 'bg-gradient-to-br from-green-400 to-green-500 border-2 border-green-600';
+                              }
                             }
 
                             // Label: Always show Make/Model if available, otherwise VIN as fallback
@@ -915,19 +947,33 @@ export default function Partners({ office }) {
                               label = 'Vehicle';
                             }
 
+                            // Show icon for scheduled items
+                            const icon = assign.type === 'scheduled'
+                              ? (assign.status === 'manual' ? '👤 ' : '🤖 ')
+                              : '';
+
                             return (
                               <button
                                 key={idx}
-                                onClick={handleBarClick}
-                                className={`absolute h-7 ${barColor} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer px-2 flex items-center text-white text-xs font-semibold overflow-hidden whitespace-nowrap`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Only allow delete for manual assignments
+                                  if (assign.type === 'scheduled' && assign.status === 'manual' && assign.assignment_id) {
+                                    handleDeleteAssignment(assign.assignment_id);
+                                  } else {
+                                    handleBarClick();
+                                  }
+                                }}
+                                className={`absolute h-7 ${barColor} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer px-2 flex items-center gap-1 text-white text-xs font-semibold overflow-hidden whitespace-nowrap`}
                                 style={{
                                   left: `${left}%`,
                                   width: `${width}%`,
                                   minWidth: '20px',
                                   top: `${top}px`
                                 }}
-                                title={`${assign.make || 'Vehicle'} ${assign.model || ''} ${assign.vin ? `(VIN: ${assign.vin})` : ''}\n${assign.start.toLocaleDateString()} - ${assign.end.toLocaleDateString()}\n${assign.status === 'manual' ? 'Manual Assignment' : 'Optimizer Assignment'}`}
+                                title={`${assign.make || 'Vehicle'} ${assign.model || ''} ${assign.vin ? `(VIN: ${assign.vin})` : ''}\n${assign.start.toLocaleDateString()} - ${assign.end.toLocaleDateString()}\n${assign.status === 'manual' ? '👤 Manual Assignment (Click to remove)' : '🤖 Optimizer Assignment'}`}
                               >
+                                {icon && <span>{icon}</span>}
                                 <span className="truncate">{label}</span>
                               </button>
                             );

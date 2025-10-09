@@ -8,6 +8,7 @@ export default function Partners({ office }) {
   const [selectedDate, setSelectedDate] = useState('')
   const [candidates, setCandidates] = useState([])
   const [partnerInsights, setPartnerInsights] = useState(null)
+  const [scheduledVins, setScheduledVins] = useState(new Set()) // Track VINs scheduled this session
   const [loading, setLoading] = useState(false)
   const [loadingPartners, setLoadingPartners] = useState(false)
   const [loadingIntelligence, setLoadingIntelligence] = useState(false)
@@ -20,20 +21,38 @@ export default function Partners({ office }) {
   const [partnerSearchQuery, setPartnerSearchQuery] = useState('')
   const [expandedVehicle, setExpandedVehicle] = useState(null)
 
-  // Load all partners on mount
+  // Initialize on mount
+  useEffect(() => {
+    // Set date to today
+    setSelectedDate(new Date().toISOString().split('T')[0])
+
+    // Restore saved partner
+    const savedPartner = sessionStorage.getItem('partners_selected_partner')
+    if (savedPartner) {
+      try {
+        setSelectedPartner(JSON.parse(savedPartner))
+      } catch (e) {
+        console.error('Error parsing saved partner:', e)
+      }
+    }
+  }, [])
+
+  // Save partner when it changes
+  useEffect(() => {
+    if (selectedPartner) {
+      sessionStorage.setItem('partners_selected_partner', JSON.stringify(selectedPartner))
+    }
+  }, [selectedPartner])
+
+  // Load partners when office changes, clear selected partner
   useEffect(() => {
     if (office) {
       loadAllPartners()
+      setSelectedPartner(null)
+      setPartnerIntelligence(null)
+      sessionStorage.removeItem('partners_selected_partner')
     }
   }, [office])
-
-  // Get Monday of current week as default
-  useEffect(() => {
-    const today = new Date()
-    const monday = new Date(today)
-    monday.setDate(today.getDate() - today.getDay() + (today.getDay() === 0 ? -6 : 1))
-    setSelectedDate(monday.toISOString().split('T')[0])
-  }, [])
 
   // Set current month as default for calendar
   useEffect(() => {
@@ -51,6 +70,28 @@ export default function Partners({ office }) {
       setPartnerIntelligence(null)
     }
   }, [selectedPartner, office])
+
+  // Sync scheduledVins with actual database state when partner intelligence loads
+  useEffect(() => {
+    if (partnerIntelligence?.upcoming_assignments) {
+      // Get VINs that are actually in the database
+      const actualScheduledVins = new Set(
+        partnerIntelligence.upcoming_assignments
+          .filter(a => a.status === 'manual')
+          .map(a => a.vin)
+      )
+
+      // Remove any VINs from scheduledVins that are no longer in the database
+      setScheduledVins(prev => {
+        const updated = new Set([...prev].filter(vin => actualScheduledVins.has(vin)))
+        // If anything changed, update sessionStorage
+        if (updated.size !== prev.size) {
+          sessionStorage.setItem('partners_scheduled_vins', JSON.stringify([...updated]))
+        }
+        return updated
+      })
+    }
+  }, [partnerIntelligence])
 
   const loadAllPartners = async () => {
     setLoadingPartners(true)
@@ -168,8 +209,8 @@ export default function Partners({ office }) {
 
       if (result.success) {
         setMessage(`✅ Successfully scheduled ${candidate.make} ${candidate.model} to ${selectedPartner.name}!`)
-        handleFindVehicles() // Refresh candidates
-        loadPartnerIntelligence() // Refresh intelligence data
+        setScheduledVins(prev => new Set([...prev, candidate.vin])) // Mark as scheduled
+        loadPartnerIntelligence() // Refresh intelligence data including calendar
       } else {
         setMessage(`❌ ${result.message}`)
       }
@@ -181,7 +222,7 @@ export default function Partners({ office }) {
     }
   }
 
-  const handleDeleteAssignment = async (assignmentId) => {
+  const handleDeleteAssignment = async (assignmentId, vin) => {
     if (!window.confirm('Remove this manual recommendation?')) {
       return
     }
@@ -195,6 +236,12 @@ export default function Partners({ office }) {
 
       if (result.success) {
         setMessage('✅ Manual recommendation removed')
+        // Remove VIN from scheduled set so button changes back to "Schedule"
+        setScheduledVins(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(vin)
+          return newSet
+        })
         loadPartnerIntelligence() // Refresh intelligence data to update mini calendar
       } else {
         setMessage(`❌ ${result.message}`)
@@ -541,6 +588,7 @@ export default function Partners({ office }) {
                           type="date"
                           value={selectedDate}
                           onChange={(e) => setSelectedDate(e.target.value)}
+                          min={new Date().toISOString().split('T')[0]}
                           className="block w-full px-3 py-2 text-sm border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md"
                         />
                       </div>
@@ -682,7 +730,7 @@ export default function Partners({ office }) {
                             <div
                               key={idx}
                               className={`rounded-lg p-3 border-2 ${bgColor} ${borderColor} ${item.status === 'manual' ? 'cursor-pointer hover:opacity-75' : ''}`}
-                              onClick={item.status === 'manual' ? () => handleDeleteAssignment(item.assignment_id) : undefined}
+                              onClick={item.status === 'manual' ? () => handleDeleteAssignment(item.assignment_id, item.vin) : undefined}
                               title={item.status === 'manual' ? 'Click to remove this manual pick' : ''}
                             >
                               <div className="flex items-start justify-between">
@@ -835,8 +883,11 @@ export default function Partners({ office }) {
 
                     // Scheduled assignments
                     partnerIntelligence.upcoming_assignments.forEach(assignment => {
-                      const start = new Date(assignment.start_day);
-                      const end = new Date(assignment.end_day);
+                      // Parse dates as local dates to avoid timezone issues
+                      const [startYear, startMonth, startDay] = assignment.start_day.split('-').map(Number);
+                      const [endYear, endMonth, endDay] = assignment.end_day.split('-').map(Number);
+                      const start = new Date(startYear, startMonth - 1, startDay);
+                      const end = new Date(endYear, endMonth - 1, endDay);
 
                       if ((start.getMonth() === currentMonth && start.getFullYear() === currentYear) ||
                           (end.getMonth() === currentMonth && end.getFullYear() === currentYear) ||
@@ -844,6 +895,7 @@ export default function Partners({ office }) {
                         assignments.push({
                           type: 'scheduled',
                           assignment_id: assignment.assignment_id,
+                          vin: assignment.vin,
                           make: assignment.make,
                           model: assignment.model,
                           status: assignment.status,
@@ -959,7 +1011,7 @@ export default function Partners({ office }) {
                                   e.stopPropagation();
                                   // Only allow delete for manual assignments
                                   if (assign.type === 'scheduled' && assign.status === 'manual' && assign.assignment_id) {
-                                    handleDeleteAssignment(assign.assignment_id);
+                                    handleDeleteAssignment(assign.assignment_id, assign.vin);
                                   } else {
                                     handleBarClick();
                                   }
@@ -1083,13 +1135,19 @@ export default function Partners({ office }) {
 
                           {/* Action */}
                           <div className="col-span-1">
-                            <button
-                              onClick={() => handleScheduleVehicle(candidate)}
-                              disabled={scheduling}
-                              className="w-full px-3 py-2 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
-                            >
-                              📅 Schedule
-                            </button>
+                            {scheduledVins.has(candidate.vin) ? (
+                              <div className="w-full px-3 py-2 bg-green-100 text-green-800 text-xs font-medium rounded border border-green-300 text-center">
+                                ✅ Scheduled
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleScheduleVehicle(candidate)}
+                                disabled={scheduling}
+                                className="w-full px-3 py-2 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+                              >
+                                📅 Schedule
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>

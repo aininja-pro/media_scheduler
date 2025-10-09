@@ -227,7 +227,7 @@ async def get_calendar_activity(
                     'person_id': loan.get('person_id'),
                     'partner_name': loan.get('partner_name'),
                     'office': loan.get('office'),
-                    'status': 'planned',
+                    'status': loan.get('status', 'planned'),  # Use actual status from DB
                     'activity_type': 'Planned Loan',
                     'optimizer_run_id': loan.get('optimizer_run_id'),
                     'score': loan.get('score'),

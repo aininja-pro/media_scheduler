@@ -759,7 +759,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
               <div className="space-y-4">
                 <div>
                   <div className="flex justify-between items-center mb-2">
-                    <label className="text-sm font-medium text-gray-700">Partner Quality</label>
+                    <label className="text-sm font-medium text-gray-700">Media Partner Quality</label>
                     <span className="text-xs font-semibold text-blue-600">{getPartnerQualityLabel(rankWeight)}</span>
                   </div>
                   <input
@@ -852,7 +852,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
               <h3 className="text-sm font-medium text-gray-700 mb-4">Business Rules</h3>
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
-                  <span>Partner Limits</span>
+                  <span>Media Partner Limits</span>
                   <span className="text-green-600">✓ Active</span>
                 </div>
                 <div className="flex justify-between">
@@ -868,7 +868,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                   <span className="text-gray-700">30 days</span>
                 </div>
                 <div className="pt-2 border-t border-gray-200">
-                  <label className="text-sm text-gray-600 mb-2 block">Max Vehicles per Partner per Day</label>
+                  <label className="text-sm text-gray-600 mb-2 block">Max Vehicles per Media Partner per Day</label>
                   <select
                     value={maxPerPartnerPerDay}
                     onChange={(e) => setMaxPerPartnerPerDay(parseInt(e.target.value))}
@@ -880,11 +880,11 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                     <option value="0">Unlimited</option>
                   </select>
                   <div className="text-xs text-gray-500 mt-1">
-                    Limits how many vehicles can start on the same day for one partner
+                    Limits how many vehicles can start on the same day for one media partner
                   </div>
                 </div>
                 <div className="pt-2 border-t border-gray-200">
-                  <label className="text-sm text-gray-600 mb-2 block">Max Vehicles per Partner per Week</label>
+                  <label className="text-sm text-gray-600 mb-2 block">Max Vehicles per Media Partner per Week</label>
                   <select
                     value={maxPerPartnerPerWeek}
                     onChange={(e) => setMaxPerPartnerPerWeek(parseInt(e.target.value))}
@@ -898,7 +898,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                     <option value="0">Unlimited</option>
                   </select>
                   <div className="text-xs text-gray-500 mt-1">
-                    Limits total vehicles assigned to one partner during the entire week
+                    Limits total vehicles assigned to one media partner during the entire week
                   </div>
                 </div>
                 <div className="pt-2 border-t border-gray-200">
@@ -909,10 +909,10 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                       onChange={(e) => setPreferNormalDays(e.target.checked)}
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
-                    <span className="ml-2 text-sm text-gray-700">Prioritize Partner Normal Days</span>
+                    <span className="ml-2 text-sm text-gray-700">Prioritize Media Partner Normal Days</span>
                   </label>
                   <div className="text-xs text-gray-500 mt-1 ml-6">
-                    Favor scheduling partners on their historically preferred day of week
+                    Favor scheduling media partners on their historically preferred day of week
                   </div>
                 </div>
               </div>
@@ -1220,7 +1220,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                         )}
                         <input
                           type="text"
-                          placeholder="Filter VIN or partner..."
+                          placeholder="Filter VIN or media partner..."
                           value={assignmentFilter}
                           onChange={(e) => setAssignmentFilter(e.target.value)}
                           className="px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1235,7 +1235,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VIN</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Partner</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Media Partner</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Make</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
@@ -1361,7 +1361,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
                 <p className="mt-2 text-sm text-gray-500">Schedule View Coming Soon</p>
-                <p className="text-xs text-gray-400 mt-1">This area will display the optimized schedule with vehicle-partner assignments</p>
+                <p className="text-xs text-gray-400 mt-1">This area will display the optimized schedule with vehicle-media partner assignments</p>
               </div>
             </div>
           )}
@@ -1384,7 +1384,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                         <span className="font-medium text-gray-900">{runResult.fairness_summary.partners_assigned || 0}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Max per Partner:</span>
+                        <span className="text-gray-600">Max per Media:</span>
                         <span className="font-medium text-gray-900">{runResult.fairness_summary.max_per_partner || 0}</span>
                       </div>
                       {runResult.fairness_summary.num_partners !== undefined && (
@@ -1446,13 +1446,13 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                         )}
                         {runResult.fairness_summary.top_1_share !== undefined && (
                           <div className="flex justify-between text-xs">
-                            <span className="text-gray-600">Top Partner:</span>
+                            <span className="text-gray-600">Top Media:</span>
                             <span className="font-medium text-gray-900">{(runResult.fairness_summary.top_1_share * 100).toFixed(0)}%</span>
                           </div>
                         )}
                         {runResult.fairness_summary.top_5_share !== undefined && (
                           <div className="flex justify-between text-xs">
-                            <span className="text-gray-600">Top 5 Partners:</span>
+                            <span className="text-gray-600">Top 5 Media:</span>
                             <span className="font-medium text-gray-900">{(runResult.fairness_summary.top_5_share * 100).toFixed(0)}%</span>
                           </div>
                         )}

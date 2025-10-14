@@ -1,8 +1,6 @@
 import { useState } from 'react'
 import driveShopLogo from './assets/DriveShop_WebLogo.png'
-import Availability from './pages/Availability.jsx'
 import PublicationRates from './pages/PublicationRates.jsx'
-import ScheduleGeneration from './pages/ScheduleGeneration.jsx'
 import Optimizer from './pages/Optimizer.jsx'
 import Calendar from './pages/Calendar.jsx'
 import Partners from './pages/Partners.jsx'
@@ -11,7 +9,7 @@ import './App.css'
 function App() {
   const [selectedOffice, setSelectedOffice] = useState('')
   const [selectedWeek, setSelectedWeek] = useState('')
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const [activeTab, setActiveTab] = useState('upload')
   const [optimizerOffice, setOptimizerOffice] = useState('Los Angeles') // Shared office state
   const [vehiclesUrl, setVehiclesUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/active_vehicles.rpt&init=csv')
   const [mediaPartnersUrl, setMediaPartnersUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/media_partners.rpt&init=csv')
@@ -258,45 +256,15 @@ function App() {
           </div>
 
           <nav className="flex space-x-2">
-              <button 
-                onClick={() => setActiveTab('dashboard')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'dashboard' 
-                    ? 'bg-white text-black' 
-                    : 'bg-gray-600 text-white hover:bg-gray-500'
-                }`}
-              >
-                Dashboard
-              </button>
-              <button 
+              <button
                 onClick={() => setActiveTab('upload')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'upload' 
-                    ? 'bg-white text-black' 
+                  activeTab === 'upload'
+                    ? 'bg-white text-black'
                     : 'bg-gray-600 text-white hover:bg-gray-500'
                 }`}
               >
                 Upload Data
-              </button>
-              <button
-                onClick={() => setActiveTab('schedule')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'schedule'
-                    ? 'bg-white text-black'
-                    : 'bg-gray-600 text-white hover:bg-gray-500'
-                }`}
-              >
-                Schedule
-              </button>
-              <button
-                onClick={() => setActiveTab('availability')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'availability'
-                    ? 'bg-white text-black'
-                    : 'bg-gray-600 text-white hover:bg-gray-500'
-                }`}
-              >
-                Availability
               </button>
               <button
                 onClick={() => setActiveTab('publication')}
@@ -307,16 +275,6 @@ function App() {
                 }`}
               >
                 Publication Rates
-              </button>
-              <button
-                onClick={() => setActiveTab('scheduler')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'scheduler'
-                    ? 'bg-white text-black'
-                    : 'bg-gray-600 text-white hover:bg-gray-500'
-                }`}
-              >
-                Schedule Generation
               </button>
               <button
                 onClick={() => setActiveTab('optimizer')}
@@ -346,7 +304,7 @@ function App() {
                     : 'bg-gray-600 text-white hover:bg-gray-500'
                 }`}
               >
-                Partners
+                Media Partners
               </button>
           </nav>
         </div>
@@ -355,52 +313,6 @@ function App() {
       {/* Main Content */}
       <main className="w-full py-8 px-4 sm:px-6 lg:px-8">
         <div className="min-h-[800px]">
-        
-        {/* Dashboard Tab */}
-        {activeTab === 'dashboard' && (
-          <>
-            <div className="mb-8">
-              <h2 className="text-3xl font-bold text-gray-900 mb-3">
-                Vehicle Media Scheduler
-              </h2>
-              <p className="text-lg text-gray-600">
-                Optimize vehicle assignments to media partners across all offices
-              </p>
-            </div>
-
-            {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
-              <div className="bg-white p-6 rounded-lg shadow">
-                <div className="text-2xl font-bold text-blue-600">0</div>
-                <div className="text-sm text-gray-500">Vehicles Loaded</div>
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow">
-                <div className="text-2xl font-bold text-green-600">0</div>
-                <div className="text-sm text-gray-500">Partners Loaded</div>
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow">
-                <div className="text-2xl font-bold text-purple-600">7</div>
-                <div className="text-sm text-gray-500">Active Offices</div>
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow">
-                <div className="text-2xl font-bold text-orange-600">0</div>
-                <div className="text-sm text-gray-500">Schedules Generated</div>
-              </div>
-            </div>
-
-            {/* Recent Activity */}
-            <div className="bg-white shadow rounded-lg">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Recent Activity</h3>
-              </div>
-              <div className="px-6 py-8 text-center">
-                <div className="text-gray-400 text-6xl mb-4">📋</div>
-                <p className="text-gray-500 text-lg mb-2">No recent activity</p>
-                <p className="text-gray-400">Upload CSV data to get started</p>
-              </div>
-            </div>
-          </>
-        )}
 
         {/* Upload Data Tab */}
         {activeTab === 'upload' && (
@@ -667,81 +579,9 @@ function App() {
           </>
         )}
 
-        {/* Schedule Tab */}
-        {activeTab === 'schedule' && (
-          <>
-            <div className="mb-8">
-              <h2 className="text-3xl font-bold text-gray-900 mb-3">
-                Generate Schedule
-              </h2>
-              <p className="text-lg text-gray-600">
-                Create optimized vehicle-to-partner assignments for a specific office and week
-              </p>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-md p-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Office
-                  </label>
-                  <select 
-                    className="w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={selectedOffice}
-                    onChange={(e) => setSelectedOffice(e.target.value)}
-                  >
-                    <option value="">Choose an office...</option>
-                    {offices.map(office => (
-                      <option key={office} value={office}>{office}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Week Start Date (Monday)
-                  </label>
-                  <input 
-                    type="date" 
-                    className="w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={selectedWeek}
-                    onChange={(e) => setSelectedWeek(e.target.value)}
-                  />
-                </div>
-              </div>
-              
-              <div className="mt-8">
-                <button 
-                  className={`w-full py-4 px-6 rounded-md text-lg font-medium transition-colors ${
-                    selectedOffice && selectedWeek
-                      ? 'bg-green-600 hover:bg-green-700 text-white'
-                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  }`}
-                  disabled={!selectedOffice || !selectedWeek}
-                >
-                  {selectedOffice && selectedWeek 
-                    ? `Generate Schedule for ${selectedOffice}` 
-                    : 'Select Office and Date to Continue'
-                  }
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Availability Tab */}
-        {activeTab === 'availability' && (
-          <Availability />
-        )}
-
         {/* Publication Rates Tab */}
         {activeTab === 'publication' && (
           <PublicationRates />
-        )}
-
-        {/* Schedule Generation Tab */}
-        {activeTab === 'scheduler' && (
-          <ScheduleGeneration />
         )}
 
         {/* Optimizer Tab */}

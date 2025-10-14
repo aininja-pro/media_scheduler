@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { Listbox, Transition } from '@headlessui/react'
 
 export default function Partners({ office }) {
@@ -44,14 +44,23 @@ export default function Partners({ office }) {
     }
   }, [selectedPartner])
 
-  // Load partners when office changes, clear selected partner
+  // Load partners when office changes
   useEffect(() => {
     if (office) {
       loadAllPartners()
+    }
+  }, [office])
+
+  // Clear partner only when office actually changes (not on mount)
+  const prevOfficeRef = useRef()
+  useEffect(() => {
+    if (prevOfficeRef.current && prevOfficeRef.current !== office) {
+      // Office changed - clear partner
       setSelectedPartner(null)
       setPartnerIntelligence(null)
       sessionStorage.removeItem('partners_selected_partner')
     }
+    prevOfficeRef.current = office
   }, [office])
 
   // Set current month as default for calendar
@@ -138,7 +147,7 @@ export default function Partners({ office }) {
 
   const handleFindVehicles = async () => {
     if (!selectedPartner || !selectedDate) {
-      setMessage('Please select a partner and date')
+      setMessage('Please select a media partner and date')
       return
     }
 
@@ -379,10 +388,10 @@ export default function Partners({ office }) {
           <div className="md:flex md:items-center md:justify-between">
             <div className="flex-1 min-w-0">
               <h2 className="text-3xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
-                👥 Partner Scheduling
+                👥 Media Partner Scheduling
               </h2>
               <p className="mt-2 text-sm text-gray-600">
-                Select a partner to view intelligence and schedule vehicles
+                Select a media partner to view intelligence and schedule vehicles
               </p>
             </div>
             {office && (
@@ -411,17 +420,17 @@ export default function Partners({ office }) {
                   Office Required
                 </h3>
                 <div className="mt-2 text-sm text-yellow-700">
-                  <p>Please select an office from the Optimizer tab first to use Partner Scheduling.</p>
+                  <p>Please select an office from the Optimizer tab first to use Media Partner Scheduling.</p>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Partner Selection */}
+        {/* Media Partner Selection */}
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select Partner
+            Select Media Partner
           </label>
 
           <Listbox value={selectedPartner} onChange={handlePartnerChange} disabled={!office || loadingPartners}>
@@ -429,11 +438,11 @@ export default function Partners({ office }) {
               <Listbox.Button className="relative w-full cursor-pointer rounded-lg bg-white py-3 pl-4 pr-10 text-left border-2 border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed transition-all duration-200 hover:border-gray-400">
                 <span className="block truncate font-medium text-gray-900">
                   {loadingPartners ? (
-                    'Loading partners...'
+                    'Loading media partners...'
                   ) : selectedPartner ? (
                     `${selectedPartner.name} - ${selectedPartner.address}`
                   ) : (
-                    <span className="text-gray-500 font-normal">Select a partner...</span>
+                    <span className="text-gray-500 font-normal">Select a media partner...</span>
                   )}
                 </span>
                 <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
@@ -500,7 +509,7 @@ export default function Partners({ office }) {
                       partner.address?.toLowerCase().includes(partnerSearchQuery.toLowerCase())
                     ).length === 0 && (
                       <div className="px-4 py-6 text-center text-sm text-gray-500">
-                        No partners found matching "{partnerSearchQuery}"
+                        No media partners found matching "{partnerSearchQuery}"
                       </div>
                     )}
                   </div>
@@ -510,7 +519,7 @@ export default function Partners({ office }) {
           </Listbox>
           {allPartners.length > 0 && (
             <p className="mt-2 text-sm text-gray-500">
-              {allPartners.length} partners available in {office}
+              {allPartners.length} media partners available in {office}
             </p>
           )}
         </div>
@@ -518,7 +527,7 @@ export default function Partners({ office }) {
         {/* Two Column Layout - 1/3 Sidebar, 2/3 Calendar */}
         {selectedPartner && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* LEFT SIDEBAR - Partner Intelligence */}
+            {/* LEFT SIDEBAR - Media Partner Intelligence */}
             <div className="lg:col-span-1 space-y-6">
               {loadingIntelligence ? (
                 <div className="bg-white rounded-lg shadow p-6">
@@ -534,9 +543,9 @@ export default function Partners({ office }) {
                 </div>
               ) : partnerIntelligence ? (
                 <>
-                  {/* Partner Stats Card */}
+                  {/* Media Partner Stats Card */}
                   <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg shadow border border-blue-200 p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">📊 Partner Stats</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">📊 Media Partner Stats</h3>
                     <div className="space-y-3">
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">Total Loans:</span>
@@ -1159,12 +1168,12 @@ export default function Partners({ office }) {
           </div>
         )}
 
-        {/* Partner Context Side Panel */}
+        {/* Media Partner Context Side Panel */}
         {selectedPartnerId && partnerContext && (
           <div className="fixed right-0 top-0 z-40 h-full">
             <div className="bg-white w-96 h-full shadow-2xl overflow-y-auto border-l border-gray-200">
               <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900">Partner Context</h2>
+                <h2 className="text-lg font-semibold text-gray-900">Media Partner Context</h2>
                 <button
                   onClick={closeSidePanel}
                   className="text-gray-400 hover:text-gray-600 focus:outline-none"
@@ -1185,16 +1194,16 @@ export default function Partners({ office }) {
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {/* Partner Info */}
+                    {/* Media Partner Info */}
                     <div>
-                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Partner Details</h3>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Media Partner Details</h3>
                       <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-600">Name:</span>
                           <span className="text-sm font-medium text-gray-900">{partnerContext.partner_name}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-sm text-gray-600">Partner ID:</span>
+                          <span className="text-sm text-gray-600">Media ID:</span>
                           <span className="text-sm font-mono font-medium text-gray-900">{partnerContext.person_id}</span>
                         </div>
                         <div className="flex justify-between">

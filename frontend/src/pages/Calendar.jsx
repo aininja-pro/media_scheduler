@@ -737,7 +737,7 @@ function Calendar({ sharedOffice }) {
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                👤 By Partner
+                👤 By Media Partner
               </button>
             </div>
 
@@ -813,12 +813,12 @@ function Calendar({ sharedOffice }) {
           </div>
 
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Partner</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Media Partner</label>
             <input
               type="text"
               value={partnerFilter}
               onChange={(e) => setPartnerFilter(e.target.value)}
-              placeholder="Search partner..."
+              placeholder="Search media partner..."
               className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -905,7 +905,7 @@ function Calendar({ sharedOffice }) {
             <div className="flex border-b bg-gray-50">
               {/* Row label column */}
               <div className="w-64 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700">
-                {viewMode === 'vehicle' ? 'Vehicle' : 'Partner'}
+                {viewMode === 'vehicle' ? 'Vehicle' : 'Media Partner'}
               </div>
               {/* Days column */}
               <div className="flex-1 flex">
@@ -1311,12 +1311,12 @@ function Calendar({ sharedOffice }) {
         </div>
       )}
 
-      {/* Partner Context Side Panel */}
+      {/* Media Partner Context Side Panel */}
       {selectedPartnerId && (
         <div className="fixed right-0 top-0 z-40 h-full">
           <div className="bg-white w-96 h-full shadow-2xl overflow-y-auto border-l border-gray-200">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-900">Partner Context</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Media Partner Context</h2>
               <button
                 onClick={closeSidePanel}
                 className="text-gray-400 hover:text-gray-600 focus:outline-none"
@@ -1337,16 +1337,16 @@ function Calendar({ sharedOffice }) {
                 </div>
               ) : partnerContext ? (
                 <div className="space-y-6">
-                  {/* Partner Info */}
+                  {/* Media Partner Info */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Partner Details</h3>
+                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Media Partner Details</h3>
                     <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">Name:</span>
                         <span className="text-sm font-medium text-gray-900">{partnerContext.partner_name}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Partner ID:</span>
+                        <span className="text-sm text-gray-600">Media ID:</span>
                         <span className="text-sm font-mono font-medium text-gray-900">{partnerContext.person_id}</span>
                       </div>
                       <div className="flex justify-between">
@@ -1499,7 +1499,7 @@ function Calendar({ sharedOffice }) {
                 </div>
               ) : (
                 <div className="text-center py-12 text-gray-500">
-                  <p>Unable to load partner context</p>
+                  <p>Unable to load media partner context</p>
                 </div>
               )}
             </div>

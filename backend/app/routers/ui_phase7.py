@@ -948,6 +948,65 @@ async def get_overview(
     finally:
         await db.close()
 
+@router.get("/office-default-capacity")
+async def get_office_default_capacity(
+    office: str = Query(..., description="Office name")
+) -> Dict[str, Any]:
+    """
+    Get the default daily capacity for a specific office from ops_capacity table.
+
+    Returns default drivers_per_day which represents weekday capacity.
+    Weekend capacity defaults to 0.
+    """
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        # Get office's default capacity
+        capacity_response = db.client.table('ops_capacity')\
+            .select('*')\
+            .eq('office', office)\
+            .execute()
+
+        if not capacity_response.data or len(capacity_response.data) == 0:
+            # Return sensible defaults if office not found
+            return {
+                "office": office,
+                "daily_capacities": {
+                    "mon": 15,
+                    "tue": 15,
+                    "wed": 15,
+                    "thu": 15,
+                    "fri": 15,
+                    "sat": 0,
+                    "sun": 0
+                },
+                "default_found": False
+            }
+
+        office_data = capacity_response.data[0]
+        drivers_per_day = office_data.get('drivers_per_day', 15)
+
+        return {
+            "office": office,
+            "daily_capacities": {
+                "mon": drivers_per_day,
+                "tue": drivers_per_day,
+                "wed": drivers_per_day,
+                "thu": drivers_per_day,
+                "fri": drivers_per_day,
+                "sat": 0,  # Weekends default to 0
+                "sun": 0
+            },
+            "default_found": True,
+            "drivers_per_day": drivers_per_day
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
+
 @router.get("/partner-distance")
 async def get_partner_distance(
     person_id: int = Query(..., description="Partner person_id"),

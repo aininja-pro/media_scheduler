@@ -43,7 +43,6 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   const [hoverContext, setHoverContext] = useState(null);
 
   // Daily capacity settings
-  const [capacityExpanded, setCapacityExpanded] = useState(false);
   const [dailyCapacities, setDailyCapacities] = useState({
     mon: 15,
     tue: 15,
@@ -53,6 +52,10 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
     sat: 0,
     sun: 0
   });
+
+  // Capacity editing state
+  const [editingDay, setEditingDay] = useState(null);
+  const [editValue, setEditValue] = useState(0);
 
   // Load offices from database
   const [offices, setOffices] = useState([]);
@@ -116,6 +119,30 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
     };
     loadOffices();
   }, []);
+
+  // Load office-specific capacity defaults when office changes
+  useEffect(() => {
+    const loadOfficeCapacityDefaults = async () => {
+      if (!selectedOffice) return;
+
+      try {
+        const response = await fetch(`http://localhost:8081/api/ui/phase7/office-default-capacity?office=${encodeURIComponent(selectedOffice)}`);
+        if (!response.ok) {
+          console.error('Failed to load office capacity defaults');
+          return;
+        }
+        const data = await response.json();
+        if (data.daily_capacities) {
+          console.log(`Loaded capacity defaults for ${selectedOffice}:`, data.daily_capacities);
+          setDailyCapacities(data.daily_capacities);
+        }
+      } catch (err) {
+        console.error('Error loading office capacity defaults:', err);
+      }
+    };
+
+    loadOfficeCapacityDefaults();
+  }, [selectedOffice]);
 
   // Manual load function (no longer auto-loads)
   const loadOfficeData = async () => {
@@ -314,6 +341,26 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   };
 
   const [progressStage, setProgressStage] = useState('');
+
+  // Capacity editing handlers
+  const handleCapacityEdit = (dayKey, currentValue) => {
+    setEditingDay(dayKey);
+    setEditValue(currentValue);
+  };
+
+  const saveCapacityEdit = () => {
+    if (editingDay) {
+      setDailyCapacities({
+        ...dailyCapacities,
+        [editingDay]: editValue
+      });
+    }
+    setEditingDay(null);
+  };
+
+  const cancelCapacityEdit = () => {
+    setEditingDay(null);
+  };
 
   const runOptimizer = async () => {
     setIsLoading(true);
@@ -699,125 +746,6 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
         </div>
       )}
 
-      {/* Daily Capacity Settings */}
-      {metrics && (
-        <div className="bg-white border-b">
-          <button
-            onClick={() => setCapacityExpanded(!capacityExpanded)}
-            className="w-full px-6 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <span className="text-lg">📊</span>
-              <span className="text-sm font-semibold text-gray-900">Daily Capacity Settings</span>
-              <span className="text-xs text-gray-500">
-                Currently: {Object.values(dailyCapacities).reduce((a, b) => a + b, 0)}/week
-              </span>
-            </div>
-            <svg
-              className={`w-5 h-5 text-gray-400 transition-transform ${capacityExpanded ? 'rotate-180' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {capacityExpanded && (
-            <div className="px-6 py-4 border-t bg-gray-50">
-              {/* Controls Row */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-4">
-                  <label className="text-sm font-medium text-gray-700">
-                    Weekly Total:
-                  </label>
-                  <input
-                    type="number"
-                    value={Object.values(dailyCapacities).reduce((a, b) => a + b, 0)}
-                    readOnly
-                    className="w-20 px-3 py-1 border border-gray-300 rounded-md bg-gray-100 text-sm font-semibold text-gray-900"
-                  />
-                  <span className="text-sm text-gray-500">slots</span>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      setDailyCapacities({
-                        mon: 15,
-                        tue: 15,
-                        wed: 15,
-                        thu: 15,
-                        fri: 15,
-                        sat: 0,
-                        sun: 0
-                      });
-                    }}
-                    className="px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                  >
-                    Reset to Defaults
-                  </button>
-                  <button
-                    onClick={() => {
-                      const avgValue = Math.floor(Object.values(dailyCapacities).reduce((a, b) => a + b, 0) / 7);
-                      setDailyCapacities({
-                        mon: avgValue,
-                        tue: avgValue,
-                        wed: avgValue,
-                        thu: avgValue,
-                        fri: avgValue,
-                        sat: avgValue,
-                        sun: avgValue
-                      });
-                    }}
-                    className="px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                  >
-                    Distribute Evenly
-                  </button>
-                </div>
-              </div>
-
-              {/* Daily Inputs Grid */}
-              <div className="grid grid-cols-7 gap-3">
-                {[
-                  { key: 'mon', label: 'Monday' },
-                  { key: 'tue', label: 'Tuesday' },
-                  { key: 'wed', label: 'Wednesday' },
-                  { key: 'thu', label: 'Thursday' },
-                  { key: 'fri', label: 'Friday' },
-                  { key: 'sat', label: 'Saturday' },
-                  { key: 'sun', label: 'Sunday' }
-                ].map((day) => (
-                  <div key={day.key} className="flex flex-col">
-                    <label className="text-xs font-medium text-gray-700 mb-1">
-                      {day.label}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="50"
-                      value={dailyCapacities[day.key]}
-                      onChange={(e) => {
-                        const value = Math.max(0, Math.min(50, parseInt(e.target.value) || 0));
-                        setDailyCapacities({
-                          ...dailyCapacities,
-                          [day.key]: value
-                        });
-                      }}
-                      className="px-3 py-2 border border-gray-300 rounded-md text-sm font-semibold text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* Info Text */}
-              <p className="mt-4 text-xs text-gray-500">
-                💡 These capacity limits control how many vehicles can start loans on each day of the week. Changes will apply on the next optimizer run.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Main Content Area */}
       <div className="flex h-full">
         {/* Left Panel - Schedule Settings */}
@@ -997,10 +925,105 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
           <h2 className="text-xl font-semibold text-gray-900 mb-1">
             Week Overview: {metrics ? formatWeekRange() : 'Select week'}
           </h2>
-          <p className="text-sm text-gray-500 mb-6">Daily Capacity</p>
+          <p className="text-sm text-gray-500 mb-4">Daily Capacity</p>
 
           {metrics ? (
             <div>
+              {/* Capacity Controls */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-4">
+                    <label className="text-sm font-medium text-gray-700">
+                      Weekly Total:
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="350"
+                      value={Object.values(dailyCapacities).reduce((a, b) => a + b, 0)}
+                      onChange={(e) => {
+                        const newTotal = Math.max(0, Math.min(350, parseInt(e.target.value) || 0));
+                        // Distribute evenly across weekdays only
+                        const perDay = Math.floor(newTotal / 5);
+                        const remainder = newTotal % 5;
+                        setDailyCapacities({
+                          mon: perDay + (remainder > 0 ? 1 : 0),
+                          tue: perDay + (remainder > 1 ? 1 : 0),
+                          wed: perDay + (remainder > 2 ? 1 : 0),
+                          thu: perDay + (remainder > 3 ? 1 : 0),
+                          fri: perDay + (remainder > 4 ? 1 : 0),
+                          sat: 0,
+                          sun: 0
+                        });
+                      }}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm font-semibold text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <span className="text-sm text-gray-600">slots</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        // Reset to office defaults (loaded from API)
+                        const loadOfficeDefaults = async () => {
+                          try {
+                            const response = await fetch(`http://localhost:8081/api/ui/phase7/office-default-capacity?office=${encodeURIComponent(selectedOffice)}`);
+                            if (response.ok) {
+                              const data = await response.json();
+                              if (data.daily_capacities) {
+                                setDailyCapacities(data.daily_capacities);
+                              }
+                            }
+                          } catch (err) {
+                            console.error('Error loading defaults:', err);
+                          }
+                        };
+                        loadOfficeDefaults();
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                    >
+                      Reset to Defaults
+                    </button>
+                  </div>
+                </div>
+
+                {/* Individual Day Inputs */}
+                <div className="grid grid-cols-7 gap-2">
+                  {[
+                    { key: 'mon', label: 'Mon' },
+                    { key: 'tue', label: 'Tue' },
+                    { key: 'wed', label: 'Wed' },
+                    { key: 'thu', label: 'Thu' },
+                    { key: 'fri', label: 'Fri' },
+                    { key: 'sat', label: 'Sat' },
+                    { key: 'sun', label: 'Sun' }
+                  ].map((day) => (
+                    <div key={day.key} className="flex flex-col">
+                      <label className="text-xs font-medium text-gray-600 mb-1 text-center">
+                        {day.label}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        value={dailyCapacities[day.key]}
+                        onChange={(e) => {
+                          const value = Math.max(0, Math.min(50, parseInt(e.target.value) || 0));
+                          setDailyCapacities({
+                            ...dailyCapacities,
+                            [day.key]: value
+                          });
+                        }}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm font-semibold text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <p className="mt-3 text-xs text-gray-600">
+                  Set weekly total to distribute evenly across weekdays, or edit individual days. Changes apply when you run the optimizer.
+                </p>
+              </div>
+
               {/* Day Tiles Grid */}
               <div className="grid grid-cols-7 gap-3 mb-8">
                 {[
@@ -1013,7 +1036,10 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                   { key: 'sun', label: 'Sun', dayOffset: 6 }
                 ].map((day) => {
                   const capacity = metrics.capacity[day.key];
-                  const enabled = (capacity?.slots ?? 0) > 0;
+
+                  // Use dailyCapacities state (user-edited values) instead of backend metrics
+                  const totalSlots = dailyCapacities[day.key];
+                  const enabled = totalSlots > 0;
 
                   // Calculate actual date
                   const weekStartDate = new Date(weekStart + 'T00:00:00');
@@ -1026,67 +1052,132 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                   if (runResult?.starts_by_day) {
                     usedSlots = runResult.starts_by_day[day.key] || 0;
                   }
-                  // Use capacity from runResult if available (which includes UI overrides), otherwise fall back to metrics
-                  const totalSlots = runResult?.capacity_by_day?.[day.key] ?? capacity?.slots ?? 0;
                   const isFull = usedSlots >= totalSlots && totalSlots > 0;
                   const isNearCapacity = usedSlots > totalSlots * 0.8 && !isFull && totalSlots > 0;
 
                   const isSelected = selectedDay === day.key;
+                  const isEditing = editingDay === day.key;
 
                   return (
                     <div
                       key={day.key}
-                      onClick={() => {
-                        if (enabled) {
-                          setSelectedDay(isSelected ? null : day.key);
-                        }
-                      }}
                       className={[
                         "rounded-lg border p-3 text-center transition-all relative",
+                        isEditing ? "ring-2 ring-purple-500 border-purple-500 bg-purple-50" :
                         enabled ? "cursor-pointer hover:shadow-md" : "cursor-not-allowed",
-                        isSelected
+                        isSelected && !isEditing
                           ? "ring-2 ring-blue-500 border-blue-500 bg-blue-50 shadow-lg"
-                          : isFull
+                          : isFull && !isEditing
                             ? "border-green-400 bg-green-100"
-                            : isNearCapacity
+                            : isNearCapacity && !isEditing
                               ? "border-yellow-400 bg-yellow-50 hover:border-yellow-500"
-                              : enabled
+                              : enabled && !isEditing
                                 ? "border-emerald-200 bg-emerald-50 hover:border-emerald-300"
-                                : "border-rose-200 bg-rose-50"
+                                : !isEditing ? "border-rose-200 bg-rose-50" : ""
                       ].join(" ")}
-                      title={enabled ? "Click to filter assignments" : "No capacity available"}
                     >
-                      {isSelected && (
+                      {isSelected && !isEditing && (
                         <div className="absolute -left-2 top-1/2 -translate-y-1/2 text-blue-500 font-bold">
                           ▸
                         </div>
                       )}
-                      <div className="text-sm text-slate-600 font-medium">
-                        {day.label} {dayNumber}
-                      </div>
-                      <div className={[
-                        "text-2xl font-semibold leading-tight mt-1",
-                        isFull ? "text-green-700" :
-                        isNearCapacity ? "text-yellow-700" :
-                        enabled ? "text-emerald-700" : "text-rose-700"
-                      ].join(" ")}>
-                        {runResult ? (
-                          enabled ? (
-                            <span>{usedSlots}/{totalSlots}</span>
-                          ) : (
-                            <span className="line-through">{totalSlots}</span>
-                          )
+
+                      {/* Edit Button */}
+                      {!isEditing && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCapacityEdit(day.key, dailyCapacities[day.key]);
+                          }}
+                          className="absolute top-2 right-2 p-1 hover:bg-white/80 rounded transition-colors"
+                          title="Edit capacity"
+                        >
+                          <svg className="w-3 h-3 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                      )}
+
+                      <div
+                        onClick={(e) => {
+                          if (!isEditing && enabled) {
+                            setSelectedDay(isSelected ? null : day.key);
+                          }
+                        }}
+                        className={!isEditing ? "cursor-pointer" : ""}
+                      >
+                        <div className="text-sm text-slate-600 font-medium">
+                          {day.label} {dayNumber}
+                        </div>
+
+                        {isEditing ? (
+                          <div className="mt-2 space-y-2">
+                            <input
+                              type="number"
+                              min="0"
+                              max="50"
+                              value={editValue}
+                              onChange={(e) => setEditValue(Math.max(0, Math.min(50, parseInt(e.target.value) || 0)))}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full px-2 py-1 text-center text-lg font-semibold border border-purple-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  saveCapacityEdit();
+                                } else if (e.key === 'Escape') {
+                                  cancelCapacityEdit();
+                                }
+                              }}
+                            />
+                            <div className="flex gap-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  saveCapacityEdit();
+                                }}
+                                className="flex-1 px-2 py-1 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  cancelCapacityEdit();
+                                }}
+                                className="flex-1 px-2 py-1 text-xs font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 rounded"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
                         ) : (
-                          enabled ? totalSlots : <span className="line-through">{totalSlots}</span>
+                          <>
+                            <div className={[
+                              "text-2xl font-semibold leading-tight mt-1",
+                              isFull ? "text-green-700" :
+                              isNearCapacity ? "text-yellow-700" :
+                              enabled ? "text-emerald-700" : "text-rose-700"
+                            ].join(" ")}>
+                              {runResult ? (
+                                enabled ? (
+                                  <span>{usedSlots}/{totalSlots}</span>
+                                ) : (
+                                  <span className="line-through">{totalSlots}</span>
+                                )
+                              ) : (
+                                enabled ? totalSlots : <span className="line-through">{totalSlots}</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-slate-500 mt-1">
+                              {isFull ? 'Full' :
+                               capacity?.notes ? (
+                                capacity.notes === 'blackout' ? 'Blackout' :
+                                capacity.notes.includes('Default') ? 'Default' :
+                                capacity.notes
+                              ) : runResult && enabled ? `${Math.round((usedSlots/totalSlots)*100)}% used` : 'Available'}
+                            </div>
+                          </>
                         )}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {isFull ? 'Full' :
-                         capacity?.notes ? (
-                          capacity.notes === 'blackout' ? 'Blackout' :
-                          capacity.notes.includes('Default') ? 'Default' :
-                          capacity.notes
-                        ) : runResult && enabled ? `${Math.round((usedSlots/totalSlots)*100)}% used` : 'Available'}
                       </div>
                     </div>
                   );

@@ -32,7 +32,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   const [cooldownDays, setCooldownDays] = useState(30);
   const [enforceBudgetHard, setEnforceBudgetHard] = useState(false);
   const [maxPerPartnerPerDay, setMaxPerPartnerPerDay] = useState(1);
-  const [maxPerPartnerPerWeek, setMaxPerPartnerPerWeek] = useState(2);
+  const [maxPerPartnerPerWeek, setMaxPerPartnerPerWeek] = useState(1);
   const [preferNormalDays, setPreferNormalDays] = useState(false);
 
   // Vehicle context state
@@ -890,8 +890,8 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                     onChange={(e) => setMaxPerPartnerPerWeek(parseInt(e.target.value))}
                     className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="1">1</option>
-                    <option value="2">2 (Recommended)</option>
+                    <option value="1">1 (Recommended)</option>
+                    <option value="2">2</option>
                     <option value="3">3</option>
                     <option value="4">4</option>
                     <option value="5">5</option>

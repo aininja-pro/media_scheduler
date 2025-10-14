@@ -454,21 +454,30 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
                 planned_by_fleet[fleet] = planned_spend
 
         # Build budget summary for ALL fleets in the quarter
+        # Track totals separately for current, planned, and projected
+        budget_total_current = 0
+        budget_total_planned = 0
+
         for _, row in quarter_budgets.iterrows():
             fleet = row['fleet']
             current_used = float(row['amount_used']) if pd.notna(row['amount_used']) else 0
             budget_amount = float(row['budget_amount']) if pd.notna(row['budget_amount']) else 0
             planned_spend = planned_by_fleet.get(fleet, 0)
 
-            # Show current + planned as "used"
-            total_used = current_used + planned_spend
-
             budget_fleets[fleet] = {
-                'used': int(total_used),
+                'current': int(current_used),
+                'planned': int(planned_spend),
+                'projected': int(current_used + planned_spend),
                 'budget': int(budget_amount)
             }
-            budget_total['used'] += int(total_used)
+            budget_total_current += int(current_used)
+            budget_total_planned += int(planned_spend)
             budget_total['budget'] += int(budget_amount)
+
+        # Set total with breakdown
+        budget_total['current'] = budget_total_current
+        budget_total['planned'] = budget_total_planned
+        budget_total['projected'] = budget_total_current + budget_total_planned
 
         budget_summary = {
             'fleets': budget_fleets,

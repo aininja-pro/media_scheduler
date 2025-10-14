@@ -1034,6 +1034,7 @@ function Calendar({ sharedOffice }) {
                     {activitiesWithRows.map((activity, idx) => {
                         const barStyle = getBarStyle(activity);
                         const label = viewMode === 'vehicle' ? activity.partner_name : `${activity.make} ${activity.model}`;
+                        const vinSuffix = activity.vin ? activity.vin.slice(-6) : '';
                         const location = getVehicleLocation(activity);
                         const hasChaining = viewMode === 'vehicle' && detectChainingOpportunity(item.activities, item.activities.indexOf(activity));
                         const topOffset = 16 + (activity.rowIndex * 32); // Start at 16px from top, then 32px per row
@@ -1053,7 +1054,7 @@ function Calendar({ sharedOffice }) {
                             }}
                             className={`absolute h-7 ${color} ${hasChaining ? 'ring-2 ring-yellow-400 ring-offset-1' : ''} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 hover:z-10 transition-all cursor-pointer flex items-center gap-1 text-white text-xs font-semibold px-2 overflow-hidden`}
                             style={{ left: barStyle.left, width: barStyle.width, minWidth: '20px', top: `${topOffset}px` }}
-                            title={`${label}\n${formatActivityDate(activity.start_date)} - ${formatActivityDate(activity.end_date)}\n${location ? location.label : ''}${hasChaining ? '\n⛓️ Chaining opportunity!' : ''}`}
+                            title={`${label}\nVIN: ...${vinSuffix}\n${formatActivityDate(activity.start_date)} - ${formatActivityDate(activity.end_date)}\n${location ? location.label : ''}${hasChaining ? '\n⛓️ Chaining opportunity!' : ''}`}
                           >
                             {activity.status === 'planned' && <span className="text-xs">🤖</span>}
                             {location?.badge && <span className="text-sm">{location.badge}</span>}

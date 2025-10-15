@@ -23,6 +23,8 @@ function Calendar({ sharedOffice }) {
     }
   }, [sharedOffice]);
   const [selectedMonth, setSelectedMonth] = useState('');
+  const [viewStartDate, setViewStartDate] = useState(null); // Custom start date for sliding view
+  const [viewEndDate, setViewEndDate] = useState(null); // Custom end date for sliding view
   const [activities, setActivities] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -92,8 +94,51 @@ function Calendar({ sharedOffice }) {
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
-    setSelectedMonth(`${year}-${month}`);
+    const monthStr = `${year}-${month}`;
+    setSelectedMonth(monthStr);
+
+    // Initialize view dates to show full month
+    const startOfMonth = new Date(year, now.getMonth(), 1);
+    const endOfMonth = new Date(year, now.getMonth() + 1, 0);
+    setViewStartDate(startOfMonth);
+    setViewEndDate(endOfMonth);
   }, []);
+
+  // When month selector changes, reset view to show full month
+  const handleMonthChange = (monthStr) => {
+    setSelectedMonth(monthStr);
+    const [year, month] = monthStr.split('-');
+    const startOfMonth = new Date(parseInt(year), parseInt(month) - 1, 1);
+    const endOfMonth = new Date(parseInt(year), parseInt(month), 0);
+    setViewStartDate(startOfMonth);
+    setViewEndDate(endOfMonth);
+  };
+
+  // Slide view forward by 7 days
+  const slideForward = () => {
+    if (!viewStartDate || !viewEndDate) return;
+    const newStart = new Date(viewStartDate);
+    const newEnd = new Date(viewEndDate);
+    newStart.setDate(newStart.getDate() + 7);
+    newEnd.setDate(newEnd.getDate() + 7);
+    setViewStartDate(newStart);
+    setViewEndDate(newEnd);
+    // Clear month selector since we're now in custom range
+    setSelectedMonth('');
+  };
+
+  // Slide view backward by 7 days
+  const slideBackward = () => {
+    if (!viewStartDate || !viewEndDate) return;
+    const newStart = new Date(viewStartDate);
+    const newEnd = new Date(viewEndDate);
+    newStart.setDate(newStart.getDate() - 7);
+    newEnd.setDate(newEnd.getDate() - 7);
+    setViewStartDate(newStart);
+    setViewEndDate(newEnd);
+    // Clear month selector since we're now in custom range
+    setSelectedMonth('');
+  };
 
   // Load all vehicles for the office (full inventory)
   useEffect(() => {
@@ -142,12 +187,12 @@ function Calendar({ sharedOffice }) {
     loadPartners();
   }, [selectedOffice]);
 
-  // Load activities when office/month changes
+  // Load activities when office or date range changes
   useEffect(() => {
-    if (selectedOffice && selectedMonth) {
+    if (selectedOffice && viewStartDate && viewEndDate) {
       loadActivities();
     }
-  }, [selectedOffice, selectedMonth]);
+  }, [selectedOffice, viewStartDate, viewEndDate]);
 
   // Fetch distances for partners with activities (optimization - only fetch what we need)
   useEffect(() => {
@@ -187,16 +232,14 @@ function Calendar({ sharedOffice }) {
   }, [selectedOffice, activities]);
 
   const loadActivities = async () => {
-    if (!selectedOffice || !selectedMonth) return;
+    if (!selectedOffice || !viewStartDate || !viewEndDate) return;
 
     setIsLoading(true);
     setError('');
 
     try {
-      const [year, month] = selectedMonth.split('-');
-      const startDate = `${year}-${month}-01`;
-      const lastDay = new Date(year, month, 0).getDate();
-      const endDate = `${year}-${month}-${lastDay}`;
+      const startDate = viewStartDate.toISOString().split('T')[0];
+      const endDate = viewEndDate.toISOString().split('T')[0];
 
       const params = new URLSearchParams({
         office: selectedOffice,
@@ -231,18 +274,19 @@ function Calendar({ sharedOffice }) {
     }
   };
 
-  // Helper: Check if activity overlaps with the selected month
+  // Helper: Check if activity overlaps with the current view range
   const activityOverlapsMonth = (activity) => {
-    if (!selectedMonth) return false;
+    if (!viewStartDate || !viewEndDate) return false;
 
-    const [year, month] = selectedMonth.split('-');
-    const monthStart = new Date(year, month - 1, 1);
-    const monthEnd = new Date(year, month, 0, 23, 59, 59);
+    const rangeStart = new Date(viewStartDate);
+    rangeStart.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(viewEndDate);
+    rangeEnd.setHours(23, 59, 59, 999);
 
     const activityStart = parseLocalDate(activity.start_date);
     const activityEnd = parseLocalDate(activity.end_date);
 
-    return activityEnd >= monthStart && activityStart <= monthEnd;
+    return activityEnd >= rangeStart && activityStart <= rangeEnd;
   };
 
   // Group activities by VIN - START with ALL vehicles for office
@@ -254,10 +298,9 @@ function Calendar({ sharedOffice }) {
       const vehicleActivities = [];
 
       // Add lifecycle unavailability periods as synthetic activities
-      if (selectedMonth) {
-        const [year, month] = selectedMonth.split('-');
-        const monthStart = new Date(year, month - 1, 1);
-        const monthEnd = new Date(year, month, 0);
+      if (viewStartDate && viewEndDate) {
+        const rangeStart = new Date(viewStartDate);
+        const rangeEnd = new Date(viewEndDate);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -265,13 +308,13 @@ function Calendar({ sharedOffice }) {
         if (vehicle.in_service_date) {
           const inServiceDate = new Date(vehicle.in_service_date);
           // Only show if in_service_date is in the future
-          if (inServiceDate > today && inServiceDate > monthStart) {
+          if (inServiceDate > today && inServiceDate > rangeStart) {
             vehicleActivities.push({
               vin: vehicle.vin,
               status: 'unavailable',
               activity_type: 'Not in service yet',
-              start_date: monthStart.toISOString().split('T')[0],
-              end_date: new Date(Math.min(inServiceDate.getTime() - 86400000, monthEnd.getTime())).toISOString().split('T')[0],
+              start_date: rangeStart.toISOString().split('T')[0],
+              end_date: new Date(Math.min(inServiceDate.getTime() - 86400000, rangeEnd.getTime())).toISOString().split('T')[0],
               partner_name: 'Not in service'
             });
           }
@@ -301,7 +344,7 @@ function Calendar({ sharedOffice }) {
     });
 
     return grouped;
-  }, [allVehicles, activities, selectedMonth]);
+  }, [allVehicles, activities, viewStartDate, viewEndDate]);
 
   // Group activities by Partner - START with ALL partners for office
   const groupedByPartner = useMemo(() => {
@@ -792,43 +835,44 @@ function Calendar({ sharedOffice }) {
     return daysDiff >= 0 && daysDiff <= 3 && current.status !== 'completed';
   };
 
-  // Generate days in the selected month
-  const getDaysInMonth = () => {
-    if (!selectedMonth) return [];
-    const [year, month] = selectedMonth.split('-');
-    const numDays = new Date(year, month, 0).getDate();
+  // Generate days in the current view range
+  const getDaysInView = () => {
+    if (!viewStartDate || !viewEndDate) return [];
     const days = [];
-    for (let day = 1; day <= numDays; day++) {
-      days.push(day);
+    const current = new Date(viewStartDate);
+    const end = new Date(viewEndDate);
+
+    while (current <= end) {
+      days.push(new Date(current));
+      current.setDate(current.getDate() + 1);
     }
     return days;
   };
 
-  const daysInMonth = getDaysInMonth();
+  const daysInView = getDaysInView();
 
   // Calculate bar position and width for Gantt chart
   const getBarStyle = (activity) => {
-    if (!selectedMonth) return { left: 0, width: 0 };
+    if (!viewStartDate || !viewEndDate) return { left: 0, width: 0 };
 
-    const [year, month] = selectedMonth.split('-');
-    const monthStart = new Date(year, month - 1, 1);
-    const monthEnd = new Date(year, month, 0, 23, 59, 59); // End of last day of month
+    const rangeStart = new Date(viewStartDate);
+    const rangeEnd = new Date(viewEndDate);
 
     const activityStart = parseLocalDate(activity.start_date);
     const activityEnd = parseLocalDate(activity.end_date);
 
-    // Clamp to month boundaries
-    const startDate = activityStart < monthStart ? monthStart : activityStart;
-    const endDate = activityEnd > monthEnd ? monthEnd : activityEnd;
+    // Clamp to view range boundaries
+    const startDate = activityStart < rangeStart ? rangeStart : activityStart;
+    const endDate = activityEnd > rangeEnd ? rangeEnd : activityEnd;
 
-    // Calculate position as percentage
-    const totalDays = daysInMonth.length;
-    const startDay = startDate.getDate();
-    const endDay = endDate.getDate();
+    // Calculate position as percentage based on days from range start
+    const totalDays = daysInView.length;
+    const startDayOffset = Math.floor((startDate - rangeStart) / (1000 * 60 * 60 * 24));
+    const endDayOffset = Math.floor((endDate - rangeStart) / (1000 * 60 * 60 * 24));
 
     // Center bars on start/end dates (0.5 offset to bisect the day squares)
-    const left = ((startDay - 0.5) / totalDays) * 100;
-    const width = ((endDay - startDay) / totalDays) * 100;
+    const left = ((startDayOffset + 0.5) / totalDays) * 100;
+    const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
 
     return { left: `${left}%`, width: `${width}%` };
   };
@@ -890,13 +934,13 @@ function Calendar({ sharedOffice }) {
 
       {/* Controls */}
       <div className="bg-white border-b px-6 py-2">
-        <div className="flex flex-wrap gap-4 items-end">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Office</label>
+        <div className="flex gap-2 items-end">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Office</label>
             <select
               value={selectedOffice}
               onChange={(e) => setSelectedOffice(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
             >
               {offices.map(office => (
                 <option key={office} value={office}>{office}</option>
@@ -904,71 +948,87 @@ function Calendar({ sharedOffice }) {
             </select>
           </div>
 
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
-            />
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Month</label>
+            <div className="flex gap-1">
+              <button
+                onClick={slideBackward}
+                className="px-1.5 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 text-xs flex-shrink-0"
+                title="Go back 7 days"
+              >
+                ←
+              </button>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => handleMonthChange(e.target.value)}
+                className="w-28 border border-gray-300 rounded-md px-1 py-1.5 text-xs"
+              />
+              <button
+                onClick={slideForward}
+                className="px-1.5 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 text-xs flex-shrink-0"
+                title="Go forward 7 days"
+              >
+                →
+              </button>
+            </div>
           </div>
 
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Activity</label>
-            <select
-              value={activityFilter}
-              onChange={(e) => setActivityFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">Show All</option>
-              <option value="with-activity">With Activity</option>
-              <option value="no-activity">No Activity</option>
-            </select>
-          </div>
-
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Filter by VIN</label>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">VIN</label>
             <input
               type="text"
               value={vinFilter}
               onChange={(e) => setVinFilter(e.target.value)}
-              placeholder="Search VIN..."
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+              placeholder="Search..."
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
             />
           </div>
 
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Make</label>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Make</label>
             <select
               value={makeFilter}
               onChange={(e) => setMakeFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
             >
-              <option value="">All Makes</option>
+              <option value="">All</option>
               {uniqueMakes.map(make => (
                 <option key={make} value={make}>{make}</option>
               ))}
             </select>
           </div>
 
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Media Partner</label>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Partner</label>
             <input
               type="text"
               value={partnerFilter}
               onChange={(e) => setPartnerFilter(e.target.value)}
-              placeholder="Search media partner..."
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+              placeholder="Search..."
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
             />
           </div>
 
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Activity</label>
+            <select
+              value={activityFilter}
+              onChange={(e) => setActivityFilter(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+            >
+              <option value="all">All</option>
+              <option value="with-activity">With</option>
+              <option value="no-activity">None</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Sort</label>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
             >
               <option value="make">Make</option>
               <option value="model">Model</option>
@@ -976,12 +1036,12 @@ function Calendar({ sharedOffice }) {
             </select>
           </div>
 
-          <div className="flex-1 min-w-[150px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Order</label>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Order</label>
             <select
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
             >
               <option value="asc">A → Z</option>
               <option value="desc">Z → A</option>
@@ -1053,21 +1113,20 @@ function Calendar({ sharedOffice }) {
               </div>
               {/* Days column */}
               <div className="flex-1 flex">
-                {daysInMonth.map(day => {
-                  // Parse date correctly in local timezone
-                  const [year, month] = selectedMonth.split('-');
-                  const date = new Date(parseInt(year), parseInt(month) - 1, day);
+                {daysInView.map((date, idx) => {
                   const dayOfWeek = date.getDay();
                   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                  const dayNum = date.getDate();
+                  const monthName = date.toLocaleDateString('en-US', { month: 'short' });
 
                   return (
                     <div
-                      key={day}
+                      key={idx}
                       className={`flex-1 text-center text-xs py-3 border-r ${
                         isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-gray-600'
                       }`}
                     >
-                      {day}
+                      <div>{monthName} {dayNum}</div>
                     </div>
                   );
                 })}
@@ -1162,16 +1221,13 @@ function Calendar({ sharedOffice }) {
                   <div className="flex-1 relative">
                     {/* Day grid with weekend backgrounds */}
                     <div className="absolute inset-0 flex">
-                      {daysInMonth.map(day => {
-                        // Parse date correctly in local timezone
-                        const [year, month] = selectedMonth.split('-');
-                        const date = new Date(parseInt(year), parseInt(month) - 1, day);
+                      {daysInView.map((date, idx) => {
                         const dayOfWeek = date.getDay();
                         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
                         return (
                           <div
-                            key={day}
+                            key={idx}
                             className={`flex-1 border-r border-gray-300 ${
                               isWeekend ? 'bg-blue-50' : ''
                             }`}

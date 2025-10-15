@@ -310,65 +310,78 @@ def solve_with_all_constraints(
         if verbose:
             print(f"  No partner-day constraint (unlimited vehicles per partner per day)")
 
-    # === HARD CONSTRAINT 4: Max Vehicles per Partner per Week ===
-    # Group by person_id to enforce max vehicles per partner for the entire week
-    # IMPORTANT: Must account for existing active loans, not just new assignments
-    partner_week_groups = office_triples.groupby('person_id').groups
+    # === HARD CONSTRAINT 4: No Overlapping Loans per Partner ===
+    # Partners can have multiple vehicles chained together, but loans cannot overlap
+    # This replaces the rigid "max per week" constraint with smarter date-based logic
 
-    # Count existing active vehicles per partner for this week
-    active_vehicles_per_partner = {}
-    if db_client and max_per_partner_per_week > 0:
+    # Build list of (person_id, start_date, end_date) for existing active loans
+    existing_loan_dates = {}  # {person_id: [(start, end), ...]}
+    if db_client:
         try:
-            # Query current_activity for loans overlapping this week
+            # Query current_activity for all active loans
             active_response = db_client.table('current_activity')\
                 .select('person_id, vehicle_vin, start_date, end_date')\
-                .lte('start_date', str(week_end_date.date()))\
-                .gte('end_date', str(week_start_date.date()))\
                 .execute()
 
             if active_response.data:
-                # Count unique vehicles per partner during this week
                 for loan in active_response.data:
                     person_id = loan.get('person_id')
-                    if person_id:
-                        active_vehicles_per_partner[person_id] = active_vehicles_per_partner.get(person_id, 0) + 1
+                    start_date = pd.to_datetime(loan.get('start_date')).date()
+                    end_date = pd.to_datetime(loan.get('end_date')).date()
 
-                if verbose and active_vehicles_per_partner:
-                    print(f"  Found {len(active_vehicles_per_partner)} partners with existing active loans this week")
+                    if person_id:
+                        if person_id not in existing_loan_dates:
+                            existing_loan_dates[person_id] = []
+                        existing_loan_dates[person_id].append((start_date, end_date))
+
+                if verbose and existing_loan_dates:
+                    total_existing = sum(len(dates) for dates in existing_loan_dates.values())
+                    print(f"  Found {total_existing} existing active loans across {len(existing_loan_dates)} partners")
         except Exception as e:
             if verbose:
-                print(f"  Warning: Could not query current_activity for week constraint: {e}")
+                print(f"  Warning: Could not query current_activity for overlap check: {e}")
 
-    if max_per_partner_per_week > 0:  # 0 = unlimited
-        constrained_partners = 0
-        blocked_partners = 0
+    # For each partner, ensure new assignments don't overlap with each other OR existing loans
+    partner_groups = office_triples.groupby('person_id').groups
+    overlap_constraints_added = 0
 
-        for person_id, indices in partner_week_groups.items():
-            # Check how many vehicles this partner already has active this week
-            existing_count = active_vehicles_per_partner.get(person_id, 0)
-            available_slots = max_per_partner_per_week - existing_count
+    for person_id, indices in partner_groups.items():
+        if len(indices) <= 1:
+            continue  # No overlap possible with single assignment
 
-            if available_slots <= 0:
-                # Partner already at max - block all new assignments
-                model.Add(sum(y[i] for i in indices) == 0)
-                blocked_partners += 1
-            elif len(indices) > available_slots:
-                # Partner has some slots left
-                model.Add(sum(y[i] for i in indices) <= available_slots)
-                constrained_partners += 1
-            elif len(indices) > max_per_partner_per_week:
-                # No existing loans, apply normal constraint
-                model.Add(sum(y[i] for i in indices) <= max_per_partner_per_week)
-                constrained_partners += 1
+        # Get existing loan date ranges for this partner
+        existing_ranges = existing_loan_dates.get(person_id, [])
 
-        if verbose:
-            print(f"  Added partner-week constraints: max {max_per_partner_per_week} vehicle(s) per partner per week")
-            print(f"  - {len(partner_week_groups)} unique partners in optimizer")
-            print(f"  - {blocked_partners} partners blocked (already at max from existing loans)")
-            print(f"  - {constrained_partners} partners constrained")
-    else:
-        if verbose:
-            print(f"  No partner-week constraint (unlimited vehicles per partner per week)")
+        # Check all pairs of candidate assignments for this partner
+        for i in range(len(indices)):
+            idx_i = indices.iloc[i] if hasattr(indices, 'iloc') else list(indices)[i]
+            row_i = office_triples.iloc[idx_i]
+            start_i = pd.to_datetime(row_i['start_day']).date()
+            end_i = start_i + timedelta(days=loan_length_days - 1)
+
+            # Check against all other candidates for this partner
+            for j in range(i + 1, len(indices)):
+                idx_j = indices.iloc[j] if hasattr(indices, 'iloc') else list(indices)[j]
+                row_j = office_triples.iloc[idx_j]
+                start_j = pd.to_datetime(row_j['start_day']).date()
+                end_j = start_j + timedelta(days=loan_length_days - 1)
+
+                # Check if date ranges overlap
+                if start_i <= end_j and start_j <= end_i:
+                    # These two assignments overlap - can't both be selected
+                    model.Add(y[idx_i] + y[idx_j] <= 1)
+                    overlap_constraints_added += 1
+
+            # Check against existing active loans
+            for existing_start, existing_end in existing_ranges:
+                if start_i <= existing_end and existing_start <= end_i:
+                    # This candidate overlaps with existing loan - block it
+                    model.Add(y[idx_i] == 0)
+                    overlap_constraints_added += 1
+
+    if verbose:
+        print(f"  Added no-overlap constraints: {overlap_constraints_added} date conflicts prevented")
+        print(f"  - Partners can have multiple vehicles chained (no overlap required)")
 
     # === SOFT CONSTRAINT 1: Tier Caps (7.4s) ===
     cap_penalty_terms, cap_info = add_soft_tier_cap_penalties(

@@ -111,7 +111,7 @@ function Calendar({ sharedOffice }) {
     loadVehicles();
   }, [selectedOffice]);
 
-  // Load all media partners for the office (full inventory)
+  // Load all media partners for the office (full inventory with distances)
   useEffect(() => {
     const loadPartners = async () => {
       if (!selectedOffice) return;
@@ -120,6 +120,19 @@ function Calendar({ sharedOffice }) {
         if (response.ok) {
           const data = await response.json();
           setAllPartners(data.partners || []);
+
+          // Build distance cache from partner data
+          const distances = {};
+          (data.partners || []).forEach(partner => {
+            if (partner.distance_miles !== null && partner.distance_miles !== undefined) {
+              distances[partner.person_id] = {
+                success: true,
+                distance_miles: partner.distance_miles,
+                location_type: partner.location_type
+              };
+            }
+          });
+          setPartnerDistances(distances);
         }
       } catch (err) {
         console.error('Failed to load partners:', err);
@@ -135,16 +148,19 @@ function Calendar({ sharedOffice }) {
     }
   }, [selectedOffice, selectedMonth]);
 
-  // Fetch distances for all partners (needed for both vehicle and partner views)
+  // Fetch distances for partners with activities (optimization - only fetch what we need)
   useEffect(() => {
     if (selectedOffice && activities.length > 0) {
       const fetchDistances = async () => {
-        const distances = {};
+        const distances = { ...partnerDistances }; // Keep existing distances
 
         // Get unique partners from activities
         const uniquePartners = [...new Set(activities.map(a => a.person_id))];
 
-        for (const personId of uniquePartners) {
+        // Only fetch distances for partners we don't already have
+        const partnersToFetch = uniquePartners.filter(id => !distances[id]);
+
+        for (const personId of partnersToFetch) {
           try {
             const params = new URLSearchParams({
               person_id: personId,

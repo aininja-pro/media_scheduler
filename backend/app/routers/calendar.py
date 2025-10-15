@@ -39,20 +39,71 @@ async def get_all_vehicles(office: str = Query(..., description="Office name")) 
 
 @router.get("/media-partners")
 async def get_all_media_partners(office: str = Query(..., description="Office name")) -> Dict[str, Any]:
-    """Get all media partners for an office (full inventory)"""
+    """Get all media partners for an office (full inventory) with distances"""
     db = DatabaseService()
     await db.initialize()
 
     try:
-        response = db.client.table('media_partners')\
-            .select('person_id, name, office')\
+        # Get all partners for this office
+        partners_response = db.client.table('media_partners')\
+            .select('person_id, name, office, address, latitude, longitude')\
             .eq('office', office)\
             .execute()
 
+        partners = partners_response.data if partners_response.data else []
+
+        # Get office coordinates
+        office_response = db.client.table('offices')\
+            .select('latitude, longitude')\
+            .eq('name', office)\
+            .execute()
+
+        if not office_response.data or not office_response.data[0].get('latitude'):
+            # Return without distances if office coordinates not found
+            for partner in partners:
+                if 'person_id' in partner:
+                    partner['person_id'] = int(partner['person_id'])
+            return {
+                'office': office,
+                'partners': partners,
+                'count': len(partners)
+            }
+
+        office_lat = office_response.data[0]['latitude']
+        office_lon = office_response.data[0]['longitude']
+
+        # Calculate distances for all partners
+        for partner in partners:
+            partner['person_id'] = int(partner['person_id'])
+
+            partner_lat = partner.get('latitude')
+            partner_lon = partner.get('longitude')
+
+            if partner_lat and partner_lon:
+                # Calculate distance using Haversine formula
+                from math import radians, sin, cos, sqrt, atan2
+                R = 3959  # Earth's radius in miles
+
+                lat1, lon1 = radians(office_lat), radians(office_lon)
+                lat2, lon2 = radians(partner_lat), radians(partner_lon)
+
+                dlat = lat2 - lat1
+                dlon = lon2 - lon1
+
+                a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                c = 2 * atan2(sqrt(a), sqrt(1-a))
+                distance_miles = round(R * c, 1)
+
+                partner['distance_miles'] = distance_miles
+                partner['location_type'] = 'local' if distance_miles <= 50 else 'remote'
+            else:
+                partner['distance_miles'] = None
+                partner['location_type'] = None
+
         return {
             'office': office,
-            'partners': response.data if response.data else [],
-            'count': len(response.data) if response.data else 0
+            'partners': partners,
+            'count': len(partners)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

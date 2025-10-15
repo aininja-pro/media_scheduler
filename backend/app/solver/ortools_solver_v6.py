@@ -312,20 +312,60 @@ def solve_with_all_constraints(
 
     # === HARD CONSTRAINT 4: Max Vehicles per Partner per Week ===
     # Group by person_id to enforce max vehicles per partner for the entire week
+    # IMPORTANT: Must account for existing active loans, not just new assignments
     partner_week_groups = office_triples.groupby('person_id').groups
+
+    # Count existing active vehicles per partner for this week
+    active_vehicles_per_partner = {}
+    if db_client and max_per_partner_per_week > 0:
+        try:
+            # Query current_activity for loans overlapping this week
+            active_response = db_client.table('current_activity')\
+                .select('person_id, vehicle_vin, start_date, end_date')\
+                .lte('start_date', str(week_end_date.date()))\
+                .gte('end_date', str(week_start_date.date()))\
+                .execute()
+
+            if active_response.data:
+                # Count unique vehicles per partner during this week
+                for loan in active_response.data:
+                    person_id = loan.get('person_id')
+                    if person_id:
+                        active_vehicles_per_partner[person_id] = active_vehicles_per_partner.get(person_id, 0) + 1
+
+                if verbose and active_vehicles_per_partner:
+                    print(f"  Found {len(active_vehicles_per_partner)} partners with existing active loans this week")
+        except Exception as e:
+            if verbose:
+                print(f"  Warning: Could not query current_activity for week constraint: {e}")
 
     if max_per_partner_per_week > 0:  # 0 = unlimited
         constrained_partners = 0
+        blocked_partners = 0
+
         for person_id, indices in partner_week_groups.items():
-            if len(indices) > max_per_partner_per_week:
-                # Partner has more candidate assignments than the weekly limit
+            # Check how many vehicles this partner already has active this week
+            existing_count = active_vehicles_per_partner.get(person_id, 0)
+            available_slots = max_per_partner_per_week - existing_count
+
+            if available_slots <= 0:
+                # Partner already at max - block all new assignments
+                model.Add(sum(y[i] for i in indices) == 0)
+                blocked_partners += 1
+            elif len(indices) > available_slots:
+                # Partner has some slots left
+                model.Add(sum(y[i] for i in indices) <= available_slots)
+                constrained_partners += 1
+            elif len(indices) > max_per_partner_per_week:
+                # No existing loans, apply normal constraint
                 model.Add(sum(y[i] for i in indices) <= max_per_partner_per_week)
                 constrained_partners += 1
 
         if verbose:
             print(f"  Added partner-week constraints: max {max_per_partner_per_week} vehicle(s) per partner per week")
             print(f"  - {len(partner_week_groups)} unique partners in optimizer")
-            print(f"  - {constrained_partners} partners with more than {max_per_partner_per_week} candidate assignments")
+            print(f"  - {blocked_partners} partners blocked (already at max from existing loans)")
+            print(f"  - {constrained_partners} partners constrained")
     else:
         if verbose:
             print(f"  No partner-week constraint (unlimited vehicles per partner per week)")

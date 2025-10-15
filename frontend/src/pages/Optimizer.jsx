@@ -884,21 +884,11 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                   </div>
                 </div>
                 <div className="pt-2 border-t border-gray-200">
-                  <label className="text-sm text-gray-600 mb-2 block">Max Vehicles per Media Partner per Week</label>
-                  <select
-                    value={maxPerPartnerPerWeek}
-                    onChange={(e) => setMaxPerPartnerPerWeek(parseInt(e.target.value))}
-                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="1">1 (Recommended)</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                    <option value="5">5</option>
-                    <option value="0">Unlimited</option>
-                  </select>
-                  <div className="text-xs text-gray-500 mt-1">
-                    Limits total vehicles assigned to one media partner during the entire week
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="text-xs text-blue-800">
+                      ℹ️ <strong>Chaining Enabled:</strong> Partners can receive multiple vehicles in a week as long as loans don't overlap.
+                      The Optimizer will automatically prevent conflicts and encourage efficient chaining.
+                    </p>
                   </div>
                 </div>
                 <div className="pt-2 border-t border-gray-200">

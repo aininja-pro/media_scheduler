@@ -41,6 +41,24 @@ function Calendar({ sharedOffice }) {
   const [partnerFilter, setPartnerFilter] = useState('');
   const [activityFilter, setActivityFilter] = useState('all'); // 'all', 'with-activity', 'no-activity'
 
+  // Multi-select filters
+  const [selectedPartners, setSelectedPartners] = useState([]); // Array of person_ids
+  const [selectedVehicles, setSelectedVehicles] = useState([]); // Array of VINs
+  const [showPartnerDropdown, setShowPartnerDropdown] = useState(false);
+  const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.multi-select-dropdown')) {
+        setShowPartnerDropdown(false);
+        setShowVehicleDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Sorting
   const [sortBy, setSortBy] = useState('make'); // 'make', 'model', 'vin'
   const [sortOrder, setSortOrder] = useState('asc'); // 'asc', 'desc'
@@ -373,6 +391,9 @@ function Calendar({ sharedOffice }) {
 
   // Apply filters based on view mode
   const filteredVins = Object.values(groupedByVin).filter(vehicle => {
+    // Multi-select vehicle filter
+    if (selectedVehicles.length > 0 && !selectedVehicles.includes(vehicle.vin)) return false;
+
     // Activity filter
     const hasActivityThisMonth = vehicle.activities.some(a => activityOverlapsMonth(a));
     if (activityFilter === 'with-activity' && !hasActivityThisMonth) return false;
@@ -391,6 +412,9 @@ function Calendar({ sharedOffice }) {
   });
 
   const filteredPartners = Object.values(groupedByPartner).filter(partner => {
+    // Multi-select partner filter
+    if (selectedPartners.length > 0 && !selectedPartners.includes(partner.person_id)) return false;
+
     // Activity filter
     const hasActivityThisMonth = partner.activities.some(a => activityOverlapsMonth(a));
     if (activityFilter === 'with-activity' && !hasActivityThisMonth) return false;
@@ -974,15 +998,50 @@ function Calendar({ sharedOffice }) {
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">VIN</label>
-            <input
-              type="text"
-              value={vinFilter}
-              onChange={(e) => setVinFilter(e.target.value)}
-              placeholder="Search..."
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
-            />
+          <div className="relative multi-select-dropdown">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Vehicles</label>
+            <button
+              onClick={() => setShowVehicleDropdown(!showVehicleDropdown)}
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs text-left bg-white hover:bg-gray-50 flex justify-between items-center"
+            >
+              <span>{selectedVehicles.length > 0 ? `${selectedVehicles.length} selected` : 'All'}</span>
+              <span>▼</span>
+            </button>
+            {showVehicleDropdown && (
+              <div className="absolute z-50 mt-1 min-w-max bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                <div className="p-2 border-b sticky top-0 bg-white">
+                  <button
+                    onClick={() => setSelectedVehicles([])}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                {allVehicles.map(vehicle => (
+                  <label
+                    key={vehicle.vin}
+                    className="flex items-center px-2 py-1.5 hover:bg-gray-50 cursor-pointer text-xs whitespace-nowrap"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedVehicles.includes(vehicle.vin)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedVehicles([...selectedVehicles, vehicle.vin]);
+                        } else {
+                          setSelectedVehicles(selectedVehicles.filter(vin => vin !== vehicle.vin));
+                        }
+                      }}
+                      className="mr-2"
+                    />
+                    <span>
+                      {vehicle.make} {vehicle.model}
+                      <span className="text-gray-500 ml-1">(...{vehicle.vin.slice(-5)})</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
@@ -999,15 +1058,47 @@ function Calendar({ sharedOffice }) {
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Partner</label>
-            <input
-              type="text"
-              value={partnerFilter}
-              onChange={(e) => setPartnerFilter(e.target.value)}
-              placeholder="Search..."
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
-            />
+          <div className="relative multi-select-dropdown">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Partners</label>
+            <button
+              onClick={() => setShowPartnerDropdown(!showPartnerDropdown)}
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs text-left bg-white hover:bg-gray-50 flex justify-between items-center"
+            >
+              <span>{selectedPartners.length > 0 ? `${selectedPartners.length} selected` : 'All'}</span>
+              <span>▼</span>
+            </button>
+            {showPartnerDropdown && (
+              <div className="absolute z-50 mt-1 w-80 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                <div className="p-2 border-b sticky top-0 bg-white">
+                  <button
+                    onClick={() => setSelectedPartners([])}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                {allPartners.map(partner => (
+                  <label
+                    key={partner.person_id}
+                    className="flex items-center px-2 py-1.5 hover:bg-gray-50 cursor-pointer text-xs"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedPartners.includes(partner.person_id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedPartners([...selectedPartners, partner.person_id]);
+                        } else {
+                          setSelectedPartners(selectedPartners.filter(id => id !== partner.person_id));
+                        }
+                      }}
+                      className="mr-2"
+                    />
+                    <span className="flex-1 truncate">{partner.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>

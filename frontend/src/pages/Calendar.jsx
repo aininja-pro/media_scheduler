@@ -162,6 +162,19 @@ function Calendar({ sharedOffice }) {
     setSelectedMonth('');
   };
 
+  // Clear all filters
+  const clearAllFilters = () => {
+    setVinFilter('');
+    setMakeFilter('');
+    setPartnerFilter('');
+    setActivityFilter('all');
+    setSelectedPartners([]);
+    setSelectedVehicles([]);
+    setSelectedTiers([]);
+    setSortBy('make');
+    setSortOrder('asc');
+  };
+
   // Load all vehicles for the office (full inventory)
   useEffect(() => {
     const loadVehicles = async () => {
@@ -455,9 +468,19 @@ function Calendar({ sharedOffice }) {
 
     // Other filters
     if (partnerFilter && !partner.partner_name.toLowerCase().includes(partnerFilter.toLowerCase())) return false;
+
+    // Make filter - behavior depends on Activity filter
     if (makeFilter) {
-      const hasMake = partner.activities.some(a => a.make === makeFilter);
-      if (!hasMake) return false;
+      if (activityFilter === 'all') {
+        // Show ALL partners approved for this make (check tier data)
+        const partnerTierData = partnerTiers[partner.person_id];
+        const isApprovedForMake = partnerTierData && partnerTierData[makeFilter];
+        if (!isApprovedForMake) return false;
+      } else {
+        // Show only partners with activities of this make
+        const hasMake = partner.activities.some(a => a.make === makeFilter);
+        if (!hasMake) return false;
+      }
     }
     if (vinFilter) {
       const hasVin = partner.activities.some(a =>
@@ -1249,6 +1272,15 @@ function Calendar({ sharedOffice }) {
               <option value="asc">A → Z</option>
               <option value="desc">Z → A</option>
             </select>
+          </div>
+
+          <div className="flex items-end">
+            <button
+              onClick={clearAllFilters}
+              className="px-3 py-1.5 bg-red-50 border border-red-300 text-red-700 rounded-md hover:bg-red-100 text-xs font-medium"
+            >
+              Clear All
+            </button>
           </div>
         </div>
 

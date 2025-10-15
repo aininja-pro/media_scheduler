@@ -89,7 +89,7 @@ def solve_with_all_constraints(
     # Partner-day constraint
     max_per_partner_per_day: int = 1,
     # Partner-week constraint
-    max_per_partner_per_week: int = 2,
+    max_per_partner_per_week: int = 1,
     # Objective shaping parameters
     w_rank: float = DEFAULT_W_RANK,
     w_geo: float = DEFAULT_W_GEO,

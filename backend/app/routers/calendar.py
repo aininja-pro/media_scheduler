@@ -14,6 +14,52 @@ from ..services.database import DatabaseService
 router = APIRouter(prefix="/api/calendar", tags=["Calendar"])
 
 
+@router.get("/vehicles")
+async def get_all_vehicles(office: str = Query(..., description="Office name")) -> Dict[str, Any]:
+    """Get all vehicles for an office (full inventory)"""
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        response = db.client.table('vehicles')\
+            .select('vin, make, model, office')\
+            .eq('office', office)\
+            .execute()
+
+        return {
+            'office': office,
+            'vehicles': response.data if response.data else [],
+            'count': len(response.data) if response.data else 0
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
+
+
+@router.get("/media-partners")
+async def get_all_media_partners(office: str = Query(..., description="Office name")) -> Dict[str, Any]:
+    """Get all media partners for an office (full inventory)"""
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        response = db.client.table('media_partners')\
+            .select('person_id, name, office')\
+            .eq('office', office)\
+            .execute()
+
+        return {
+            'office': office,
+            'partners': response.data if response.data else [],
+            'count': len(response.data) if response.data else 0
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
+
+
 class SaveScheduleRequest(BaseModel):
     office: str
     week_start: str

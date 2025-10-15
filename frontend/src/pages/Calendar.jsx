@@ -63,6 +63,10 @@ function Calendar({ sharedOffice }) {
   // Load offices
   const [offices, setOffices] = useState([]);
 
+  // All vehicles and partners for the office (full inventory)
+  const [allVehicles, setAllVehicles] = useState([]);
+  const [allPartners, setAllPartners] = useState([]);
+
   useEffect(() => {
     const loadOffices = async () => {
       try {
@@ -89,6 +93,40 @@ function Calendar({ sharedOffice }) {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     setSelectedMonth(`${year}-${month}`);
   }, []);
+
+  // Load all vehicles for the office (full inventory)
+  useEffect(() => {
+    const loadVehicles = async () => {
+      if (!selectedOffice) return;
+      try {
+        const response = await fetch(`http://localhost:8081/api/calendar/vehicles?office=${selectedOffice}`);
+        if (response.ok) {
+          const data = await response.json();
+          setAllVehicles(data.vehicles || []);
+        }
+      } catch (err) {
+        console.error('Failed to load vehicles:', err);
+      }
+    };
+    loadVehicles();
+  }, [selectedOffice]);
+
+  // Load all media partners for the office (full inventory)
+  useEffect(() => {
+    const loadPartners = async () => {
+      if (!selectedOffice) return;
+      try {
+        const response = await fetch(`http://localhost:8081/api/calendar/media-partners?office=${selectedOffice}`);
+        if (response.ok) {
+          const data = await response.json();
+          setAllPartners(data.partners || []);
+        }
+      } catch (err) {
+        console.error('Failed to load partners:', err);
+      }
+    };
+    loadPartners();
+  }, [selectedOffice]);
 
   // Load activities when office/month changes
   useEffect(() => {
@@ -162,37 +200,56 @@ function Calendar({ sharedOffice }) {
     }
   };
 
-  // Group activities by VIN
-  const groupedByVin = activities.reduce((acc, activity) => {
-    const vin = activity.vin;
-    if (!acc[vin]) {
-      acc[vin] = {
-        vin: vin,
-        make: activity.make,
-        model: activity.model,
-        office: activity.office,
-        activities: []
-      };
-    }
-    acc[vin].activities.push(activity);
-    return acc;
-  }, {});
+  // Group activities by VIN - START with ALL vehicles for office
+  const groupedByVin = useMemo(() => {
+    const grouped = {};
 
-  // Group activities by Partner
-  const groupedByPartner = activities.reduce((acc, activity) => {
-    const partnerId = activity.person_id;
-    const partnerName = activity.partner_name || `Partner ${partnerId}`;
-    if (!acc[partnerId]) {
-      acc[partnerId] = {
-        person_id: partnerId,
-        partner_name: partnerName,
-        office: activity.office,
+    // First, add ALL vehicles for this office (full inventory)
+    allVehicles.forEach(vehicle => {
+      grouped[vehicle.vin] = {
+        vin: vehicle.vin,
+        make: vehicle.make,
+        model: vehicle.model,
+        office: vehicle.office,
         activities: []
       };
-    }
-    acc[partnerId].activities.push(activity);
-    return acc;
-  }, {});
+    });
+
+    // Then, add activities to vehicles that have them
+    activities.forEach(activity => {
+      const vin = activity.vin;
+      if (grouped[vin]) {
+        grouped[vin].activities.push(activity);
+      }
+    });
+
+    return grouped;
+  }, [allVehicles, activities]);
+
+  // Group activities by Partner - START with ALL partners for office
+  const groupedByPartner = useMemo(() => {
+    const grouped = {};
+
+    // First, add ALL partners for this office (full inventory)
+    allPartners.forEach(partner => {
+      grouped[partner.person_id] = {
+        person_id: partner.person_id,
+        partner_name: partner.name,
+        office: partner.office,
+        activities: []
+      };
+    });
+
+    // Then, add activities to partners that have them
+    activities.forEach(activity => {
+      const partnerId = activity.person_id;
+      if (grouped[partnerId]) {
+        grouped[partnerId].activities.push(activity);
+      }
+    });
+
+    return grouped;
+  }, [allPartners, activities]);
 
   // Apply filters based on view mode
   const filteredVins = Object.values(groupedByVin).filter(vehicle => {

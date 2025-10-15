@@ -37,6 +37,7 @@ function Calendar({ sharedOffice }) {
   const [vinFilter, setVinFilter] = useState('');
   const [makeFilter, setMakeFilter] = useState('');
   const [partnerFilter, setPartnerFilter] = useState('');
+  const [activityFilter, setActivityFilter] = useState('all'); // 'all', 'with-activity', 'no-activity'
 
   // Sorting
   const [sortBy, setSortBy] = useState('make'); // 'make', 'model', 'vin'
@@ -216,6 +217,34 @@ function Calendar({ sharedOffice }) {
     }
   };
 
+  // Helper: Parse date string as local date (YYYY-MM-DD)
+  const parseLocalDate = (dateStr) => {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length !== 3) return null;
+      const [year, month, day] = parts.map(Number);
+      if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+      return new Date(year, month - 1, day);
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // Helper: Check if activity overlaps with the selected month
+  const activityOverlapsMonth = (activity) => {
+    if (!selectedMonth) return false;
+
+    const [year, month] = selectedMonth.split('-');
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 0, 23, 59, 59);
+
+    const activityStart = parseLocalDate(activity.start_date);
+    const activityEnd = parseLocalDate(activity.end_date);
+
+    return activityEnd >= monthStart && activityStart <= monthEnd;
+  };
+
   // Group activities by VIN - START with ALL vehicles for office
   const groupedByVin = useMemo(() => {
     const grouped = {};
@@ -269,6 +298,12 @@ function Calendar({ sharedOffice }) {
 
   // Apply filters based on view mode
   const filteredVins = Object.values(groupedByVin).filter(vehicle => {
+    // Activity filter
+    const hasActivityThisMonth = vehicle.activities.some(a => activityOverlapsMonth(a));
+    if (activityFilter === 'with-activity' && !hasActivityThisMonth) return false;
+    if (activityFilter === 'no-activity' && hasActivityThisMonth) return false;
+
+    // Other filters
     if (vinFilter && !vehicle.vin.toLowerCase().includes(vinFilter.toLowerCase())) return false;
     if (makeFilter && vehicle.make !== makeFilter) return false;
     if (partnerFilter) {
@@ -281,6 +316,12 @@ function Calendar({ sharedOffice }) {
   });
 
   const filteredPartners = Object.values(groupedByPartner).filter(partner => {
+    // Activity filter
+    const hasActivityThisMonth = partner.activities.some(a => activityOverlapsMonth(a));
+    if (activityFilter === 'with-activity' && !hasActivityThisMonth) return false;
+    if (activityFilter === 'no-activity' && hasActivityThisMonth) return false;
+
+    // Other filters
     if (partnerFilter && !partner.partner_name.toLowerCase().includes(partnerFilter.toLowerCase())) return false;
     if (makeFilter) {
       const hasMake = partner.activities.some(a => a.make === makeFilter);
@@ -582,20 +623,6 @@ function Calendar({ sharedOffice }) {
     }
   };
 
-  // Parse date string as local date (YYYY-MM-DD)
-  const parseLocalDate = (dateStr) => {
-    if (!dateStr || typeof dateStr !== 'string') return null;
-    try {
-      const parts = dateStr.split('-');
-      if (parts.length !== 3) return null;
-      const [year, month, day] = parts.map(Number);
-      if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
-      return new Date(year, month - 1, day);
-    } catch (e) {
-      return null;
-    }
-  };
-
   const formatActivityDate = (dateStr) => {
     if (!dateStr) return 'N/A';
     const date = parseLocalDate(dateStr);
@@ -737,21 +764,6 @@ function Calendar({ sharedOffice }) {
 
   const daysInMonth = getDaysInMonth();
 
-  // Check if activity overlaps with the selected month
-  const activityOverlapsMonth = (activity) => {
-    if (!selectedMonth) return false;
-
-    const [year, month] = selectedMonth.split('-');
-    const monthStart = new Date(year, month - 1, 1);
-    const monthEnd = new Date(year, month, 0, 23, 59, 59); // End of last day of month
-
-    const activityStart = parseLocalDate(activity.start_date);
-    const activityEnd = parseLocalDate(activity.end_date);
-
-    // Activity must end after month starts AND start before month ends
-    return activityEnd >= monthStart && activityStart <= monthEnd;
-  };
-
   // Calculate bar position and width for Gantt chart
   const getBarStyle = (activity) => {
     if (!selectedMonth) return { left: 0, width: 0 };
@@ -858,6 +870,19 @@ function Calendar({ sharedOffice }) {
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Activity</label>
+            <select
+              value={activityFilter}
+              onChange={(e) => setActivityFilter(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">Show All</option>
+              <option value="with-activity">With Activity</option>
+              <option value="no-activity">No Activity</option>
+            </select>
           </div>
 
           <div className="flex-1 min-w-[200px]">

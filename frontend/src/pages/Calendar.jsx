@@ -630,6 +630,10 @@ function Calendar({ sharedOffice }) {
       // Use == to handle string/number type mismatch
       const partnerActivities = activities.filter(a => a.person_id == partnerId);
 
+      // Get partner info from allPartners list
+      const partnerInfo = allPartners.find(p => p.person_id === partnerId);
+      const partnerOffice = partnerInfo?.office || selectedOffice;
+
       if (partnerActivities.length > 0) {
         const sortedActivities = [...partnerActivities].sort((a, b) =>
           new Date(a.start_date) - new Date(b.start_date)
@@ -703,7 +707,39 @@ function Calendar({ sharedOffice }) {
 
         setPartnerContext(context);
       } else {
-        setPartnerContext(null);
+        // Partner has no activities - still show context with basic info
+        let distanceInfo = partnerDistances[partnerId] || null;
+        let approvedMakes = [];
+
+        // Fetch approved makes
+        try {
+          const intelligenceParams = new URLSearchParams({
+            person_id: partnerId,
+            office: partnerOffice
+          });
+          const intelligenceResponse = await fetch(`http://localhost:8081/api/ui/phase7/partner-intelligence?${intelligenceParams}`);
+          if (intelligenceResponse.ok) {
+            const intelligenceData = await intelligenceResponse.json();
+            approvedMakes = intelligenceData.approved_makes || [];
+          }
+        } catch (err) {
+          console.error('Failed to fetch partner intelligence:', err);
+        }
+
+        const context = {
+          person_id: partnerId,
+          partner_name: partnerName,
+          office: partnerOffice,
+          region: 'N/A',
+          partner_address: partnerInfo?.address || 'N/A',
+          distance_info: distanceInfo,
+          approved_makes: approvedMakes,
+          current_loans: [],
+          recommended_loans: [],
+          timeline: []
+        };
+
+        setPartnerContext(context);
       }
     } catch (error) {
       console.error('Error in handlePartnerClick:', error);

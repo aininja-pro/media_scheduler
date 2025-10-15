@@ -37,6 +37,46 @@ async def get_all_vehicles(office: str = Query(..., description="Office name")) 
         await db.close()
 
 
+@router.get("/partner-tiers")
+async def get_partner_tiers(office: str = Query(..., description="Office name")) -> Dict[str, Any]:
+    """Get tier rankings for all partners in an office"""
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        # Get all partners for this office
+        partners_response = db.client.table('media_partners')\
+            .select('person_id')\
+            .eq('office', office)\
+            .execute()
+
+        partner_ids = [int(p['person_id']) for p in partners_response.data] if partners_response.data else []
+
+        # Get approved makes for these partners
+        approved_response = db.client.table('approved_makes')\
+            .select('person_id, make, rank')\
+            .in_('person_id', partner_ids)\
+            .execute()
+
+        # Build tier map
+        tier_map = {}
+        if approved_response.data:
+            for row in approved_response.data:
+                pid = int(row['person_id'])
+                if pid not in tier_map:
+                    tier_map[pid] = {}
+                tier_map[pid][row['make']] = row['rank']
+
+        return {
+            'office': office,
+            'tiers': tier_map
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
+
+
 @router.get("/media-partners")
 async def get_all_media_partners(office: str = Query(..., description="Office name")) -> Dict[str, Any]:
     """Get all media partners for an office (full inventory) with distances"""

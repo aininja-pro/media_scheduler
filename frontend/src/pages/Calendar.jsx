@@ -44,8 +44,10 @@ function Calendar({ sharedOffice }) {
   // Multi-select filters
   const [selectedPartners, setSelectedPartners] = useState([]); // Array of person_ids
   const [selectedVehicles, setSelectedVehicles] = useState([]); // Array of VINs
+  const [selectedTiers, setSelectedTiers] = useState([]); // Array of tier ranks (A+, A, B, C)
   const [showPartnerDropdown, setShowPartnerDropdown] = useState(false);
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+  const [showTierDropdown, setShowTierDropdown] = useState(false);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -53,6 +55,7 @@ function Calendar({ sharedOffice }) {
       if (!e.target.closest('.multi-select-dropdown')) {
         setShowPartnerDropdown(false);
         setShowVehicleDropdown(false);
+        setShowTierDropdown(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -87,6 +90,7 @@ function Calendar({ sharedOffice }) {
   // All vehicles and partners for the office (full inventory)
   const [allVehicles, setAllVehicles] = useState([]);
   const [allPartners, setAllPartners] = useState([]);
+  const [partnerTiers, setPartnerTiers] = useState({}); // {person_id: {make: rank, ...}}
 
   useEffect(() => {
     const loadOffices = async () => {
@@ -197,6 +201,13 @@ function Calendar({ sharedOffice }) {
             }
           });
           setPartnerDistances(distances);
+        }
+
+        // Fetch tier data for all partners in one call
+        const tierResponse = await fetch(`http://localhost:8081/api/calendar/partner-tiers?office=${selectedOffice}`);
+        if (tierResponse.ok) {
+          const tierData = await tierResponse.json();
+          setPartnerTiers(tierData.tiers || {});
         }
       } catch (err) {
         console.error('Failed to load partners:', err);
@@ -414,6 +425,28 @@ function Calendar({ sharedOffice }) {
   const filteredPartners = Object.values(groupedByPartner).filter(partner => {
     // Multi-select partner filter
     if (selectedPartners.length > 0 && !selectedPartners.includes(partner.person_id)) return false;
+
+    // Tier filter - show partners who have selected tier(s) for the selected make (or any make if no make selected)
+    if (selectedTiers.length > 0) {
+      const partnerTierData = partnerTiers[partner.person_id];
+      if (!partnerTierData) return false; // Partner has no approved makes
+
+      let hasTier = false;
+      if (makeFilter) {
+        // Check if partner has selected tier for the filtered make
+        const rank = partnerTierData[makeFilter];
+        if (rank && selectedTiers.includes(rank)) {
+          hasTier = true;
+        }
+      } else {
+        // Check if partner has selected tier for ANY make
+        const ranks = Object.values(partnerTierData);
+        if (ranks.some(rank => selectedTiers.includes(rank))) {
+          hasTier = true;
+        }
+      }
+      if (!hasTier) return false;
+    }
 
     // Activity filter
     const hasActivityThisMonth = partner.activities.some(a => activityOverlapsMonth(a));
@@ -1056,6 +1089,49 @@ function Calendar({ sharedOffice }) {
                 <option key={make} value={make}>{make}</option>
               ))}
             </select>
+          </div>
+
+          <div className="relative multi-select-dropdown">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Tier</label>
+            <button
+              onClick={() => setShowTierDropdown(!showTierDropdown)}
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs text-left bg-white hover:bg-gray-50 flex justify-between items-center"
+            >
+              <span>{selectedTiers.length > 0 ? `${selectedTiers.length} selected` : 'All'}</span>
+              <span>▼</span>
+            </button>
+            {showTierDropdown && (
+              <div className="absolute z-50 mt-1 w-40 bg-white border border-gray-300 rounded-md shadow-lg">
+                <div className="p-2 border-b sticky top-0 bg-white">
+                  <button
+                    onClick={() => setSelectedTiers([])}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                {['A+', 'A', 'B', 'C'].map(tier => (
+                  <label
+                    key={tier}
+                    className="flex items-center px-2 py-1.5 hover:bg-gray-50 cursor-pointer text-xs"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedTiers.includes(tier)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedTiers([...selectedTiers, tier]);
+                        } else {
+                          setSelectedTiers(selectedTiers.filter(t => t !== tier));
+                        }
+                      }}
+                      className="mr-2"
+                    />
+                    <span>{tier}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="relative multi-select-dropdown">

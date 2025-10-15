@@ -16,13 +16,13 @@ router = APIRouter(prefix="/api/calendar", tags=["Calendar"])
 
 @router.get("/vehicles")
 async def get_all_vehicles(office: str = Query(..., description="Office name")) -> Dict[str, Any]:
-    """Get all vehicles for an office (full inventory)"""
+    """Get all vehicles for an office (full inventory) with lifecycle dates"""
     db = DatabaseService()
     await db.initialize()
 
     try:
         response = db.client.table('vehicles')\
-            .select('vin, make, model, office')\
+            .select('vin, make, model, office, in_service_date, expected_turn_in_date')\
             .eq('office', office)\
             .execute()
 

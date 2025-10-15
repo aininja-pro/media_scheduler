@@ -251,16 +251,48 @@ function Calendar({ sharedOffice }) {
 
     // First, add ALL vehicles for this office (full inventory)
     allVehicles.forEach(vehicle => {
+      const vehicleActivities = [];
+
+      // Add lifecycle unavailability periods as synthetic activities
+      if (selectedMonth) {
+        const [year, month] = selectedMonth.split('-');
+        const monthStart = new Date(year, month - 1, 1);
+        const monthEnd = new Date(year, month, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Check if vehicle is not in service yet (before in_service_date)
+        if (vehicle.in_service_date) {
+          const inServiceDate = new Date(vehicle.in_service_date);
+          // Only show if in_service_date is in the future
+          if (inServiceDate > today && inServiceDate > monthStart) {
+            vehicleActivities.push({
+              vin: vehicle.vin,
+              status: 'unavailable',
+              activity_type: 'Not in service yet',
+              start_date: monthStart.toISOString().split('T')[0],
+              end_date: new Date(Math.min(inServiceDate.getTime() - 86400000, monthEnd.getTime())).toISOString().split('T')[0],
+              partner_name: 'Not in service'
+            });
+          }
+        }
+
+        // Note: expected_turn_in_date is shown in vehicle info, not as unavailability
+        // Turn-in is a soft date, vehicles can still have loans before it
+      }
+
       grouped[vehicle.vin] = {
         vin: vehicle.vin,
         make: vehicle.make,
         model: vehicle.model,
         office: vehicle.office,
-        activities: []
+        in_service_date: vehicle.in_service_date,
+        expected_turn_in_date: vehicle.expected_turn_in_date,
+        activities: vehicleActivities
       };
     });
 
-    // Then, add activities to vehicles that have them
+    // Then, add actual loan activities to vehicles
     activities.forEach(activity => {
       const vin = activity.vin;
       if (grouped[vin]) {
@@ -269,7 +301,7 @@ function Calendar({ sharedOffice }) {
     });
 
     return grouped;
-  }, [allVehicles, activities]);
+  }, [allVehicles, activities, selectedMonth]);
 
   // Group activities by Partner - START with ALL partners for office
   const groupedByPartner = useMemo(() => {
@@ -630,6 +662,13 @@ function Calendar({ sharedOffice }) {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
+  const formatFullDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    const date = parseLocalDate(dateStr);
+    if (!date || isNaN(date.getTime())) return 'Invalid Date';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
   const getActivityColor = (activity, locationColor) => {
     // Use location-based color if provided (for vehicle view)
     if (locationColor && viewMode === 'vehicle') {
@@ -651,6 +690,9 @@ function Calendar({ sharedOffice }) {
       case 'manual':
         // Manual pick: dashed border to distinguish from optimizer
         return 'bg-gradient-to-br from-green-400 to-green-500 border-2 border-dashed border-green-600';
+      case 'unavailable':
+        // Lifecycle unavailability (not in service, turn-in, etc)
+        return 'bg-gradient-to-br from-orange-400 to-orange-500 border-2 border-orange-600';
       default: return 'bg-gradient-to-br from-gray-300 to-gray-400 border-2 border-gray-500';
     }
   };
@@ -966,6 +1008,10 @@ function Calendar({ sharedOffice }) {
             <span className="text-gray-600">Proposed (Manual)</span>
           </div>
           <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-orange-400 rounded"></div>
+            <span className="text-gray-600">Unavailable</span>
+          </div>
+          <div className="flex items-center gap-2">
             <span className="text-lg">📍</span>
             <span className="text-gray-600">Current Location</span>
           </div>
@@ -1058,11 +1104,12 @@ function Calendar({ sharedOffice }) {
 
                 const maxRows = Math.max(1, ...activitiesWithRows.map(a => (a.rowIndex || 0) + 1));
                 const rowHeight = maxRows * 32; // 32px per row (h-8)
+                const totalHeight = rowHeight + 40; // Add padding
 
                 return (
-                <div key={viewMode === 'vehicle' ? item.vin : item.person_id} className="flex hover:bg-gray-50" style={{ height: `${rowHeight + 32}px` }}>
+                <div key={viewMode === 'vehicle' ? item.vin : item.person_id} className="flex hover:bg-gray-50" style={{ minHeight: `${totalHeight}px` }}>
                   {/* Row info */}
-                  <div className="w-64 flex-shrink-0 px-4 py-3 border-r flex items-center">
+                  <div className="w-64 flex-shrink-0 px-4 py-3 border-r flex items-start min-h-full">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1075,12 +1122,17 @@ function Calendar({ sharedOffice }) {
                       className="text-left w-full group"
                     >
                       {viewMode === 'vehicle' ? (
-                        <>
+                        <div className="w-full">
                           <h3 className="font-semibold text-sm text-gray-900 group-hover:text-blue-600">
                             {item.make} {item.model}
                           </h3>
                           <p className="text-xs text-gray-500 font-mono">{item.vin}</p>
-                        </>
+                          {item.expected_turn_in_date && (
+                            <p className="text-xs text-orange-600 mt-1">
+                              Expected Turn-In: {formatFullDate(item.expected_turn_in_date)}
+                            </p>
+                          )}
+                        </div>
                       ) : (
                         <>
                           <h3 className="font-semibold text-sm text-gray-900 group-hover:text-blue-600">

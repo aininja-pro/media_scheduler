@@ -199,8 +199,7 @@ async def get_assignment_options(
                 candidates_df=candidates_df,
                 partner_rank_df=eligibility_df,
                 partners_df=office_partners,
-                publication_df=publication_df,
-                current_activity_df=activity_df  # Pass for chaining bonus
+                publication_df=publication_df
             )
 
         # Calculate tier cap usage for each partner-make combo
@@ -732,8 +731,7 @@ async def generate_schedule(
             candidates_df=candidates_df,
             partner_rank_df=eligibility_df,  # Use filtered eligibility data with ranks
             partners_df=partners_df,
-            publication_df=publication_df,
-            current_activity_df=activity_df  # Pass for chaining bonus
+            publication_df=publication_df
         )
 
         stage2_time = time.time() - stage2_start

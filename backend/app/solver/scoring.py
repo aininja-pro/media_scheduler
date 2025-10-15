@@ -21,9 +21,7 @@ def compute_candidate_scores(
     publication_df: pd.DataFrame,  # same as Step 1 input; for history bonus
     rank_weights: Dict[str, int] = None,
     geo_bonus_points: int = 100,
-    history_bonus_points: int = 50,
-    chaining_bonus_points: int = 200,
-    current_activity_df: pd.DataFrame = None  # Optional: existing active loans for chaining bonus
+    history_bonus_points: int = 50
 ) -> pd.DataFrame:
     """
     Returns candidates_df with added columns:
@@ -126,54 +124,6 @@ def compute_candidate_scores(
     else:
         merged["vin_bonus"] = 10
 
-    # Add chaining bonus (encourages back-to-back assignments to same partner)
-    merged["chaining_bonus"] = 0
-    if current_activity_df is not None and not current_activity_df.empty and "start_day" in merged.columns:
-        from datetime import datetime, timedelta
-
-        # Build dict of {person_id: [end_dates]} from current activity
-        partner_loan_ends = {}
-        for _, loan in current_activity_df.iterrows():
-            person_id = loan.get('person_id')
-            end_date = loan.get('end_date')
-            if person_id and end_date:
-                if person_id not in partner_loan_ends:
-                    partner_loan_ends[person_id] = []
-                # Convert to date object for comparison
-                if isinstance(end_date, str):
-                    end_date = pd.to_datetime(end_date).date()
-                elif hasattr(end_date, 'date'):
-                    end_date = end_date.date()
-                partner_loan_ends[person_id].append(end_date)
-
-        # Check each candidate for chaining opportunity
-        def check_chaining(row):
-            person_id = row['person_id']
-            start_day = row['start_day']
-
-            if person_id not in partner_loan_ends:
-                return 0
-
-            # Convert start_day to date
-            if isinstance(start_day, str):
-                start_date = pd.to_datetime(start_day).date()
-            elif hasattr(start_day, 'date'):
-                start_date = start_day.date()
-            else:
-                start_date = start_day
-
-            # Check if any existing loan ends within 2 days before this start
-            for end_date in partner_loan_ends[person_id]:
-                days_gap = (start_date - end_date).days
-                # Gap of 1 day = perfect chain (loan ends Mon, new starts Tue)
-                # Gap of 0 = same day (blocked by overlap constraint anyway)
-                # Gap of 2 = small gap, still good
-                if 1 <= days_gap <= 2:
-                    return chaining_bonus_points
-            return 0
-
-        merged["chaining_bonus"] = merged.apply(check_chaining, axis=1)
-
     # Final score with more components for better differentiation
     merged["score"] = (
         merged["rank_weight"] +
@@ -181,12 +131,11 @@ def compute_candidate_scores(
         merged["history_bonus"] +
         merged["pub_rate_bonus"] +
         merged["model_bonus"] +
-        merged["vin_bonus"] +
-        merged["chaining_bonus"]
+        merged["vin_bonus"]
     )
 
     # Column order: original + new
     return merged[candidates_df.columns.tolist() + [
         "rank", "rank_weight", "geo_bonus", "history_bonus",
-        "pub_rate_bonus", "model_bonus", "vin_bonus", "chaining_bonus", "score"
+        "pub_rate_bonus", "model_bonus", "vin_bonus", "score"
     ]]

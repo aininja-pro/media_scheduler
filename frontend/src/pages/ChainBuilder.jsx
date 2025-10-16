@@ -11,6 +11,10 @@ function ChainBuilder({ sharedOffice }) {
   const [chain, setChain] = useState(null);
   const [error, setError] = useState('');
 
+  // Timeline navigation
+  const [viewStartDate, setViewStartDate] = useState(null); // Show 1 month at a time
+  const [viewEndDate, setViewEndDate] = useState(null);
+
   // Load offices and partners
   const [offices, setOffices] = useState([]);
   const [partners, setPartners] = useState([]);
@@ -45,18 +49,29 @@ function ChainBuilder({ sharedOffice }) {
 
     const loadPartners = async () => {
       try {
-        const response = await fetch(`http://localhost:8081/api/ui/phase7/overview?office=${encodeURIComponent(selectedOffice)}&week_start=2025-10-20&min_days=7`);
-        if (!response.ok) return;
+        // Use the calendar API to get all partners for this office
+        const response = await fetch(`http://localhost:8081/api/calendar/media-partners?office=${encodeURIComponent(selectedOffice)}`);
+        if (!response.ok) {
+          console.error('Failed to load partners');
+          return;
+        }
 
         const data = await response.json();
-        // For now, we'll load a simple partner list
-        // In Commit 7, we'll integrate with proper partner endpoint
-        setPartners([
-          { person_id: 1601, name: 'Karl Brauer' },
-          { person_id: 1602, name: 'Partner 1602' }
-        ]);
+
+        // Sort partners alphabetically by name
+        const partnersList = data.partners || [];
+        const sortedPartners = partnersList
+          .map(p => ({
+            person_id: p.person_id,
+            name: p.name || `Partner ${p.person_id}`
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        setPartners(sortedPartners);
+        console.log(`Loaded ${sortedPartners.length} partners for ${selectedOffice}`);
       } catch (err) {
         console.error('Failed to load partners:', err);
+        setPartners([]);
       }
     };
 
@@ -77,6 +92,52 @@ function ChainBuilder({ sharedOffice }) {
   useEffect(() => {
     setStartDate(getCurrentMonday());
   }, []);
+
+  // Initialize timeline view when chain is generated
+  useEffect(() => {
+    if (chain && chain.chain.length > 0) {
+      // Set view to show first month of chain (use string parsing to avoid timezone)
+      const dateStr = chain.chain[0].start_date; // "2025-10-20"
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const chainStart = new Date(year, month - 1, day); // Local date
+      const monthStart = new Date(year, month - 1, 1);
+      const monthEnd = new Date(year, month, 0);
+      setViewStartDate(monthStart);
+      setViewEndDate(monthEnd);
+    }
+  }, [chain]);
+
+  // Slide timeline forward by 1 month
+  const slideForward = () => {
+    if (!viewStartDate) return;
+    const newStart = new Date(viewStartDate);
+    newStart.setMonth(newStart.getMonth() + 1);
+    const newEnd = new Date(newStart.getFullYear(), newStart.getMonth() + 1, 0);
+    setViewStartDate(newStart);
+    setViewEndDate(newEnd);
+  };
+
+  // Slide timeline backward by 1 month
+  const slideBackward = () => {
+    if (!viewStartDate) return;
+    const newStart = new Date(viewStartDate);
+    newStart.setMonth(newStart.getMonth() - 1);
+    const newEnd = new Date(newStart.getFullYear(), newStart.getMonth() + 1, 0);
+    setViewStartDate(newStart);
+    setViewEndDate(newEnd);
+  };
+
+  // Parse date string as local date (avoid timezone issues)
+  const parseLocalDate = (dateStr) => {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length !== 3) return null;
+      return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    } catch (e) {
+      return null;
+    }
+  };
 
   const generateChain = async () => {
     if (!selectedPartner) {
@@ -250,62 +311,228 @@ function ChainBuilder({ sharedOffice }) {
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Chain Preview</h2>
 
           {chain ? (
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <div className="mb-4">
-                <h3 className="text-lg font-medium text-gray-900">{chain.partner_info.name}</h3>
-                <p className="text-sm text-gray-500">
-                  {chain.chain_params.start_date} - {chain.chain[chain.chain.length - 1]?.end_date} ({chain.chain_params.total_span_days} days)
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                {chain.chain.map((vehicle) => (
-                  <div
-                    key={vehicle.slot}
-                    className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <span className="text-lg font-semibold text-gray-900">Slot {vehicle.slot}</span>
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                            vehicle.tier === 'A+' ? 'bg-purple-100 text-purple-800' :
-                            vehicle.tier === 'A' ? 'bg-blue-100 text-blue-800' :
-                            vehicle.tier === 'B' ? 'bg-green-100 text-green-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {vehicle.tier}
-                          </span>
-                        </div>
-                        <h4 className="text-base font-medium text-gray-900 mt-2">
-                          {vehicle.year} {vehicle.make} {vehicle.model}
-                        </h4>
-                        <p className="text-sm text-gray-500 font-mono">{vehicle.vin}</p>
-                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
-                          <span>{vehicle.start_date} to {vehicle.end_date}</span>
-                          <span>Score: {vehicle.score}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Summary Stats */}
-              <div className="mt-6 pt-6 border-t">
-                <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="space-y-6">
+              {/* Chain Header */}
+              <div className="bg-white rounded-lg shadow-sm border p-6">
+                <div className="flex items-center justify-between">
                   <div>
+                    <h3 className="text-lg font-medium text-gray-900">{chain.partner_info.name}</h3>
+                    <p className="text-sm text-gray-500">
+                      {chain.chain_params.start_date} - {chain.chain[chain.chain.length - 1]?.end_date} ({chain.chain_params.total_span_days} days)
+                    </p>
+                  </div>
+                  <div className="text-right">
                     <div className="text-2xl font-semibold text-gray-900">{chain.chain.length}</div>
                     <div className="text-xs text-gray-500">Vehicles</div>
                   </div>
-                  <div>
-                    <div className="text-2xl font-semibold text-gray-900">{chain.constraints_applied.excluded_vins}</div>
-                    <div className="text-xs text-gray-500">Excluded</div>
+                </div>
+              </div>
+
+              {/* Timeline Visualization - Calendar Style with Month View */}
+              <div className="bg-white rounded-lg shadow-sm border p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-md font-semibold text-gray-900">Chain Timeline</h3>
+
+                  {/* Month Navigation Arrows */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={slideBackward}
+                      className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50 text-xs"
+                      title="Previous month"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <span className="text-sm font-medium text-gray-700 px-3 py-1">
+                      {viewStartDate?.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </span>
+                    <button
+                      onClick={slideForward}
+                      className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50 text-xs"
+                      title="Next month"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
                   </div>
-                  <div>
-                    <div className="text-2xl font-semibold text-gray-900">{chain.chain_params.total_span_days}</div>
-                    <div className="text-xs text-gray-500">Days</div>
-                  </div>
+                </div>
+
+                <div className="border-2 rounded-lg overflow-x-auto">
+                  {(() => {
+                    if (!viewStartDate || !viewEndDate) return null;
+
+                    // Generate days in current month view
+                    const days = [];
+                    const current = new Date(viewStartDate);
+                    const end = new Date(viewEndDate);
+
+                    while (current <= end) {
+                      days.push(new Date(current));
+                      current.setDate(current.getDate() + 1);
+                    }
+
+                    return (
+                      <>
+                        {/* Header Row - Day headers like Calendar (Mon 1, Tue 2, etc.) */}
+                        <div className="flex border-b bg-gray-50">
+                          <div className="w-48 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700">
+                            {chain.partner_info.name}
+                          </div>
+                          <div className="flex-1 flex">
+                            {days.map((date, idx) => {
+                              const dayOfWeek = date.getDay();
+                              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                              const dayNum = date.getDate();
+                              const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`flex-1 text-center text-xs py-2 border-r ${
+                                    isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-gray-600'
+                                  }`}
+                                >
+                                  <div className="leading-tight">
+                                    <div>{weekday}</div>
+                                    <div className="font-semibold">{dayNum}</div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Timeline Row with stair-stepped bars (3 per row) */}
+                        <div className="relative flex" style={{ minHeight: '200px' }}>
+                          <div className="w-48 flex-shrink-0 border-r bg-gray-50"></div>
+
+                          <div className="flex-1 relative">
+                            {/* Day grid background with weekend highlighting */}
+                            <div className="absolute inset-0 flex">
+                              {days.map((date, i) => {
+                                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                                return (
+                                  <div
+                                    key={i}
+                                    className={`flex-1 border-r border-gray-300 ${
+                                      isWeekend ? 'bg-blue-50' : ''
+                                    }`}
+                                  ></div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Vehicle timeline bars - stair-stepped in groups of 3 */}
+                            {chain.chain.map((vehicle, idx) => {
+                              // Parse dates as local (avoid timezone shift)
+                              const [sYear, sMonth, sDay] = vehicle.start_date.split('-').map(Number);
+                              const [eYear, eMonth, eDay] = vehicle.end_date.split('-').map(Number);
+                              const vStart = new Date(sYear, sMonth - 1, sDay);
+                              const vEnd = new Date(eYear, eMonth - 1, eDay);
+
+                              // Only show if vehicle overlaps with current view
+                              const viewStart = new Date(viewStartDate);
+                              const viewEnd = new Date(viewEndDate);
+
+                              if (vEnd < viewStart || vStart > viewEnd) {
+                                return null; // Outside current month view
+                              }
+
+                              // Calculate bar position - COPY EXACT logic from Calendar.jsx
+                              const rangeStart = new Date(viewStartDate);
+                              const rangeEnd = new Date(viewEndDate);
+
+                              // Clamp to view range boundaries
+                              const startDate = vStart < rangeStart ? rangeStart : vStart;
+                              const endDate = vEnd > rangeEnd ? rangeEnd : vEnd;
+
+                              // Calculate position as percentage based on days from range start
+                              const totalDays = days.length;
+                              const startDayOffset = Math.floor((startDate - rangeStart) / (1000 * 60 * 60 * 24));
+                              const endDayOffset = Math.floor((endDate - rangeStart) / (1000 * 60 * 60 * 24));
+
+                              // Center bars on start/end dates (0.5 offset to bisect the day squares)
+                              const left = ((startDayOffset + 0.5) / totalDays) * 100;
+                              const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
+
+                              // Repeating stair-step pattern (groups of 3)
+                              // Position 0: top=16, Position 1: top=44, Position 2: top=72
+                              // Position 3: top=16 (REPEAT), Position 4: top=44, etc.
+                              const positionInGroup = idx % 3; // 0, 1, 2, then repeats
+                              const top = 16 + (positionInGroup * 28); // 16, 44, 72, then repeats
+
+                              // Use GREEN for chain recommendations (consistent with calendar)
+                              const barColor = 'bg-gradient-to-br from-green-400 to-green-500 border-green-600';
+
+                              return (
+                                <div
+                                  key={vehicle.slot}
+                                  className={`absolute ${barColor} border-2 rounded-lg shadow-lg hover:shadow-xl transition-all cursor-pointer px-2 flex items-center text-white text-xs font-semibold overflow-hidden`}
+                                  style={{
+                                    left: `${left}%`,
+                                    width: `${width}%`,
+                                    minWidth: '80px',
+                                    top: `${top}px`,
+                                    height: '24px' // Thicker bars - more readable
+                                  }}
+                                  title={`Slot ${vehicle.slot}: ${vehicle.make} ${vehicle.model}\n${vehicle.start_date} - ${vehicle.end_date}\nScore: ${vehicle.score}, Tier: ${vehicle.tier}`}
+                                >
+                                  <span className="truncate text-[11px]">
+                                    {vehicle.make} {vehicle.model}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                <div className="mt-3 text-xs text-gray-500 flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 bg-green-400 border-2 border-green-600 rounded"></span>
+                  <span>Green bars = Proposed chain recommendations</span>
+                  <span className="ml-4">Use arrows to navigate months</span>
+                </div>
+              </div>
+
+              {/* Vehicle Details List */}
+              <div className="bg-white rounded-lg shadow-sm border p-6">
+                <h3 className="text-md font-semibold text-gray-900 mb-4">Vehicle Details</h3>
+                <div className="space-y-3">
+                  {chain.chain.map((vehicle) => (
+                    <div
+                      key={vehicle.slot}
+                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <span className="text-lg font-semibold text-gray-900">Slot {vehicle.slot}</span>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                              vehicle.tier === 'A+' ? 'bg-purple-100 text-purple-800' :
+                              vehicle.tier === 'A' ? 'bg-blue-100 text-blue-800' :
+                              vehicle.tier === 'B' ? 'bg-green-100 text-green-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {vehicle.tier}
+                            </span>
+                          </div>
+                          <h4 className="text-base font-medium text-gray-900 mt-2">
+                            {vehicle.year} {vehicle.make} {vehicle.model}
+                          </h4>
+                          <p className="text-sm text-gray-500 font-mono">{vehicle.vin}</p>
+                          <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
+                            <span>{vehicle.start_date} to {vehicle.end_date}</span>
+                            <span>Score: {vehicle.score}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

@@ -4,6 +4,7 @@ import PublicationRates from './pages/PublicationRates.jsx'
 import Optimizer from './pages/Optimizer.jsx'
 import Calendar from './pages/Calendar.jsx'
 import Partners from './pages/Partners.jsx'
+import ChainBuilder from './pages/ChainBuilder.jsx'
 import './App.css'
 
 function App() {
@@ -306,6 +307,16 @@ function App() {
               >
                 Media Partners
               </button>
+              <button
+                onClick={() => setActiveTab('chain-builder')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'chain-builder'
+                    ? 'bg-white text-black'
+                    : 'bg-gray-600 text-white hover:bg-gray-500'
+                }`}
+              >
+                Chain Builder
+              </button>
           </nav>
         </div>
       </header>
@@ -603,6 +614,13 @@ function App() {
         {activeTab === 'partners' && (
           <Partners
             office={optimizerOffice}
+          />
+        )}
+
+        {/* Chain Builder Tab */}
+        {activeTab === 'chain-builder' && (
+          <ChainBuilder
+            sharedOffice={optimizerOffice}
           />
         )}
         </div>

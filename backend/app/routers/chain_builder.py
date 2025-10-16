@@ -15,6 +15,11 @@ import pandas as pd
 
 from ..services.database import get_database, DatabaseService
 from ..chain_builder.exclusions import get_vehicles_not_reviewed, get_model_cooldown_status
+from ..chain_builder.availability import (
+    build_chain_availability_grid,
+    get_available_vehicles_for_slot,
+    check_slot_availability
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chain-builder", tags=["chain-builder"])
@@ -107,11 +112,58 @@ async def suggest_chain(
             cooldown_days=30
         )
 
-        # Filter vehicles to only available ones
-        available_vehicles = vehicles_df[vehicles_df['vin'].isin(available_vins)].copy()
+        # Load current activity
+        logger.info("Loading current activity")
+        activity_response = db.client.table('current_activity').select('*').execute()
+        activity_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
 
-        # TODO: In Commit 3-4, add scoring and sequential availability logic
-        # For now, use mock chain with real exclusion data
+        # Fix column name if needed
+        if not activity_df.empty and 'vehicle_vin' in activity_df.columns:
+            activity_df['vin'] = activity_df['vehicle_vin']
+
+        # Build availability grid for entire chain period
+        logger.info(f"Building availability grid for {num_vehicles} slots")
+        availability_grid = build_chain_availability_grid(
+            vehicles_df=vehicles_df,
+            activity_df=activity_df,
+            start_date=start_date,
+            num_slots=num_vehicles,
+            days_per_slot=days_per_loan,
+            office=office
+        )
+
+        # For each slot, determine which vehicles are available
+        slot_availability_counts = []
+        current_date = start_dt
+
+        for slot_index in range(num_vehicles):
+            slot_start = current_date.strftime('%Y-%m-%d')
+            slot_end = (current_date + timedelta(days=days_per_loan - 1)).strftime('%Y-%m-%d')
+
+            # Get vehicles available for this slot (from the filtered available_vins)
+            slot_vins = get_available_vehicles_for_slot(
+                slot_index=slot_index,
+                slot_start=slot_start,
+                slot_end=slot_end,
+                candidate_vins=available_vins,
+                availability_df=availability_grid,
+                exclude_vins=set()  # In Commit 4, we'll exclude already-used VINs
+            )
+
+            slot_availability_counts.append({
+                'slot': slot_index + 1,
+                'start_date': slot_start,
+                'end_date': slot_end,
+                'available_count': len(slot_vins)
+            })
+
+            # Move to next slot (skip weekends)
+            current_date = current_date + timedelta(days=days_per_loan)
+            while current_date.weekday() >= 5:  # Skip weekends
+                current_date = current_date + timedelta(days=1)
+
+        # TODO: In Commit 4, add scoring and greedy selection
+        # For now, use mock chain with real availability data
 
         mock_chain = []
         current_date = start_dt
@@ -174,11 +226,12 @@ async def suggest_chain(
                 f"{make}_{model}": status
                 for (make, model), status in cooldown_status.items()
             },
+            "slot_availability": slot_availability_counts,
             "conflicts": {
                 "total_conflicts": 1,  # Mock: one conflict
                 "conflicting_slots": [1]
             },
-            "message": f"Real exclusion data loaded. {len(available_vins)} vehicles available after filtering. Scoring/availability coming in commits 3-4."
+            "message": f"Real availability checking complete. {len(available_vins)} vehicles after exclusion. Slot availability varies per period. Scoring/selection coming in commit 4."
         }
 
     except ValueError as e:

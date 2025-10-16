@@ -11,8 +11,10 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Dict, Any, List, Optional
 import logging
 from datetime import datetime, timedelta
+import pandas as pd
 
 from ..services.database import get_database, DatabaseService
+from ..chain_builder.exclusions import get_vehicles_not_reviewed, get_model_cooldown_status
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chain-builder", tags=["chain-builder"])
@@ -59,8 +61,57 @@ async def suggest_chain(
                 detail=f"Start date must be a weekday (Mon-Fri). {start_date} is a {start_dt.strftime('%A')}"
             )
 
-        # TODO: Load real data in Commit 2-4
-        # For now, return mock structure to test endpoint
+        # Load data from database
+        logger.info(f"Loading vehicles for office {office}")
+        vehicles_response = db.client.table('vehicles').select('*').eq('office', office).execute()
+        vehicles_df = pd.DataFrame(vehicles_response.data) if vehicles_response.data else pd.DataFrame()
+
+        if vehicles_df.empty:
+            raise HTTPException(status_code=404, detail=f"No vehicles found for office {office}")
+
+        # Load loan history with pagination
+        logger.info("Loading loan history")
+        all_loan_history = []
+        limit = 1000
+        offset = 0
+        while True:
+            loan_response = db.client.table('loan_history').select('*').range(offset, offset + limit - 1).execute()
+            if not loan_response.data:
+                break
+            all_loan_history.extend(loan_response.data)
+            offset += limit
+            if len(loan_response.data) < limit:
+                break
+
+        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
+
+        # Get vehicles partner has NOT reviewed
+        exclusion_result = get_vehicles_not_reviewed(
+            person_id=person_id,
+            office=office,
+            loan_history_df=loan_history_df,
+            vehicles_df=vehicles_df,
+            months_back=12
+        )
+
+        available_vins = exclusion_result['available_vins']
+        excluded_vins = exclusion_result['excluded_vins']
+
+        logger.info(f"Exclusion: {len(available_vins)} available, {len(excluded_vins)} excluded")
+
+        # Get model cooldown status
+        cooldown_status = get_model_cooldown_status(
+            person_id=person_id,
+            loan_history_df=loan_history_df,
+            vehicles_df=vehicles_df,
+            cooldown_days=30
+        )
+
+        # Filter vehicles to only available ones
+        available_vehicles = vehicles_df[vehicles_df['vin'].isin(available_vins)].copy()
+
+        # TODO: In Commit 3-4, add scoring and sequential availability logic
+        # For now, use mock chain with real exclusion data
 
         mock_chain = []
         current_date = start_dt
@@ -113,16 +164,21 @@ async def suggest_chain(
             },
             "chain": mock_chain,
             "constraints_applied": {
-                "excluded_vins": 0,  # TODO: Count in Commit 2
-                "cooldown_filtered": 0,  # TODO: Count in Commit 3
+                "excluded_vins": len(excluded_vins),
+                "cooldown_filtered": sum(1 for status in cooldown_status.values() if not status['cooldown_ok']),
                 "tier_cap_warnings": 0,  # TODO: Count in Commit 4
                 "availability_checked": True
+            },
+            "exclusion_details": exclusion_result.get('exclusion_details', []),
+            "cooldown_status": {
+                f"{make}_{model}": status
+                for (make, model), status in cooldown_status.items()
             },
             "conflicts": {
                 "total_conflicts": 1,  # Mock: one conflict
                 "conflicting_slots": [1]
             },
-            "message": f"Mock chain generated. Real logic coming in commits 2-4."
+            "message": f"Real exclusion data loaded. {len(available_vins)} vehicles available after filtering. Scoring/availability coming in commits 3-4."
         }
 
     except ValueError as e:

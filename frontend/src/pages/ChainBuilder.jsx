@@ -18,6 +18,7 @@ function ChainBuilder({ sharedOffice }) {
   // Load offices and partners
   const [offices, setOffices] = useState([]);
   const [partners, setPartners] = useState([]);
+  const [partnerSearchQuery, setPartnerSearchQuery] = useState('');
 
   // Update selectedOffice when sharedOffice prop changes
   useEffect(() => {
@@ -214,23 +215,53 @@ function ChainBuilder({ sharedOffice }) {
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Chain Parameters</h2>
 
           <div className="space-y-6">
-            {/* Partner Selector */}
+            {/* Partner Selector with Search */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Media Partner
               </label>
-              <select
-                value={selectedPartner}
-                onChange={(e) => setSelectedPartner(e.target.value)}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select a partner...</option>
-                {partners.map(partner => (
-                  <option key={partner.person_id} value={partner.person_id}>
-                    {partner.name}
-                  </option>
-                ))}
-              </select>
+
+              {/* Search Input */}
+              <input
+                type="text"
+                placeholder="Type to search partners..."
+                value={partnerSearchQuery}
+                onChange={(e) => setPartnerSearchQuery(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+              />
+
+              {/* Filtered Partner List */}
+              <div className="border border-gray-300 rounded max-h-48 overflow-y-auto">
+                {partners
+                  .filter(partner =>
+                    partner.name.toLowerCase().includes(partnerSearchQuery.toLowerCase())
+                  )
+                  .map(partner => (
+                    <button
+                      key={partner.person_id}
+                      onClick={() => {
+                        setSelectedPartner(partner.person_id);
+                        setPartnerSearchQuery(partner.name); // Show selected name
+                      }}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${
+                        selectedPartner === partner.person_id ? 'bg-blue-100 font-medium' : ''
+                      }`}
+                    >
+                      {partner.name}
+                    </button>
+                  ))}
+                {partners.filter(p => p.name.toLowerCase().includes(partnerSearchQuery.toLowerCase())).length === 0 && (
+                  <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                    No partners found
+                  </div>
+                )}
+              </div>
+
+              {selectedPartner && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Selected: {partners.find(p => p.person_id === selectedPartner)?.name}
+                </p>
+              )}
             </div>
 
             {/* Start Date */}

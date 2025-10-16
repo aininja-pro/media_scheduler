@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_vehicles_not_reviewed(
-    person_id: str,
+    person_id: int,
     office: str,
     loan_history_df: pd.DataFrame,
     vehicles_df: pd.DataFrame,
@@ -56,7 +56,14 @@ def get_vehicles_not_reviewed(
 
         # Get all VINs this partner has EVER reviewed
         # We exclude them permanently (not time-based exclusion)
-        partner_history = loan_history_df[loan_history_df['person_id'] == person_id]
+
+        # Ensure person_id types match for comparison
+        if 'person_id' in loan_history_df.columns:
+            # Convert to int for comparison
+            loan_history_df = loan_history_df.copy()
+            loan_history_df['person_id'] = loan_history_df['person_id'].astype(int)
+
+        partner_history = loan_history_df[loan_history_df['person_id'] == int(person_id)]
 
         if partner_history.empty:
             logger.info(f"Partner {person_id} has no loan history. All {len(all_office_vins)} vehicles available.")
@@ -124,7 +131,7 @@ def get_vehicles_not_reviewed(
 
 
 def get_model_cooldown_status(
-    person_id: str,
+    person_id: int,
     loan_history_df: pd.DataFrame,
     vehicles_df: pd.DataFrame,
     cooldown_days: int = 30
@@ -151,8 +158,13 @@ def get_model_cooldown_status(
         if loan_history_df.empty:
             return cooldown_status
 
+        # Ensure person_id types match
+        if 'person_id' in loan_history_df.columns:
+            loan_history_df = loan_history_df.copy()
+            loan_history_df['person_id'] = loan_history_df['person_id'].astype(int)
+
         # Filter to this partner
-        partner_history = loan_history_df[loan_history_df['person_id'] == person_id].copy()
+        partner_history = loan_history_df[loan_history_df['person_id'] == int(person_id)].copy()
 
         if partner_history.empty:
             return cooldown_status

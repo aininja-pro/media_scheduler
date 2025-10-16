@@ -20,6 +20,7 @@ from ..chain_builder.availability import (
     get_available_vehicles_for_slot,
     check_slot_availability
 )
+from ..solver.scoring import compute_candidate_scores
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chain-builder", tags=["chain-builder"])
@@ -27,7 +28,7 @@ router = APIRouter(prefix="/chain-builder", tags=["chain-builder"])
 
 @router.get("/suggest-chain")
 async def suggest_chain(
-    person_id: str = Query(..., description="Media partner ID"),
+    person_id: int = Query(..., description="Media partner ID"),
     office: str = Query(..., description="Office name"),
     start_date: str = Query(..., description="Chain start date (YYYY-MM-DD)"),
     num_vehicles: int = Query(4, description="Number of vehicles in chain", ge=1, le=10),
@@ -162,47 +163,157 @@ async def suggest_chain(
             while current_date.weekday() >= 5:  # Skip weekends
                 current_date = current_date + timedelta(days=1)
 
-        # TODO: In Commit 4, add scoring and greedy selection
-        # For now, use mock chain with real availability data
+        # Load additional data needed for scoring
+        logger.info("Loading partners and approved makes for scoring")
+        partners_response = db.client.table('media_partners').select('*').execute()
+        partners_df = pd.DataFrame(partners_response.data) if partners_response.data else pd.DataFrame()
 
-        mock_chain = []
+        # Load approved makes with pagination
+        all_approved = []
+        limit = 1000
+        offset = 0
+        while True:
+            approved_response = db.client.table('approved_makes').select('person_id, make, rank').range(offset, offset + limit - 1).execute()
+            if not approved_response.data:
+                break
+            all_approved.extend(approved_response.data)
+            offset += limit
+            if len(approved_response.data) < limit:
+                break
+
+        approved_makes_df = pd.DataFrame(all_approved) if all_approved else pd.DataFrame()
+
+        # Ensure person_id types are consistent (int)
+        if not approved_makes_df.empty and 'person_id' in approved_makes_df.columns:
+            approved_makes_df['person_id'] = approved_makes_df['person_id'].astype(int)
+
+        # Get partner info for response
+        # Ensure partners_df person_id is int for comparison
+        if not partners_df.empty and 'person_id' in partners_df.columns:
+            partners_df['person_id'] = partners_df['person_id'].astype(int)
+
+        partner_info_row = partners_df[partners_df['person_id'] == int(person_id)]
+        partner_name = partner_info_row.iloc[0]['name'] if not partner_info_row.empty and 'name' in partner_info_row.columns else f"Partner {person_id}"
+
+        # Greedy chain selection: Pick best vehicle for each slot
+        suggested_chain = []
+        used_vins = set()  # Track VINs already used in chain
+        used_models = set()  # Track (make, model) combos already used - HARD RULE: no duplicates
         current_date = start_dt
 
-        for i in range(num_vehicles):
-            # Calculate slot dates
+        for slot_index in range(num_vehicles):
             slot_start = current_date.strftime('%Y-%m-%d')
             slot_end = (current_date + timedelta(days=days_per_loan - 1)).strftime('%Y-%m-%d')
 
-            # Mock vehicle
-            mock_chain.append({
-                "slot": i + 1,
-                "vin": f"MOCK{i+1}234567890ABC",
-                "make": ["Toyota", "Honda", "Ford", "Chevrolet"][i % 4],
-                "model": ["Camry", "Accord", "F-150", "Silverado"][i % 4],
-                "year": "2024",
+            # Get vehicles available for this slot (excluding already-used VINs)
+            slot_vins = get_available_vehicles_for_slot(
+                slot_index=slot_index,
+                slot_start=slot_start,
+                slot_end=slot_end,
+                candidate_vins=available_vins,
+                availability_df=availability_grid,
+                exclude_vins=used_vins
+            )
+
+            if not slot_vins:
+                logger.warning(f"No vehicles available for slot {slot_index + 1}")
+                break
+
+            # Build candidate DataFrame for scoring
+            slot_vehicles = vehicles_df[vehicles_df['vin'].isin(slot_vins)].copy()
+
+            # Ensure person_id type matches partners_df
+            # Convert partners_df person_id to int if needed
+            if not partners_df.empty and 'person_id' in partners_df.columns:
+                partners_df['person_id'] = partners_df['person_id'].astype(int)
+
+            slot_vehicles['person_id'] = int(person_id)
+            slot_vehicles['market'] = office  # Use office as market
+
+            # Rename 'office' column to avoid conflict with partners_df merge
+            if 'office' in slot_vehicles.columns:
+                slot_vehicles = slot_vehicles.rename(columns={'office': 'vehicle_office'})
+
+            # Score candidates using optimizer logic
+            scored_candidates = compute_candidate_scores(
+                candidates_df=slot_vehicles,
+                partner_rank_df=approved_makes_df,
+                partners_df=partners_df,
+                publication_df=pd.DataFrame()  # Empty publication data for now
+            )
+
+            if scored_candidates.empty:
+                logger.warning(f"No scored candidates for slot {slot_index + 1}")
+                break
+
+            # HARD RULE: Filter out models already used in this chain
+            # Sort by score and pick the first one that doesn't duplicate a model
+            scored_candidates = scored_candidates.sort_values('score', ascending=False)
+
+            best_vehicle = None
+            for _, candidate in scored_candidates.iterrows():
+                make = candidate.get('make', 'Unknown')
+                model = candidate.get('model', 'Unknown')
+                model_key = (make, model)
+
+                # Check if this model was already used in chain
+                if model_key not in used_models:
+                    best_vehicle = candidate
+                    break
+
+            if best_vehicle is None:
+                logger.warning(f"No unique models available for slot {slot_index + 1} (all top candidates are duplicate models)")
+                break
+
+            vin = best_vehicle['vin']
+            make = best_vehicle.get('make', 'Unknown')
+            model = best_vehicle.get('model', 'Unknown')
+            year = best_vehicle.get('year', '')
+            score = int(best_vehicle['score'])
+            tier = best_vehicle.get('rank', 'C')
+
+            # Track this model as used
+            model_key = (make, model)
+            used_models.add(model_key)
+
+            # Check for conflicts with existing recommendations
+            # TODO: Query scheduled_assignments for conflicts
+            conflict = {
+                "has_conflict": False,
+                "conflict_type": None,
+                "current_partner": None,
+                "current_dates": None,
+                "resolution": None
+            }
+
+            suggested_chain.append({
+                "slot": slot_index + 1,
+                "vin": vin,
+                "make": make,
+                "model": model,
+                "year": str(year),
                 "start_date": slot_start,
                 "end_date": slot_end,
-                "score": 950 - (i * 30),  # Decreasing score
-                "tier": ["A+", "A", "A", "B"][i % 4],
-                "conflict": {
-                    "has_conflict": i == 0,  # Mock: first vehicle has conflict
-                    "conflict_type": "optimizer_recommendation" if i == 0 else None,
-                    "current_partner": "John Doe" if i == 0 else None,
-                    "current_dates": "Jan 8-14" if i == 0 else None,
-                    "resolution": "Will be removed if chain accepted" if i == 0 else None
-                }
+                "score": score,
+                "tier": tier,
+                "conflict": conflict
             })
 
-            # Next slot: add days_per_loan, skip weekends
+            # Mark this VIN as used
+            used_vins.add(vin)
+
+            # Move to next slot (skip weekends)
             current_date = current_date + timedelta(days=days_per_loan)
             while current_date.weekday() >= 5:  # Skip weekends
                 current_date = current_date + timedelta(days=1)
+
+        logger.info(f"Generated chain with {len(suggested_chain)} vehicles")
 
         return {
             "status": "success",
             "partner_info": {
                 "person_id": person_id,
-                "name": f"Partner {person_id}",  # TODO: Load from DB
+                "name": partner_name,
                 "office": office
             },
             "chain_params": {
@@ -210,11 +321,11 @@ async def suggest_chain(
                 "num_vehicles": num_vehicles,
                 "days_per_loan": days_per_loan,
                 "total_span_days": (
-                    datetime.strptime(mock_chain[-1]["end_date"], '%Y-%m-%d') -
+                    datetime.strptime(suggested_chain[-1]["end_date"], '%Y-%m-%d') -
                     start_dt
-                ).days + 1 if mock_chain else 0
+                ).days + 1 if suggested_chain else 0
             },
-            "chain": mock_chain,
+            "chain": suggested_chain,
             "constraints_applied": {
                 "excluded_vins": len(excluded_vins),
                 "cooldown_filtered": sum(1 for status in cooldown_status.values() if not status['cooldown_ok']),
@@ -228,10 +339,10 @@ async def suggest_chain(
             },
             "slot_availability": slot_availability_counts,
             "conflicts": {
-                "total_conflicts": 1,  # Mock: one conflict
-                "conflicting_slots": [1]
+                "total_conflicts": sum(1 for v in suggested_chain if v['conflict']['has_conflict']),
+                "conflicting_slots": [v['slot'] for v in suggested_chain if v['conflict']['has_conflict']]
             },
-            "message": f"Real availability checking complete. {len(available_vins)} vehicles after exclusion. Slot availability varies per period. Scoring/selection coming in commit 4."
+            "message": f"Chain generated successfully. {len(suggested_chain)}/{num_vehicles} vehicles selected using optimizer scoring. {len(excluded_vins)} VINs excluded from partner history."
         }
 
     except ValueError as e:

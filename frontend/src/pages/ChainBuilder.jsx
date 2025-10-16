@@ -20,6 +20,10 @@ function ChainBuilder({ sharedOffice }) {
   const [partners, setPartners] = useState([]);
   const [partnerSearchQuery, setPartnerSearchQuery] = useState('');
 
+  // Partner intelligence (current/scheduled activities)
+  const [partnerIntelligence, setPartnerIntelligence] = useState(null);
+  const [loadingIntelligence, setLoadingIntelligence] = useState(false);
+
   // Update selectedOffice when sharedOffice prop changes
   useEffect(() => {
     if (sharedOffice) {
@@ -93,6 +97,44 @@ function ChainBuilder({ sharedOffice }) {
   useEffect(() => {
     setStartDate(getCurrentMonday());
   }, []);
+
+  // Load partner intelligence when partner is selected
+  useEffect(() => {
+    if (!selectedPartner || !selectedOffice) {
+      setPartnerIntelligence(null);
+      return;
+    }
+
+    const loadPartnerIntelligence = async () => {
+      setLoadingIntelligence(true);
+      try {
+        const response = await fetch(
+          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setPartnerIntelligence(data);
+
+            // Initialize timeline view to current month when partner loads
+            if (!viewStartDate) {
+              const now = new Date();
+              const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+              const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+              setViewStartDate(monthStart);
+              setViewEndDate(monthEnd);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error loading partner intelligence:', err);
+      } finally {
+        setLoadingIntelligence(false);
+      }
+    };
+
+    loadPartnerIntelligence();
+  }, [selectedPartner, selectedOffice]);
 
   // Initialize timeline view when chain is generated
   useEffect(() => {
@@ -341,23 +383,25 @@ function ChainBuilder({ sharedOffice }) {
         <div className="flex-1 p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Chain Preview</h2>
 
-          {chain ? (
+          {selectedPartner && partnerIntelligence ? (
             <div className="space-y-6">
               {/* Chain Header */}
-              <div className="bg-white rounded-lg shadow-sm border p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-900">{chain.partner_info.name}</h3>
-                    <p className="text-sm text-gray-500">
-                      {chain.chain_params.start_date} - {chain.chain[chain.chain.length - 1]?.end_date} ({chain.chain_params.total_span_days} days)
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-semibold text-gray-900">{chain.chain.length}</div>
-                    <div className="text-xs text-gray-500">Vehicles</div>
+              {chain && (
+                <div className="bg-white rounded-lg shadow-sm border p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-medium text-gray-900">{chain.partner_info.name}</h3>
+                      <p className="text-sm text-gray-500">
+                        {chain.chain_params.start_date} - {chain.chain[chain.chain.length - 1]?.end_date} ({chain.chain_params.total_span_days} days)
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-2xl font-semibold text-gray-900">{chain.chain.length}</div>
+                      <div className="text-xs text-gray-500">Vehicles</div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Timeline Visualization - Calendar Style with Month View */}
               <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -409,7 +453,7 @@ function ChainBuilder({ sharedOffice }) {
                         {/* Header Row - Day headers like Calendar (Mon 1, Tue 2, etc.) */}
                         <div className="flex border-b bg-gray-50">
                           <div className="w-48 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700">
-                            {chain.partner_info.name}
+                            {chain ? chain.partner_info.name : partnerIntelligence.partner.name}
                           </div>
                           <div className="flex-1 flex">
                             {days.map((date, idx) => {
@@ -455,8 +499,93 @@ function ChainBuilder({ sharedOffice }) {
                               })}
                             </div>
 
-                            {/* Vehicle timeline bars - stair-stepped in groups of 3 */}
-                            {chain.chain.map((vehicle, idx) => {
+                            {/* Existing activities (current + scheduled) - show FIRST */}
+                            {partnerIntelligence && (() => {
+                              const existingActivities = [];
+
+                              // Add current active loans (BLUE)
+                              partnerIntelligence.current_loans?.forEach(loan => {
+                                const [sYear, sMonth, sDay] = loan.start_date.split('-').map(Number);
+                                const [eYear, eMonth, eDay] = loan.end_date.split('-').map(Number);
+                                existingActivities.push({
+                                  type: 'active',
+                                  vin: loan.vehicle_vin,
+                                  make: loan.make,
+                                  model: loan.model,
+                                  start: new Date(sYear, sMonth - 1, sDay),
+                                  end: new Date(eYear, eMonth - 1, eDay)
+                                });
+                              });
+
+                              // Add scheduled assignments (GREEN - optimizer/manual)
+                              partnerIntelligence.upcoming_assignments?.forEach(assignment => {
+                                const [sYear, sMonth, sDay] = assignment.start_day.split('-').map(Number);
+                                const [eYear, eMonth, eDay] = assignment.end_day.split('-').map(Number);
+                                existingActivities.push({
+                                  type: 'scheduled',
+                                  vin: assignment.vin,
+                                  make: assignment.make,
+                                  model: assignment.model,
+                                  status: assignment.status,
+                                  start: new Date(sYear, sMonth - 1, sDay),
+                                  end: new Date(eYear, eMonth - 1, eDay)
+                                });
+                              });
+
+                              return existingActivities.map((activity, idx) => {
+                                const aStart = activity.start;
+                                const aEnd = activity.end;
+
+                                // Only show if overlaps with current view
+                                const viewStart = new Date(viewStartDate);
+                                const viewEnd = new Date(viewEndDate);
+
+                                if (aEnd < viewStart || aStart > viewEnd) {
+                                  return null;
+                                }
+
+                                // Calculate bar position
+                                const rangeStart = new Date(viewStartDate);
+                                const startDate = aStart < rangeStart ? rangeStart : aStart;
+                                const endDate = aEnd > viewEnd ? viewEnd : aEnd;
+
+                                const totalDays = days.length;
+                                const startDayOffset = Math.floor((startDate - rangeStart) / (1000 * 60 * 60 * 24));
+                                const endDayOffset = Math.floor((endDate - rangeStart) / (1000 * 60 * 60 * 24));
+
+                                const left = ((startDayOffset + 0.5) / totalDays) * 100;
+                                const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
+
+                                // Color by type: BLUE for active, GREEN for scheduled
+                                const barColor = activity.type === 'active'
+                                  ? 'bg-gradient-to-br from-blue-500 to-blue-600 border-blue-700'
+                                  : 'bg-gradient-to-br from-green-400 to-green-500 border-green-600';
+
+                                return (
+                                  <div
+                                    key={`existing-${idx}`}
+                                    className={`absolute ${barColor} border-2 rounded-lg shadow-md text-white text-xs font-semibold overflow-hidden px-2 flex items-center`}
+                                    style={{
+                                      left: `${left}%`,
+                                      width: `${width}%`,
+                                      minWidth: '60px',
+                                      top: '8px',
+                                      height: '20px',
+                                      zIndex: 5
+                                    }}
+                                    title={`${activity.type === 'active' ? 'ACTIVE' : 'SCHEDULED'}: ${activity.make} ${activity.model}\n${activity.start.toLocaleDateString()} - ${activity.end.toLocaleDateString()}`}
+                                  >
+                                    <span className="truncate text-[10px]">
+                                      {activity.type === 'active' ? '🔵 ' : '🤖 '}
+                                      {activity.make} {activity.model}
+                                    </span>
+                                  </div>
+                                );
+                              });
+                            })()}
+
+                            {/* NEW Chain vehicles - stair-stepped in groups of 3 */}
+                            {chain && chain.chain.map((vehicle, idx) => {
                               // Parse dates as local (avoid timezone shift)
                               const [sYear, sMonth, sDay] = vehicle.start_date.split('-').map(Number);
                               const [eYear, eMonth, eDay] = vehicle.end_date.split('-').map(Number);
@@ -489,10 +618,11 @@ function ChainBuilder({ sharedOffice }) {
                               const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
 
                               // Repeating stair-step pattern (groups of 3)
-                              // Position 0: top=16, Position 1: top=44, Position 2: top=72
-                              // Position 3: top=16 (REPEAT), Position 4: top=44, etc.
+                              // Start below existing activities (existing at top=8, so start chain at top=40)
+                              // Position 0: top=40, Position 1: top=68, Position 2: top=96
+                              // Position 3: top=40 (REPEAT), Position 4: top=68, etc.
                               const positionInGroup = idx % 3; // 0, 1, 2, then repeats
-                              const top = 16 + (positionInGroup * 28); // 16, 44, 72, then repeats
+                              const top = 40 + (positionInGroup * 28); // Start at 40 to leave room for existing activities
 
                               // Use GREEN for chain recommendations (consistent with calendar)
                               const barColor = 'bg-gradient-to-br from-green-400 to-green-500 border-green-600';
@@ -530,11 +660,12 @@ function ChainBuilder({ sharedOffice }) {
                 </div>
               </div>
 
-              {/* Vehicle Details List */}
-              <div className="bg-white rounded-lg shadow-sm border p-6">
-                <h3 className="text-md font-semibold text-gray-900 mb-4">Vehicle Details</h3>
-                <div className="space-y-3">
-                  {chain.chain.map((vehicle) => (
+              {/* Vehicle Details List - only show if chain exists */}
+              {chain && (
+                <div className="bg-white rounded-lg shadow-sm border p-6">
+                  <h3 className="text-md font-semibold text-gray-900 mb-4">Vehicle Details</h3>
+                  <div className="space-y-3">
+                    {chain.chain.map((vehicle) => (
                     <div
                       key={vehicle.slot}
                       className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
@@ -563,9 +694,10 @@ function ChainBuilder({ sharedOffice }) {
                         </div>
                       </div>
                     </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ) : (
             <div className="bg-white rounded-lg shadow-sm border p-12">

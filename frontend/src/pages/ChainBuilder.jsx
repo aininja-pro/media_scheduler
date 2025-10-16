@@ -315,9 +315,10 @@ function ChainBuilder({ sharedOffice }) {
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <p className="text-xs text-gray-500 mt-1">Must be a weekday (Mon-Fri)</p>
+              <p className="text-xs text-gray-500 mt-1">Must be a weekday (Mon-Fri), today or future</p>
             </div>
 
             {/* Number of Vehicles */}

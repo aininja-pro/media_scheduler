@@ -98,10 +98,29 @@ function ChainBuilder({ sharedOffice }) {
     return monday.toISOString().split('T')[0];
   };
 
-  // Initialize start date to next Monday
+  // Initialize start date to next Monday and restore from session
   useEffect(() => {
     setStartDate(getCurrentMonday());
+
+    // Restore selected partner from sessionStorage
+    const savedPartnerId = sessionStorage.getItem('chainbuilder_partner_id');
+    const savedPartnerName = sessionStorage.getItem('chainbuilder_partner_name');
+    if (savedPartnerId) {
+      setSelectedPartner(parseInt(savedPartnerId));
+      setPartnerSearchQuery(savedPartnerName || '');
+    }
   }, []);
+
+  // Save selected partner to sessionStorage
+  useEffect(() => {
+    if (selectedPartner) {
+      sessionStorage.setItem('chainbuilder_partner_id', selectedPartner);
+      const partner = partners.find(p => p.person_id === selectedPartner);
+      if (partner) {
+        sessionStorage.setItem('chainbuilder_partner_name', partner.name);
+      }
+    }
+  }, [selectedPartner, partners]);
 
   // Load partner intelligence when partner is selected
   useEffect(() => {
@@ -276,6 +295,26 @@ function ChainBuilder({ sharedOffice }) {
     }
   };
 
+  const clearChainBuilder = () => {
+    if (!window.confirm('Clear Chain Builder and start fresh?')) {
+      return;
+    }
+
+    // Clear all state
+    setSelectedPartner('');
+    setPartnerSearchQuery('');
+    setChain(null);
+    setError('');
+    setSaveMessage('');
+    setPartnerIntelligence(null);
+    setSelectedMakes([]);
+    setStartDate(getCurrentMonday());
+
+    // Clear sessionStorage
+    sessionStorage.removeItem('chainbuilder_partner_id');
+    sessionStorage.removeItem('chainbuilder_partner_name');
+  };
+
   const saveChain = async () => {
     if (!chain || !chain.chain || chain.chain.length === 0) {
       setError('No chain to save');
@@ -395,6 +434,17 @@ function ChainBuilder({ sharedOffice }) {
                 ))}
               </select>
             </div>
+
+            {/* Clear/Reset Button */}
+            {selectedPartner && (
+              <button
+                onClick={clearChainBuilder}
+                className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50"
+                title="Clear and start fresh"
+              >
+                Clear
+              </button>
+            )}
           </div>
         </div>
       </div>

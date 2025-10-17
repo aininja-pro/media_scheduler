@@ -150,22 +150,24 @@ function ChainBuilder({ sharedOffice }) {
     }
   }, [chain]);
 
-  // Slide timeline forward by 1 month
+  // Slide timeline forward by 7 days (like Calendar tab)
   const slideForward = () => {
-    if (!viewStartDate) return;
+    if (!viewStartDate || !viewEndDate) return;
     const newStart = new Date(viewStartDate);
-    newStart.setMonth(newStart.getMonth() + 1);
-    const newEnd = new Date(newStart.getFullYear(), newStart.getMonth() + 1, 0);
+    const newEnd = new Date(viewEndDate);
+    newStart.setDate(newStart.getDate() + 7);
+    newEnd.setDate(newEnd.getDate() + 7);
     setViewStartDate(newStart);
     setViewEndDate(newEnd);
   };
 
-  // Slide timeline backward by 1 month
+  // Slide timeline backward by 7 days (like Calendar tab)
   const slideBackward = () => {
-    if (!viewStartDate) return;
+    if (!viewStartDate || !viewEndDate) return;
     const newStart = new Date(viewStartDate);
-    newStart.setMonth(newStart.getMonth() - 1);
-    const newEnd = new Date(newStart.getFullYear(), newStart.getMonth() + 1, 0);
+    const newEnd = new Date(viewEndDate);
+    newStart.setDate(newStart.getDate() - 7);
+    newEnd.setDate(newEnd.getDate() - 7);
     setViewStartDate(newStart);
     setViewEndDate(newEnd);
   };

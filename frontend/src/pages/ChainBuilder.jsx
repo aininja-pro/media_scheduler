@@ -615,8 +615,24 @@ function ChainBuilder({ sharedOffice }) {
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-md font-semibold text-gray-900">Chain Timeline</h3>
 
-                  {/* Month Navigation Arrows */}
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-3">
+                    {/* Delete Chain Button - show if partner has saved manual chains */}
+                    {partnerIntelligence?.upcoming_assignments?.some(a => a.status === 'manual') && (
+                      <button
+                        onClick={deleteEntireChain}
+                        disabled={isSaving}
+                        className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                          isSaving
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-red-600 text-white hover:bg-red-700'
+                        }`}
+                      >
+                        Delete Saved Chain
+                      </button>
+                    )}
+
+                    {/* Month Navigation Arrows */}
+                    <div className="flex gap-2">
                     <button
                       onClick={slideBackward}
                       className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50 text-xs"
@@ -638,6 +654,7 @@ function ChainBuilder({ sharedOffice }) {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
                     </button>
+                    </div>
                   </div>
                 </div>
 

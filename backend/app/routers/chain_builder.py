@@ -20,6 +20,7 @@ from ..chain_builder.availability import (
     get_available_vehicles_for_slot,
     check_slot_availability
 )
+from ..chain_builder.smart_scheduling import adjust_chain_for_existing_commitments
 from ..solver.scoring import compute_candidate_scores
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,30 @@ async def suggest_chain(
         if not activity_df.empty and 'vehicle_vin' in activity_df.columns:
             activity_df['vin'] = activity_df['vehicle_vin']
 
+        # Load scheduled assignments for this partner
+        logger.info(f"Loading scheduled assignments for partner {person_id}")
+        scheduled_response = db.client.table('scheduled_assignments')\
+            .select('*')\
+            .eq('person_id', int(person_id))\
+            .execute()
+
+        scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+        logger.info(f"Found {len(scheduled_df)} scheduled assignments for partner {person_id}")
+
+        # Use smart scheduling to find slots that work around existing commitments
+        estimated_chain_end = (start_dt + timedelta(days=num_vehicles * days_per_loan * 2)).strftime('%Y-%m-%d')
+
+        smart_slots = adjust_chain_for_existing_commitments(
+            person_id=int(person_id),
+            start_date=start_date,
+            num_vehicles=num_vehicles,
+            days_per_loan=days_per_loan,
+            current_activity_df=activity_df,
+            scheduled_assignments_df=scheduled_df
+        )
+
+        logger.info(f"Smart scheduling found {len(smart_slots)} available slots (threading through {len(scheduled_df)} existing commitments)")
+
         # Build availability grid for entire chain period
         logger.info(f"Building availability grid for {num_vehicles} slots")
         availability_grid = build_chain_availability_grid(
@@ -133,13 +158,12 @@ async def suggest_chain(
             office=office
         )
 
-        # For each slot, determine which vehicles are available
+        # Use smart slots (which avoid existing commitments) instead of simple sequential dates
         slot_availability_counts = []
-        current_date = start_dt
 
-        for slot_index in range(num_vehicles):
-            slot_start = current_date.strftime('%Y-%m-%d')
-            slot_end = (current_date + timedelta(days=days_per_loan - 1)).strftime('%Y-%m-%d')
+        for slot_index, smart_slot in enumerate(smart_slots):
+            slot_start = smart_slot['start_date']
+            slot_end = smart_slot['end_date']
 
             # Get vehicles available for this slot (from the filtered available_vins)
             slot_vins = get_available_vehicles_for_slot(
@@ -157,11 +181,6 @@ async def suggest_chain(
                 'end_date': slot_end,
                 'available_count': len(slot_vins)
             })
-
-            # Move to next slot (skip weekends)
-            current_date = current_date + timedelta(days=days_per_loan)
-            while current_date.weekday() >= 5:  # Skip weekends
-                current_date = current_date + timedelta(days=1)
 
         # Load additional data needed for scoring
         logger.info("Loading partners and approved makes for scoring")
@@ -195,15 +214,14 @@ async def suggest_chain(
         partner_info_row = partners_df[partners_df['person_id'] == int(person_id)]
         partner_name = partner_info_row.iloc[0]['name'] if not partner_info_row.empty and 'name' in partner_info_row.columns else f"Partner {person_id}"
 
-        # Greedy chain selection: Pick best vehicle for each slot
+        # Greedy chain selection: Pick best vehicle for each smart slot
         suggested_chain = []
         used_vins = set()  # Track VINs already used in chain
         used_models = set()  # Track (make, model) combos already used - HARD RULE: no duplicates
-        current_date = start_dt
 
-        for slot_index in range(num_vehicles):
-            slot_start = current_date.strftime('%Y-%m-%d')
-            slot_end = (current_date + timedelta(days=days_per_loan - 1)).strftime('%Y-%m-%d')
+        for slot_index, smart_slot in enumerate(smart_slots):
+            slot_start = smart_slot['start_date']
+            slot_end = smart_slot['end_date']
 
             # Get vehicles available for this slot (excluding already-used VINs)
             slot_vins = get_available_vehicles_for_slot(
@@ -302,12 +320,7 @@ async def suggest_chain(
             # Mark this VIN as used
             used_vins.add(vin)
 
-            # Move to next slot (skip weekends)
-            current_date = current_date + timedelta(days=days_per_loan)
-            while current_date.weekday() >= 5:  # Skip weekends
-                current_date = current_date + timedelta(days=1)
-
-        logger.info(f"Generated chain with {len(suggested_chain)} vehicles")
+        logger.info(f"Generated chain with {len(suggested_chain)} vehicles (threading through existing commitments)")
 
         return {
             "status": "success",

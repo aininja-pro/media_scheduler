@@ -1210,8 +1210,16 @@ function Calendar({ sharedOffice }) {
               <span>▼</span>
             </button>
             {showPartnerDropdown && (
-              <div className="absolute z-50 mt-1 w-80 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                <div className="p-2 border-b sticky top-0 bg-white">
+              <div className="absolute z-50 mt-1 w-96 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                <div className="p-2 border-b sticky top-0 bg-white space-y-2">
+                  <input
+                    type="text"
+                    placeholder="Type to search partners..."
+                    value={partnerFilter}
+                    onChange={(e) => setPartnerFilter(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full border border-gray-300 rounded px-2 py-1 text-xs"
+                  />
                   <button
                     onClick={() => setSelectedPartners([])}
                     className="text-xs text-blue-600 hover:text-blue-800"
@@ -1219,7 +1227,10 @@ function Calendar({ sharedOffice }) {
                     Clear All
                   </button>
                 </div>
-                {allPartners.map(partner => (
+                {allPartners
+                  .filter(p => p.name.toLowerCase().includes(partnerFilter.toLowerCase()))
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map(partner => (
                   <label
                     key={partner.person_id}
                     className="flex items-center px-2 py-1.5 hover:bg-gray-50 cursor-pointer text-xs"

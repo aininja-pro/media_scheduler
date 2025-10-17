@@ -445,7 +445,7 @@ async def save_chain(
                 'partner_name': partner_name,
                 'score': vehicle.get('score', 0),
                 'week_start': week_start,  # Monday of the week
-                'status': 'proposed'  # Green in calendar (not yet committed)
+                'status': 'manual'  # Green in calendar (manually created, not optimizer)
             })
 
         # Insert all assignments

@@ -517,8 +517,15 @@ function Calendar({ sharedOffice }) {
     return sortOrder === 'asc' ? comparison : -comparison;
   });
 
+  // Sort partners alphabetically by name
+  const sortedPartners = filteredPartners.sort((a, b) => {
+    const nameA = a.partner_name || '';
+    const nameB = b.partner_name || '';
+    return nameA.localeCompare(nameB);
+  });
+
   // Choose which data to display based on view mode
-  const displayData = viewMode === 'vehicle' ? sortedVins : filteredPartners;
+  const displayData = viewMode === 'vehicle' ? sortedVins : sortedPartners;
 
   // Get unique makes for filter
   const uniqueMakes = [...new Set(activities.map(a => a.make).filter(Boolean))].sort();

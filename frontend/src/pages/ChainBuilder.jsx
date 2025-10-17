@@ -24,6 +24,9 @@ function ChainBuilder({ sharedOffice }) {
   const [partnerIntelligence, setPartnerIntelligence] = useState(null);
   const [loadingIntelligence, setLoadingIntelligence] = useState(false);
 
+  // Make filtering
+  const [selectedMakes, setSelectedMakes] = useState([]);
+
   // Update selectedOffice when sharedOffice prop changes
   useEffect(() => {
     if (sharedOffice) {
@@ -116,6 +119,10 @@ function ChainBuilder({ sharedOffice }) {
           if (data.success) {
             setPartnerIntelligence(data);
 
+            // Auto-select all approved makes by default
+            const approvedMakes = data.approved_makes?.map(m => m.make) || [];
+            setSelectedMakes(approvedMakes);
+
             // Initialize timeline view to current month when partner loads
             if (!viewStartDate) {
               const now = new Date();
@@ -207,6 +214,11 @@ function ChainBuilder({ sharedOffice }) {
         num_vehicles: numVehicles,
         days_per_loan: daysPerLoan
       });
+
+      // Add selected makes filter if any are selected
+      if (selectedMakes.length > 0) {
+        params.append('preferred_makes', selectedMakes.join(','));
+      }
 
       const response = await fetch(`http://localhost:8081/api/chain-builder/suggest-chain?${params}`);
       const data = await response.json();
@@ -360,6 +372,63 @@ function ChainBuilder({ sharedOffice }) {
               />
               <p className="text-xs text-gray-500 mt-1">Typical: 7 days (1 week)</p>
             </div>
+
+            {/* Make Filter - Show when partner is selected */}
+            {partnerIntelligence && partnerIntelligence.approved_makes && partnerIntelligence.approved_makes.length > 0 && (
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Filter by Make
+                  </label>
+                  <button
+                    onClick={() => {
+                      const allMakes = partnerIntelligence.approved_makes.map(m => m.make);
+                      setSelectedMakes(selectedMakes.length === allMakes.length ? [] : allMakes);
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    {selectedMakes.length === partnerIntelligence.approved_makes.length ? 'Clear All' : 'Select All'}
+                  </button>
+                </div>
+
+                <div className="max-h-48 overflow-y-auto border border-gray-200 rounded p-2 space-y-1">
+                  {partnerIntelligence.approved_makes
+                    .sort((a, b) => a.make.localeCompare(b.make))
+                    .map((item) => (
+                      <label
+                        key={item.make}
+                        className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedMakes.includes(item.make)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedMakes([...selectedMakes, item.make]);
+                            } else {
+                              setSelectedMakes(selectedMakes.filter(m => m !== item.make));
+                            }
+                          }}
+                          className="rounded border-gray-300"
+                        />
+                        <span className="text-xs flex-1">{item.make}</span>
+                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                          item.rank === 'A+' ? 'bg-purple-100 text-purple-800' :
+                          item.rank === 'A' ? 'bg-blue-100 text-blue-800' :
+                          item.rank === 'B' ? 'bg-green-100 text-green-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {item.rank}
+                        </span>
+                      </label>
+                    ))}
+                </div>
+
+                <p className="text-xs text-gray-500 mt-2">
+                  {selectedMakes.length} of {partnerIntelligence.approved_makes.length} makes selected
+                </p>
+              </div>
+            )}
 
             {/* Generate Button */}
             <button
@@ -668,12 +737,12 @@ function ChainBuilder({ sharedOffice }) {
                 <div className="bg-white rounded-lg shadow-sm border p-6">
                   <h3 className="text-md font-semibold text-gray-900 mb-4">Chain Vehicles</h3>
 
-                  {/* Horizontal scrollable card row */}
-                  <div className="flex gap-4 overflow-x-auto pb-2">
+                  {/* Card grid - max 5 per row, then wrap */}
+                  <div className="grid grid-cols-5 gap-4">
                     {chain.chain.map((vehicle) => (
                       <div
                         key={vehicle.slot}
-                        className="flex-shrink-0 w-56 border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all hover:border-blue-400 cursor-pointer"
+                        className="border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all hover:border-blue-400 cursor-pointer"
                       >
                         {/* Header: Slot + Tier */}
                         <div className="flex items-center justify-between mb-3">

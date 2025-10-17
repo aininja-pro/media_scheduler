@@ -34,6 +34,7 @@ async def suggest_chain(
     start_date: str = Query(..., description="Chain start date (YYYY-MM-DD)"),
     num_vehicles: int = Query(4, description="Number of vehicles in chain", ge=1, le=10),
     days_per_loan: int = Query(7, description="Days per loan", ge=1, le=14),
+    preferred_makes: Optional[str] = Query(None, description="Comma-separated list of makes to filter (e.g., 'Toyota,Honda')"),
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """
@@ -105,6 +106,22 @@ async def suggest_chain(
         excluded_vins = exclusion_result['excluded_vins']
 
         logger.info(f"Exclusion: {len(available_vins)} available, {len(excluded_vins)} excluded")
+
+        # Filter by preferred makes if specified
+        if preferred_makes:
+            preferred_makes_list = [m.strip() for m in preferred_makes.split(',')]
+            logger.info(f"Filtering to preferred makes: {preferred_makes_list}")
+
+            # Filter available vehicles to only preferred makes
+            preferred_vehicles = vehicles_df[
+                (vehicles_df['vin'].isin(available_vins)) &
+                (vehicles_df['make'].isin(preferred_makes_list))
+            ]
+            available_vins = set(preferred_vehicles['vin'].unique())
+
+            logger.info(f"After make filtering: {len(available_vins)} vehicles available")
+        else:
+            logger.info("No make filter applied - using all approved makes")
 
         # Get model cooldown status
         cooldown_status = get_model_cooldown_status(

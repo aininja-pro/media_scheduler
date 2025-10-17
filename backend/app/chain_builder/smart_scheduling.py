@@ -118,6 +118,10 @@ def find_available_slots(
         # Calculate slot end date
         slot_end = current_date + timedelta(days=days_per_slot - 1)
 
+        # If slot ends on weekend, extend to Monday (dropoff on weekday)
+        while slot_end.weekday() >= 5:  # 5=Sat, 6=Sun
+            slot_end += timedelta(days=1)
+
         # Check if this slot conflicts with any busy period
         conflicts = False
         for busy_start, busy_end in busy_periods:

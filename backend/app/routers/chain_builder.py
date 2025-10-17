@@ -164,16 +164,30 @@ async def suggest_chain(
 
         logger.info(f"Smart scheduling found {len(smart_slots)} available slots (threading through {len(scheduled_df)} existing commitments)")
 
-        # Build availability grid for entire chain period
-        logger.info(f"Building availability grid for {num_vehicles} slots")
-        availability_grid = build_chain_availability_grid(
-            vehicles_df=vehicles_df,
-            activity_df=activity_df,
-            start_date=start_date,
-            num_slots=num_vehicles,
-            days_per_slot=days_per_loan,
-            office=office
-        )
+        # Build availability grid covering the ACTUAL smart slot range (not estimated)
+        if smart_slots and len(smart_slots) > 0:
+            actual_start = smart_slots[0]['start_date']
+            actual_end = smart_slots[-1]['end_date']
+
+            # Calculate how many days we actually need
+            start_dt_actual = datetime.strptime(actual_start, '%Y-%m-%d')
+            end_dt_actual = datetime.strptime(actual_end, '%Y-%m-%d')
+            actual_days_needed = (end_dt_actual - start_dt_actual).days + 1
+
+            logger.info(f"Building availability grid from {actual_start} to {actual_end} ({actual_days_needed} days for {len(smart_slots)} slots)")
+
+            availability_grid = build_chain_availability_grid(
+                vehicles_df=vehicles_df,
+                activity_df=activity_df,
+                start_date=actual_start,
+                num_slots=len(smart_slots),
+                days_per_slot=days_per_loan,
+                office=office,
+                end_date=actual_end  # Pass explicit end date to cover weekend extensions
+            )
+        else:
+            # No smart slots - return empty
+            availability_grid = pd.DataFrame()
 
         # Use smart slots (which avoid existing commitments) instead of simple sequential dates
         slot_availability_counts = []
@@ -297,7 +311,9 @@ async def suggest_chain(
                     break
 
             if best_vehicle is None:
-                logger.warning(f"No unique models available for slot {slot_index + 1} (all top candidates are duplicate models)")
+                logger.warning(f"No unique models available for slot {slot_index + 1}")
+                logger.warning(f"  Total candidates: {len(scored_candidates)}, Used models so far: {used_models}")
+                logger.warning(f"  Slot dates: {slot_start} to {slot_end}")
                 break
 
             vin = best_vehicle['vin']

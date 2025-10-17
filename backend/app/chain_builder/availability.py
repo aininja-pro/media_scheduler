@@ -18,7 +18,8 @@ def build_chain_availability_grid(
     start_date: str,
     num_slots: int,
     days_per_slot: int = 7,
-    office: str = None
+    office: str = None,
+    end_date: str = None  # NEW: explicit end date if provided
 ) -> pd.DataFrame:
     """
     Build availability grid covering entire chain period.
@@ -30,17 +31,24 @@ def build_chain_availability_grid(
         num_slots: Number of vehicles in chain
         days_per_slot: Days per vehicle loan (default 7)
         office: Office to filter vehicles (optional)
+        end_date: Explicit end date (YYYY-MM-DD) - overrides calculation
 
     Returns:
         DataFrame with columns: vin, date, available (boolean)
-        Covers full chain duration (num_slots * days_per_slot days)
+        Covers full chain duration
     """
 
     try:
-        # Calculate chain duration
-        chain_duration_days = num_slots * days_per_slot
         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-        end_dt = start_dt + timedelta(days=chain_duration_days - 1)
+
+        # Use explicit end_date if provided, otherwise calculate
+        if end_date:
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+            chain_duration_days = (end_dt - start_dt).days + 1
+        else:
+            # Calculate chain duration
+            chain_duration_days = num_slots * days_per_slot
+            end_dt = start_dt + timedelta(days=chain_duration_days - 1)
 
         logger.info(f"Building availability grid: {start_date} to {end_dt.strftime('%Y-%m-%d')} ({chain_duration_days} days)")
 

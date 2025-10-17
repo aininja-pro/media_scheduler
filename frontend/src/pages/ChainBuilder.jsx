@@ -29,6 +29,12 @@ function ChainBuilder({ sharedOffice }) {
   // Make filtering
   const [selectedMakes, setSelectedMakes] = useState([]);
 
+  // Swap modal
+  const [swapModalOpen, setSwapModalOpen] = useState(false);
+  const [swapSlot, setSwapSlot] = useState(null);
+  const [swapAlternatives, setSwapAlternatives] = useState([]);
+  const [loadingSwap, setLoadingSwap] = useState(false);
+
   // Update selectedOffice when sharedOffice prop changes
   useEffect(() => {
     if (sharedOffice) {
@@ -260,6 +266,94 @@ function ChainBuilder({ sharedOffice }) {
     }
   };
 
+  const openSwapModal = async (vehicle, savedAssignment = null) => {
+    setSwapSlot({
+      ...vehicle,
+      assignment_id: savedAssignment?.assignment_id
+    });
+    setSwapModalOpen(true);
+    setLoadingSwap(true);
+
+    try {
+      // Call chain builder to get alternatives for this slot
+      // Request a 1-vehicle chain for these specific dates
+      const params = new URLSearchParams({
+        person_id: selectedPartner,
+        office: selectedOffice,
+        start_date: vehicle.start_date,
+        num_vehicles: 1,
+        days_per_loan: daysPerLoan
+      });
+
+      if (selectedMakes.length > 0) {
+        params.append('preferred_makes', selectedMakes.join(','));
+      }
+
+      const response = await fetch(`http://localhost:8081/api/chain-builder/suggest-chain?${params}`);
+      const data = await response.json();
+
+      if (response.ok && data.chain && data.chain.length > 0) {
+        // Get top 5 alternatives
+        const alternatives = data.slot_availability[0]?.available_count || 0;
+        // For now, we'll need a new endpoint to get alternatives
+        // Simplified: show message that swap will regenerate
+        setSwapAlternatives([]);
+      }
+    } catch (err) {
+      console.error('Error loading swap alternatives:', err);
+    } finally {
+      setLoadingSwap(false);
+    }
+  };
+
+  const swapVehicle = async (newVehicle) => {
+    // Delete old assignment, save new one
+    try {
+      if (swapSlot.assignment_id) {
+        await fetch(`http://localhost:8081/api/calendar/delete-assignment/${swapSlot.assignment_id}`, {
+          method: 'DELETE'
+        });
+      }
+
+      // Save new vehicle
+      await fetch('http://localhost:8081/api/chain-builder/save-chain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          person_id: selectedPartner,
+          partner_name: partnerIntelligence.partner.name,
+          office: selectedOffice,
+          chain: [{
+            vin: newVehicle.vin,
+            make: newVehicle.make,
+            model: newVehicle.model,
+            start_date: swapSlot.start_date,
+            end_date: swapSlot.end_date,
+            score: newVehicle.score
+          }]
+        })
+      });
+
+      setSaveMessage(`✅ Swapped vehicle for Slot ${swapSlot.slot}`);
+      setSwapModalOpen(false);
+
+      // Reload partner intelligence
+      if (selectedPartner && selectedOffice) {
+        const response = await fetch(
+          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setPartnerIntelligence(data);
+          }
+        }
+      }
+    } catch (err) {
+      setSaveMessage(`❌ Error swapping: ${err.message}`);
+    }
+  };
+
   const deleteVehicleFromChain = async (assignmentId) => {
     if (!window.confirm('Remove this vehicle from the chain?')) {
       return;
@@ -357,6 +451,20 @@ function ChainBuilder({ sharedOffice }) {
 
       setSaveMessage(`✅ ${data.message} View in Calendar tab.`);
       console.log('Chain saved:', data);
+
+      // Don't clear chain - keep showing it so × buttons appear
+      // Just reload partner intelligence to get assignment IDs
+      if (selectedPartner && selectedOffice) {
+        const resp = await fetch(
+          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+        );
+        if (resp.ok) {
+          const reloadData = await resp.json();
+          if (reloadData.success) {
+            setPartnerIntelligence(reloadData);
+          }
+        }
+      }
     } catch (err) {
       setSaveMessage(`❌ Error: ${err.message}`);
     } finally {
@@ -985,11 +1093,40 @@ function ChainBuilder({ sharedOffice }) {
 
                   {/* Card grid - max 5 per row, then wrap */}
                   <div className="grid grid-cols-5 gap-4">
-                    {chain.chain.map((vehicle) => (
-                      <div
+                    {chain.chain.map((vehicle) => {
+                      // Find if this vehicle is saved (has assignment_id)
+                      const savedAssignment = partnerIntelligence?.upcoming_assignments?.find(a =>
+                        a.vin === vehicle.vin &&
+                        a.start_day === vehicle.start_date &&
+                        a.status === 'manual'
+                      );
+
+                      return (<div
                         key={vehicle.slot}
-                        className="border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all hover:border-blue-400 cursor-pointer"
+                        onClick={() => alert(`Click to swap Slot ${vehicle.slot} - Feature coming next!`)}
+                        className="border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all hover:border-blue-400 cursor-pointer relative"
                       >
+                        {/* Delete button - only show if saved */}
+                        {savedAssignment && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteVehicleFromChain(savedAssignment.assignment_id);
+                            }}
+                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full hover:bg-red-700 flex items-center justify-center text-sm font-bold shadow-lg z-10"
+                            title="Delete this saved vehicle"
+                          >
+                            ×
+                          </button>
+                        )}
+
+                        {/* Swap icon - show for generated (not saved) vehicles */}
+                        {!savedAssignment && (
+                          <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-lg pointer-events-none">
+                            ⇄
+                          </div>
+                        )}
+
                         {/* Header: Slot + Tier */}
                         <div className="flex items-center justify-between mb-3">
                           <span className="text-sm font-bold text-gray-700">Slot {vehicle.slot}</span>
@@ -1037,8 +1174,8 @@ function ChainBuilder({ sharedOffice }) {
                             <p className="text-sm font-bold text-blue-600">{vehicle.score}</p>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      </div>);
+                    })}
                   </div>
                 </div>
               )}

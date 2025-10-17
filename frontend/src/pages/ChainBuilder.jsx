@@ -10,6 +10,8 @@ function ChainBuilder({ sharedOffice }) {
   const [isLoading, setIsLoading] = useState(false);
   const [chain, setChain] = useState(null);
   const [error, setError] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   // Timeline navigation
   const [viewStartDate, setViewStartDate] = useState(null); // Show 1 month at a time
@@ -191,6 +193,55 @@ function ChainBuilder({ sharedOffice }) {
     }
   };
 
+  const saveChain = async () => {
+    if (!chain || !chain.chain || chain.chain.length === 0) {
+      setError('No chain to save');
+      return;
+    }
+
+    if (!window.confirm(`Save this ${chain.chain.length}-vehicle chain for ${chain.partner_info.name}?`)) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage('');
+
+    try {
+      const response = await fetch('http://localhost:8081/api/chain-builder/save-chain', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          person_id: chain.partner_info.person_id,
+          partner_name: chain.partner_info.name,
+          office: chain.partner_info.office,
+          chain: chain.chain.map(v => ({
+            vin: v.vin,
+            make: v.make,
+            model: v.model,
+            start_date: v.start_date,
+            end_date: v.end_date,
+            score: v.score
+          }))
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to save chain');
+      }
+
+      setSaveMessage(`✅ ${data.message} View in Calendar tab.`);
+      console.log('Chain saved:', data);
+    } catch (err) {
+      setSaveMessage(`❌ Error: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const generateChain = async () => {
     if (!selectedPartner) {
       setError('Please select a media partner');
@@ -204,6 +255,7 @@ function ChainBuilder({ sharedOffice }) {
 
     setIsLoading(true);
     setError('');
+    setSaveMessage('');
     setChain(null);
 
     try {
@@ -735,7 +787,33 @@ function ChainBuilder({ sharedOffice }) {
               {/* Vehicle Details - Horizontal Cards */}
               {chain && (
                 <div className="bg-white rounded-lg shadow-sm border p-6">
-                  <h3 className="text-md font-semibold text-gray-900 mb-4">Chain Vehicles</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-md font-semibold text-gray-900">Chain Vehicles</h3>
+
+                    {/* Save Chain Button */}
+                    <button
+                      onClick={saveChain}
+                      disabled={isSaving}
+                      className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
+                        isSaving
+                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                      }`}
+                    >
+                      {isSaving ? 'Saving...' : 'Save Chain'}
+                    </button>
+                  </div>
+
+                  {/* Save Message */}
+                  {saveMessage && (
+                    <div className={`mb-4 p-3 rounded-md text-sm ${
+                      saveMessage.includes('✅')
+                        ? 'bg-green-50 border border-green-200 text-green-800'
+                        : 'bg-red-50 border border-red-200 text-red-700'
+                    }`}>
+                      {saveMessage}
+                    </div>
+                  )}
 
                   {/* Card grid - max 5 per row, then wrap */}
                   <div className="grid grid-cols-5 gap-4">

@@ -384,38 +384,86 @@ async def suggest_chain(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/validate-chain")
-async def validate_chain(
-    chain_vins: str = Query(..., description="Comma-separated VINs"),
-    start_date: str = Query(..., description="Chain start date"),
-    days_per_loan: int = Query(7, description="Days per loan"),
+@router.post("/save-chain")
+async def save_chain(
+    request: Dict[str, Any],
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """
-    Validate a manually-edited chain for feasibility.
+    Save chain to scheduled_assignments table.
 
-    Checks:
-    - Sequential availability
-    - Cooldown compliance
-    - Tier cap limits
-    - Conflicts with existing recommendations
+    Accepts chain data and inserts as 'proposed' status for Calendar view.
 
-    Returns validation status and any issues found.
+    Request body:
+        {
+            "person_id": int,
+            "partner_name": str,
+            "office": str,
+            "chain": [
+                {
+                    "vin": str,
+                    "make": str,
+                    "model": str,
+                    "start_date": str,
+                    "end_date": str,
+                    "score": int
+                }
+            ]
+        }
+
+    Returns success status and assignment IDs
     """
 
     try:
-        vins = chain_vins.split(',')
+        person_id = request.get('person_id')
+        partner_name = request.get('partner_name')
+        office = request.get('office')
+        chain_vehicles = request.get('chain', [])
 
-        # TODO: Implement validation logic in later commits
+        if not person_id or not office or not chain_vehicles:
+            raise HTTPException(status_code=400, detail="Missing required fields: person_id, office, chain")
 
-        return {
-            "status": "valid",
-            "chain_vins": vins,
-            "issues": [],
-            "warnings": [],
-            "message": "Validation logic coming in future commits"
-        }
+        logger.info(f"Saving chain for partner {person_id}: {len(chain_vehicles)} vehicles")
+
+        # Insert each vehicle as a scheduled assignment
+        assignments_to_insert = []
+
+        for vehicle in chain_vehicles:
+            # Calculate week_start (Monday of the week this assignment starts)
+            start_date = datetime.strptime(vehicle['start_date'], '%Y-%m-%d')
+            monday = start_date - timedelta(days=start_date.weekday())
+            week_start = monday.strftime('%Y-%m-%d')
+
+            assignments_to_insert.append({
+                'vin': vehicle['vin'],
+                'person_id': int(person_id),
+                'start_day': vehicle['start_date'],
+                'end_day': vehicle['end_date'],
+                'make': vehicle.get('make', ''),
+                'model': vehicle.get('model', ''),
+                'office': office,
+                'partner_name': partner_name,
+                'score': vehicle.get('score', 0),
+                'week_start': week_start,  # Monday of the week
+                'status': 'proposed'  # Green in calendar (not yet committed)
+            })
+
+        # Insert all assignments
+        if assignments_to_insert:
+            result = db.client.table('scheduled_assignments').insert(assignments_to_insert).execute()
+
+            return {
+                'success': True,
+                'message': f'Chain saved successfully! {len(assignments_to_insert)} vehicles added to calendar.',
+                'assignments_saved': len(assignments_to_insert),
+                'assignment_ids': [a.get('assignment_id') for a in result.data] if result.data else []
+            }
+        else:
+            return {
+                'success': False,
+                'message': 'No vehicles to save'
+            }
 
     except Exception as e:
-        logger.error(f"Error validating chain: {str(e)}")
+        logger.error(f"Error saving chain: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

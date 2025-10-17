@@ -663,40 +663,66 @@ function ChainBuilder({ sharedOffice }) {
                 </div>
               </div>
 
-              {/* Vehicle Details List - only show if chain exists */}
+              {/* Vehicle Details - Horizontal Cards */}
               {chain && (
                 <div className="bg-white rounded-lg shadow-sm border p-6">
-                  <h3 className="text-md font-semibold text-gray-900 mb-4">Vehicle Details</h3>
-                  <div className="space-y-3">
+                  <h3 className="text-md font-semibold text-gray-900 mb-4">Chain Vehicles</h3>
+
+                  {/* Horizontal scrollable card row */}
+                  <div className="flex gap-4 overflow-x-auto pb-2">
                     {chain.chain.map((vehicle) => (
-                    <div
-                      key={vehicle.slot}
-                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3">
-                            <span className="text-lg font-semibold text-gray-900">Slot {vehicle.slot}</span>
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                              vehicle.tier === 'A+' ? 'bg-purple-100 text-purple-800' :
-                              vehicle.tier === 'A' ? 'bg-blue-100 text-blue-800' :
-                              vehicle.tier === 'B' ? 'bg-green-100 text-green-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {vehicle.tier}
-                            </span>
+                      <div
+                        key={vehicle.slot}
+                        className="flex-shrink-0 w-56 border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all hover:border-blue-400 cursor-pointer"
+                      >
+                        {/* Header: Slot + Tier */}
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-bold text-gray-700">Slot {vehicle.slot}</span>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${
+                            vehicle.tier === 'A+' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
+                            vehicle.tier === 'A' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                            vehicle.tier === 'B' ? 'bg-green-100 text-green-800 border border-green-300' :
+                            'bg-gray-100 text-gray-800 border border-gray-300'
+                          }`}>
+                            {vehicle.tier}
+                          </span>
+                        </div>
+
+                        {/* Vehicle Info */}
+                        <div className="space-y-2">
+                          <div>
+                            <h4 className="font-semibold text-gray-900 text-sm leading-tight">
+                              {vehicle.make}
+                            </h4>
+                            <p className="text-xs text-gray-600 leading-tight">
+                              {vehicle.model}
+                            </p>
+                            <p className="text-xs text-gray-400">{vehicle.year}</p>
                           </div>
-                          <h4 className="text-base font-medium text-gray-900 mt-2">
-                            {vehicle.year} {vehicle.make} {vehicle.model}
-                          </h4>
-                          <p className="text-sm text-gray-500 font-mono">{vehicle.vin}</p>
-                          <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
-                            <span>{vehicle.start_date} to {vehicle.end_date}</span>
-                            <span>Score: {vehicle.score}</span>
+
+                          {/* Dates */}
+                          <div className="pt-2 border-t border-gray-200">
+                            <p className="text-xs text-gray-500 font-medium">Dates</p>
+                            <p className="text-xs text-gray-900">
+                              {new Date(vehicle.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(vehicle.end_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </p>
+                          </div>
+
+                          {/* VIN */}
+                          <div className="pt-2 border-t border-gray-200">
+                            <p className="text-xs text-gray-500 font-medium">VIN</p>
+                            <p className="text-xs font-mono text-gray-700 truncate">
+                              ...{vehicle.vin.slice(-8)}
+                            </p>
+                          </div>
+
+                          {/* Score */}
+                          <div className="pt-2 border-t border-gray-200">
+                            <p className="text-xs text-gray-500 font-medium">Score</p>
+                            <p className="text-sm font-bold text-blue-600">{vehicle.score}</p>
                           </div>
                         </div>
                       </div>
-                    </div>
                     ))}
                   </div>
                 </div>

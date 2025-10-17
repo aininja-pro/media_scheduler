@@ -193,6 +193,89 @@ function ChainBuilder({ sharedOffice }) {
     }
   };
 
+  const deleteEntireChain = async () => {
+    if (!partnerIntelligence || !partnerIntelligence.upcoming_assignments) {
+      return;
+    }
+
+    const chainAssignments = partnerIntelligence.upcoming_assignments.filter(a => a.status === 'manual');
+
+    if (chainAssignments.length === 0) {
+      setSaveMessage('❌ No saved chain to delete');
+      return;
+    }
+
+    if (!window.confirm(`Delete entire chain (${chainAssignments.length} vehicles) for ${partnerIntelligence.partner.name}?`)) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage('');
+
+    try {
+      // Delete each assignment
+      for (const assignment of chainAssignments) {
+        await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`, {
+          method: 'DELETE'
+        });
+      }
+
+      setSaveMessage(`✅ Deleted ${chainAssignments.length} vehicles from chain`);
+
+      // Reload partner intelligence to refresh calendar
+      if (selectedPartner && selectedOffice) {
+        const response = await fetch(
+          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setPartnerIntelligence(data);
+          }
+        }
+      }
+    } catch (err) {
+      setSaveMessage(`❌ Error deleting chain: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteVehicleFromChain = async (assignmentId) => {
+    if (!window.confirm('Remove this vehicle from the chain?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignmentId}`, {
+        method: 'DELETE'
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setSaveMessage('✅ Vehicle removed from chain');
+
+        // Reload partner intelligence to refresh
+        if (selectedPartner && selectedOffice) {
+          const resp = await fetch(
+            `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+          );
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.success) {
+              setPartnerIntelligence(data);
+            }
+          }
+        }
+      } else {
+        setSaveMessage(`❌ ${result.message || 'Failed to delete'}`);
+      }
+    } catch (err) {
+      setSaveMessage(`❌ Error: ${err.message}`);
+    }
+  };
+
   const saveChain = async () => {
     if (!chain || !chain.chain || chain.chain.length === 0) {
       setError('No chain to save');
@@ -790,18 +873,36 @@ function ChainBuilder({ sharedOffice }) {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-md font-semibold text-gray-900">Chain Vehicles</h3>
 
-                    {/* Save Chain Button */}
-                    <button
-                      onClick={saveChain}
-                      disabled={isSaving}
-                      className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
-                        isSaving
-                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                          : 'bg-green-600 text-white hover:bg-green-700'
-                      }`}
-                    >
-                      {isSaving ? 'Saving...' : 'Save Chain'}
-                    </button>
+                    {/* Action Buttons */}
+                    <div className="flex gap-2">
+                      {/* Delete Entire Chain Button - only show if partner has saved manual assignments */}
+                      {partnerIntelligence?.upcoming_assignments?.some(a => a.status === 'manual') && (
+                        <button
+                          onClick={deleteEntireChain}
+                          disabled={isSaving}
+                          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                            isSaving
+                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                              : 'bg-red-600 text-white hover:bg-red-700'
+                          }`}
+                        >
+                          Delete Chain
+                        </button>
+                      )}
+
+                      {/* Save Chain Button */}
+                      <button
+                        onClick={saveChain}
+                        disabled={isSaving}
+                        className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
+                          isSaving
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
+                      >
+                        {isSaving ? 'Saving...' : 'Save Chain'}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Save Message */}

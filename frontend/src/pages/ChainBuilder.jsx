@@ -35,6 +35,11 @@ function ChainBuilder({ sharedOffice }) {
   const [swapAlternatives, setSwapAlternatives] = useState([]);
   const [loadingSwap, setLoadingSwap] = useState(false);
 
+  // Manual Build mode
+  const [buildMode, setBuildMode] = useState('auto'); // 'auto' or 'manual'
+  const [manualSlots, setManualSlots] = useState([]); // Array of {slot, start_date, end_date, selected_vehicle, eligible_vehicles}
+  const [loadingSlotOptions, setLoadingSlotOptions] = useState({});
+
   // Update selectedOffice when sharedOffice prop changes
   useEffect(() => {
     if (sharedOffice) {
@@ -403,6 +408,8 @@ function ChainBuilder({ sharedOffice }) {
     setPartnerIntelligence(null);
     setSelectedMakes([]);
     setStartDate(getCurrentMonday());
+    setManualSlots([]);
+    setBuildMode('auto');
 
     // Clear sessionStorage
     sessionStorage.removeItem('chainbuilder_partner_id');
@@ -516,6 +523,210 @@ function ChainBuilder({ sharedOffice }) {
       setChain(null);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const generateManualSlots = async () => {
+    if (!selectedPartner) {
+      setError('Please select a media partner');
+      return;
+    }
+
+    if (!startDate) {
+      setError('Please select a start date');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    setSaveMessage('');
+    setChain(null);
+    setManualSlots([]);
+
+    try {
+      // First, get the slot dates by calling suggest-chain (we just need the slot dates, not the vehicles)
+      const params = new URLSearchParams({
+        person_id: selectedPartner,
+        office: selectedOffice,
+        start_date: startDate,
+        num_vehicles: numVehicles,
+        days_per_loan: daysPerLoan
+      });
+
+      const response = await fetch(`http://localhost:8081/api/chain-builder/suggest-chain?${params}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to generate slots');
+      }
+
+      // Create empty slots with dates from the response
+      const slots = data.slot_availability.map((slot, index) => ({
+        slot: index + 1,
+        start_date: slot.start_date,
+        end_date: slot.end_date,
+        selected_vehicle: null,
+        eligible_vehicles: [],
+        available_count: slot.available_count
+      }));
+
+      setManualSlots(slots);
+      console.log('Manual slots generated:', slots);
+
+      // Initialize timeline view to show the chain period
+      if (slots.length > 0) {
+        const dateStr = slots[0].start_date;
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const monthStart = new Date(year, month - 1, 1);
+        const monthEnd = new Date(year, month, 0);
+        setViewStartDate(monthStart);
+        setViewEndDate(monthEnd);
+      }
+    } catch (err) {
+      setError(err.message);
+      setManualSlots([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadSlotOptions = async (slotIndex) => {
+    if (!selectedPartner || !manualSlots[slotIndex]) {
+      return;
+    }
+
+    setLoadingSlotOptions(prev => ({ ...prev, [slotIndex]: true }));
+
+    try {
+      // Build exclude_vins from already-selected vehicles
+      const excludeVins = manualSlots
+        .filter((s, i) => i !== slotIndex && s.selected_vehicle)
+        .map(s => s.selected_vehicle.vin)
+        .join(',');
+
+      const params = new URLSearchParams({
+        person_id: selectedPartner,
+        office: selectedOffice,
+        start_date: startDate,
+        num_vehicles: numVehicles,
+        days_per_loan: daysPerLoan,
+        slot_index: slotIndex
+      });
+
+      if (selectedMakes.length > 0) {
+        params.append('preferred_makes', selectedMakes.join(','));
+      }
+
+      if (excludeVins) {
+        params.append('exclude_vins', excludeVins);
+      }
+
+      const response = await fetch(`http://localhost:8081/api/chain-builder/get-slot-options?${params}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to load slot options');
+      }
+
+      // Update the slot with eligible vehicles
+      setManualSlots(prev => {
+        const updated = [...prev];
+        updated[slotIndex] = {
+          ...updated[slotIndex],
+          eligible_vehicles: data.eligible_vehicles
+        };
+        return updated;
+      });
+
+      console.log(`Loaded ${data.eligible_vehicles.length} options for slot ${slotIndex}`);
+    } catch (err) {
+      console.error('Error loading slot options:', err);
+      setError(`Failed to load options for slot ${slotIndex + 1}: ${err.message}`);
+    } finally {
+      setLoadingSlotOptions(prev => ({ ...prev, [slotIndex]: false }));
+    }
+  };
+
+  const selectVehicleForSlot = (slotIndex, vehicle) => {
+    setManualSlots(prev => {
+      const updated = [...prev];
+      updated[slotIndex] = {
+        ...updated[slotIndex],
+        selected_vehicle: vehicle
+      };
+      return updated;
+    });
+  };
+
+  const saveManualChain = async () => {
+    // Check if all slots have vehicles selected
+    const unfilledSlots = manualSlots.filter(s => !s.selected_vehicle);
+    if (unfilledSlots.length > 0) {
+      setError(`Please select vehicles for all ${manualSlots.length} slots (${unfilledSlots.length} remaining)`);
+      return;
+    }
+
+    const partner = partners.find(p => p.person_id === selectedPartner);
+    if (!partner) {
+      setError('Partner not found');
+      return;
+    }
+
+    if (!window.confirm(`Save this ${manualSlots.length}-vehicle chain for ${partner.name}?`)) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage('');
+
+    try {
+      const chainData = manualSlots.map(slot => ({
+        vin: slot.selected_vehicle.vin,
+        make: slot.selected_vehicle.make,
+        model: slot.selected_vehicle.model,
+        start_date: slot.start_date,
+        end_date: slot.end_date,
+        score: slot.selected_vehicle.score
+      }));
+
+      const response = await fetch('http://localhost:8081/api/chain-builder/save-chain', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          person_id: selectedPartner,
+          partner_name: partner.name,
+          office: selectedOffice,
+          chain: chainData
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to save chain');
+      }
+
+      setSaveMessage(`✅ ${data.message} View in Calendar tab.`);
+      console.log('Manual chain saved:', data);
+
+      // Reload partner intelligence to get assignment IDs
+      if (selectedPartner && selectedOffice) {
+        const resp = await fetch(
+          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+        );
+        if (resp.ok) {
+          const reloadData = await resp.json();
+          if (reloadData.success) {
+            setPartnerIntelligence(reloadData);
+          }
+        }
+      }
+    } catch (err) {
+      setSaveMessage(`❌ Error: ${err.message}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -723,9 +934,38 @@ function ChainBuilder({ sharedOffice }) {
               </div>
             )}
 
+            {/* Mode Toggle */}
+            <div className="border-t pt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Build Mode
+              </label>
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <button
+                  onClick={() => setBuildMode('auto')}
+                  className={`py-2 px-3 rounded-md text-xs font-medium transition-colors border ${
+                    buildMode === 'auto'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Auto-Generate
+                </button>
+                <button
+                  onClick={() => setBuildMode('manual')}
+                  className={`py-2 px-3 rounded-md text-xs font-medium transition-colors border ${
+                    buildMode === 'manual'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Manual Build
+                </button>
+              </div>
+            </div>
+
             {/* Generate Button */}
             <button
-              onClick={generateChain}
+              onClick={buildMode === 'auto' ? generateChain : generateManualSlots}
               disabled={isLoading || !selectedPartner || !startDate}
               className={`w-full py-3 rounded-md text-sm font-medium transition-colors ${
                 isLoading || !selectedPartner || !startDate
@@ -733,7 +973,10 @@ function ChainBuilder({ sharedOffice }) {
                   : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}
             >
-              {isLoading ? 'Generating Chain...' : 'Generate Chain'}
+              {isLoading
+                ? (buildMode === 'auto' ? 'Generating Chain...' : 'Creating Slots...')
+                : (buildMode === 'auto' ? 'Generate Chain' : 'Create Empty Slots')
+              }
             </button>
 
             {error && (
@@ -966,8 +1209,74 @@ function ChainBuilder({ sharedOffice }) {
                               });
                             })()}
 
+                            {/* Manual Mode Slots - show empty slots OR filled slots */}
+                            {buildMode === 'manual' && manualSlots.map((slot, idx) => {
+                              // Parse dates as local (avoid timezone shift)
+                              const [sYear, sMonth, sDay] = slot.start_date.split('-').map(Number);
+                              const [eYear, eMonth, eDay] = slot.end_date.split('-').map(Number);
+                              const vStart = new Date(sYear, sMonth - 1, sDay);
+                              const vEnd = new Date(eYear, eMonth - 1, eDay);
+
+                              // Only show if slot overlaps with current view
+                              const viewStart = new Date(viewStartDate);
+                              const viewEnd = new Date(viewEndDate);
+
+                              if (vEnd < viewStart || vStart > viewEnd) {
+                                return null;
+                              }
+
+                              // Calculate bar position
+                              const rangeStart = new Date(viewStartDate);
+                              const rangeEnd = new Date(viewEndDate);
+
+                              const startDate = vStart < rangeStart ? rangeStart : vStart;
+                              const endDate = vEnd > rangeEnd ? rangeEnd : vEnd;
+
+                              const totalDays = days.length;
+                              const startDayOffset = Math.floor((startDate - rangeStart) / (1000 * 60 * 60 * 24));
+                              const endDayOffset = Math.floor((endDate - rangeStart) / (1000 * 60 * 60 * 24));
+
+                              const left = ((startDayOffset + 0.5) / totalDays) * 100;
+                              const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
+
+                              // Stair-step pattern
+                              const positionInGroup = idx % 3;
+                              const top = 40 + (positionInGroup * 28);
+
+                              // Color: Gray for empty, Green for filled
+                              const barColor = slot.selected_vehicle
+                                ? 'bg-gradient-to-br from-green-400 to-green-500 border-green-600'
+                                : 'bg-gradient-to-br from-gray-300 to-gray-400 border-gray-500';
+
+                              const label = slot.selected_vehicle
+                                ? `${slot.selected_vehicle.make} ${slot.selected_vehicle.model}`
+                                : `Slot ${slot.slot} - Select Vehicle`;
+
+                              return (
+                                <div
+                                  key={slot.slot}
+                                  className={`absolute ${barColor} border-2 rounded-lg shadow-lg hover:shadow-xl transition-all px-2 flex items-center text-white text-xs font-semibold overflow-hidden`}
+                                  style={{
+                                    left: `${left}%`,
+                                    width: `${width}%`,
+                                    minWidth: '80px',
+                                    top: `${top}px`,
+                                    height: '24px'
+                                  }}
+                                  title={slot.selected_vehicle
+                                    ? `Slot ${slot.slot}: ${slot.selected_vehicle.make} ${slot.selected_vehicle.model}\n${slot.start_date} - ${slot.end_date}\nScore: ${slot.selected_vehicle.score}`
+                                    : `Slot ${slot.slot}: Empty\n${slot.start_date} - ${slot.end_date}\nClick dropdown below to select vehicle`
+                                  }
+                                >
+                                  <span className="truncate text-[11px]">
+                                    {label}
+                                  </span>
+                                </div>
+                              );
+                            })}
+
                             {/* NEW Chain vehicles - stair-stepped in groups of 3 */}
-                            {chain && chain.chain.map((vehicle, idx) => {
+                            {buildMode === 'auto' && chain && chain.chain.map((vehicle, idx) => {
                               // Parse dates as local (avoid timezone shift)
                               const [sYear, sMonth, sDay] = vehicle.start_date.split('-').map(Number);
                               const [eYear, eMonth, eDay] = vehicle.end_date.split('-').map(Number);
@@ -1036,14 +1345,168 @@ function ChainBuilder({ sharedOffice }) {
                 </div>
 
                 <div className="mt-3 text-xs text-gray-500 flex items-center gap-2">
-                  <span className="inline-block w-3 h-3 bg-green-400 border-2 border-green-600 rounded"></span>
-                  <span>Green bars = Proposed chain recommendations</span>
+                  {buildMode === 'manual' ? (
+                    <>
+                      <span className="inline-block w-3 h-3 bg-gray-400 border-2 border-gray-500 rounded"></span>
+                      <span>Gray = Empty slots (select vehicle)</span>
+                      <span className="inline-block w-3 h-3 bg-green-400 border-2 border-green-600 rounded ml-3"></span>
+                      <span>Green = Vehicle selected</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="inline-block w-3 h-3 bg-green-400 border-2 border-green-600 rounded"></span>
+                      <span>Green bars = Proposed chain recommendations</span>
+                    </>
+                  )}
                   <span className="ml-4">Use arrows to navigate months</span>
                 </div>
               </div>
 
+              {/* Manual Mode Vehicle Cards with Dropdowns */}
+              {buildMode === 'manual' && manualSlots.length > 0 && (
+                <div className="bg-white rounded-lg shadow-sm border p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-md font-semibold text-gray-900">Select Vehicles for Each Slot</h3>
+
+                    {/* Save Manual Chain Button */}
+                    <button
+                      onClick={saveManualChain}
+                      disabled={isSaving || manualSlots.some(s => !s.selected_vehicle)}
+                      className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
+                        isSaving || manualSlots.some(s => !s.selected_vehicle)
+                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                      }`}
+                      title={manualSlots.some(s => !s.selected_vehicle) ? 'Select vehicles for all slots first' : 'Save chain'}
+                    >
+                      {isSaving ? 'Saving...' : 'Save Chain'}
+                    </button>
+                  </div>
+
+                  {/* Save Message */}
+                  {saveMessage && (
+                    <div className={`mb-4 p-3 rounded-md text-sm ${
+                      saveMessage.includes('✅')
+                        ? 'bg-green-50 border border-green-200 text-green-800'
+                        : 'bg-red-50 border border-red-200 text-red-700'
+                    }`}>
+                      {saveMessage}
+                    </div>
+                  )}
+
+                  {/* Manual Slot Cards */}
+                  <div className="grid grid-cols-5 gap-4">
+                    {manualSlots.map((slot, index) => (
+                      <div
+                        key={slot.slot}
+                        className="border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all relative"
+                      >
+                        {/* Header: Slot + Available Count */}
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-bold text-gray-700">Slot {slot.slot}</span>
+                          {slot.available_count > 0 && (
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                              {slot.available_count} avail
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Dates */}
+                        <div className="mb-3 pb-3 border-b border-gray-200">
+                          <p className="text-xs text-gray-500 font-medium">Dates</p>
+                          <p className="text-xs text-gray-900">
+                            {new Date(slot.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(slot.end_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </p>
+                        </div>
+
+                        {/* Vehicle Selection Dropdown */}
+                        {!slot.selected_vehicle ? (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Select Vehicle:
+                            </label>
+                            <select
+                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  const vehicle = slot.eligible_vehicles.find(v => v.vin === e.target.value);
+                                  if (vehicle) {
+                                    selectVehicleForSlot(index, vehicle);
+                                  }
+                                }
+                              }}
+                              onFocus={() => {
+                                // Load options when dropdown is focused (lazy loading)
+                                if (slot.eligible_vehicles.length === 0) {
+                                  loadSlotOptions(index);
+                                }
+                              }}
+                              value=""
+                            >
+                              <option value="">
+                                {loadingSlotOptions[index] ? 'Loading...' : 'Choose vehicle...'}
+                              </option>
+                              {slot.eligible_vehicles.map(vehicle => (
+                                <option key={vehicle.vin} value={vehicle.vin}>
+                                  {vehicle.make} {vehicle.model} ({vehicle.tier}) - {vehicle.last_4_vin}
+                                </option>
+                              ))}
+                            </select>
+                            {slot.available_count === 0 && (
+                              <p className="text-xs text-red-600 mt-1">No vehicles available</p>
+                            )}
+                          </div>
+                        ) : (
+                          /* Show selected vehicle */
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${
+                                slot.selected_vehicle.tier === 'A+' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
+                                slot.selected_vehicle.tier === 'A' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                                slot.selected_vehicle.tier === 'B' ? 'bg-green-100 text-green-800 border border-green-300' :
+                                'bg-gray-100 text-gray-800 border border-gray-300'
+                              }`}>
+                                {slot.selected_vehicle.tier}
+                              </span>
+                              <button
+                                onClick={() => selectVehicleForSlot(index, null)}
+                                className="text-xs text-red-600 hover:text-red-800 underline"
+                              >
+                                Change
+                              </button>
+                            </div>
+
+                            <div>
+                              <h4 className="font-semibold text-gray-900 text-sm leading-tight">
+                                {slot.selected_vehicle.make}
+                              </h4>
+                              <p className="text-xs text-gray-600 leading-tight">
+                                {slot.selected_vehicle.model}
+                              </p>
+                              <p className="text-xs text-gray-400">{slot.selected_vehicle.year}</p>
+                            </div>
+
+                            <div className="pt-2 border-t border-gray-200">
+                              <p className="text-xs text-gray-500 font-medium">VIN</p>
+                              <p className="text-xs font-mono text-gray-700">
+                                ...{slot.selected_vehicle.last_4_vin}
+                              </p>
+                            </div>
+
+                            <div className="pt-2 border-t border-gray-200">
+                              <p className="text-xs text-gray-500 font-medium">Score</p>
+                              <p className="text-sm font-bold text-blue-600">{slot.selected_vehicle.score}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Vehicle Details - Horizontal Cards */}
-              {chain && (
+              {buildMode === 'auto' && chain && (
                 <div className="bg-white rounded-lg shadow-sm border p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-md font-semibold text-gray-900">Chain Vehicles</h3>

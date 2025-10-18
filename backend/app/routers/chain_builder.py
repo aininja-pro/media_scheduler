@@ -400,6 +400,302 @@ async def suggest_chain(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/get-slot-options")
+async def get_slot_options(
+    person_id: int = Query(..., description="Media partner ID"),
+    office: str = Query(..., description="Office name"),
+    start_date: str = Query(..., description="Chain start date (YYYY-MM-DD)"),
+    num_vehicles: int = Query(..., description="Number of vehicles in chain", ge=1, le=10),
+    days_per_loan: int = Query(..., description="Days per loan", ge=1, le=14),
+    slot_index: int = Query(..., description="Slot index (0-based)", ge=0),
+    preferred_makes: Optional[str] = Query(None, description="Comma-separated list of makes to filter"),
+    exclude_vins: Optional[str] = Query(None, description="Comma-separated list of VINs to exclude (already selected in other slots)"),
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Get eligible vehicles for a specific slot in manual chain building.
+
+    This endpoint is used for Manual Build mode, where the scheduler
+    manually selects vehicles from dropdowns for each slot.
+
+    Args:
+        person_id: Target media partner ID
+        office: Office to pull vehicles from
+        start_date: Chain start date
+        num_vehicles: Total number of vehicles in chain
+        days_per_loan: Days per loan
+        slot_index: Which slot to get options for (0-based)
+        preferred_makes: Optional comma-separated makes filter
+        exclude_vins: Optional VINs already selected in other slots
+
+    Returns:
+        Dictionary with:
+        - slot: Slot info (index, start_date, end_date)
+        - eligible_vehicles: List of vehicles with scores
+        - total_eligible: Count of eligible vehicles
+    """
+    try:
+        logger.info(f"Getting slot options for partner {person_id}, slot {slot_index}")
+
+        # Validate slot_index
+        if slot_index >= num_vehicles:
+            raise HTTPException(
+                status_code=400,
+                detail=f"slot_index ({slot_index}) must be less than num_vehicles ({num_vehicles})"
+            )
+
+        # Validate start_date is a weekday
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        if start_dt.weekday() >= 5:  # Saturday = 5, Sunday = 6
+            raise HTTPException(
+                status_code=400,
+                detail=f"Start date must be a weekday (Mon-Fri). {start_date} is a {start_dt.strftime('%A')}"
+            )
+
+        # Load data from database
+        logger.info(f"Loading vehicles for office {office}")
+        vehicles_response = db.client.table('vehicles').select('*').eq('office', office).execute()
+        vehicles_df = pd.DataFrame(vehicles_response.data) if vehicles_response.data else pd.DataFrame()
+
+        if vehicles_df.empty:
+            raise HTTPException(status_code=404, detail=f"No vehicles found for office {office}")
+
+        # Load loan history with pagination
+        logger.info("Loading loan history")
+        all_loan_history = []
+        limit = 1000
+        offset = 0
+        while True:
+            loan_response = db.client.table('loan_history').select('*').range(offset, offset + limit - 1).execute()
+            if not loan_response.data:
+                break
+            all_loan_history.extend(loan_response.data)
+            offset += limit
+            if len(loan_response.data) < limit:
+                break
+
+        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
+
+        # Get vehicles partner has NOT reviewed
+        exclusion_result = get_vehicles_not_reviewed(
+            person_id=person_id,
+            office=office,
+            loan_history_df=loan_history_df,
+            vehicles_df=vehicles_df,
+            months_back=12
+        )
+
+        available_vins = exclusion_result['available_vins']
+        logger.info(f"Exclusion: {len(available_vins)} vehicles not reviewed by partner")
+
+        # Filter by preferred makes if specified
+        if preferred_makes:
+            preferred_makes_list = [m.strip() for m in preferred_makes.split(',')]
+            logger.info(f"Filtering to preferred makes: {preferred_makes_list}")
+
+            preferred_vehicles = vehicles_df[
+                (vehicles_df['vin'].isin(available_vins)) &
+                (vehicles_df['make'].isin(preferred_makes_list))
+            ]
+            available_vins = set(preferred_vehicles['vin'].unique())
+            logger.info(f"After make filtering: {len(available_vins)} vehicles available")
+
+        # Parse exclude_vins parameter
+        excluded_vins_set = set()
+        if exclude_vins:
+            excluded_vins_set = set([v.strip() for v in exclude_vins.split(',')])
+            logger.info(f"Excluding {len(excluded_vins_set)} VINs already selected in other slots")
+
+        # Load current activity and scheduled assignments
+        logger.info("Loading current activity")
+        activity_response = db.client.table('current_activity').select('*').execute()
+        activity_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
+
+        # Fix column name if needed
+        if not activity_df.empty and 'vehicle_vin' in activity_df.columns:
+            activity_df['vin'] = activity_df['vehicle_vin']
+
+        # Load scheduled assignments for this partner
+        logger.info(f"Loading scheduled assignments for partner {person_id}")
+        scheduled_response = db.client.table('scheduled_assignments')\
+            .select('*')\
+            .eq('person_id', int(person_id))\
+            .execute()
+
+        scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+
+        # Use smart scheduling to calculate all slot dates
+        smart_slots = adjust_chain_for_existing_commitments(
+            person_id=int(person_id),
+            start_date=start_date,
+            num_vehicles=num_vehicles,
+            days_per_loan=days_per_loan,
+            current_activity_df=activity_df,
+            scheduled_assignments_df=scheduled_df
+        )
+
+        if not smart_slots or slot_index >= len(smart_slots):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unable to find slot {slot_index} (only {len(smart_slots)} slots available)"
+            )
+
+        # Get the specific slot we're interested in
+        target_slot = smart_slots[slot_index]
+        slot_start = target_slot['start_date']
+        slot_end = target_slot['end_date']
+
+        logger.info(f"Slot {slot_index}: {slot_start} to {slot_end}")
+
+        # Build availability grid covering the entire chain period
+        if smart_slots and len(smart_slots) > 0:
+            actual_start = smart_slots[0]['start_date']
+            actual_end = smart_slots[-1]['end_date']
+
+            logger.info(f"Building availability grid from {actual_start} to {actual_end}")
+
+            availability_grid = build_chain_availability_grid(
+                vehicles_df=vehicles_df,
+                activity_df=activity_df,
+                start_date=actual_start,
+                num_slots=len(smart_slots),
+                days_per_slot=days_per_loan,
+                office=office,
+                end_date=actual_end
+            )
+        else:
+            availability_grid = pd.DataFrame()
+
+        # Get available VINs for this specific slot
+        slot_vins = get_available_vehicles_for_slot(
+            slot_index=slot_index,
+            slot_start=slot_start,
+            slot_end=slot_end,
+            candidate_vins=available_vins,
+            availability_df=availability_grid,
+            exclude_vins=excluded_vins_set
+        )
+
+        logger.info(f"Found {len(slot_vins)} vehicles available for slot {slot_index}")
+
+        if not slot_vins:
+            # Return empty result if no vehicles available
+            return {
+                "status": "success",
+                "slot": {
+                    "index": slot_index,
+                    "start_date": slot_start,
+                    "end_date": slot_end
+                },
+                "eligible_vehicles": [],
+                "total_eligible": 0,
+                "message": "No vehicles available for this slot"
+            }
+
+        # Load additional data for scoring
+        logger.info("Loading partners and approved makes for scoring")
+        partners_response = db.client.table('media_partners').select('*').execute()
+        partners_df = pd.DataFrame(partners_response.data) if partners_response.data else pd.DataFrame()
+
+        # Load approved makes with pagination
+        all_approved = []
+        limit = 1000
+        offset = 0
+        while True:
+            approved_response = db.client.table('approved_makes').select('person_id, make, rank').range(offset, offset + limit - 1).execute()
+            if not approved_response.data:
+                break
+            all_approved.extend(approved_response.data)
+            offset += limit
+            if len(approved_response.data) < limit:
+                break
+
+        approved_makes_df = pd.DataFrame(all_approved) if all_approved else pd.DataFrame()
+
+        # Ensure person_id types are consistent (int)
+        if not approved_makes_df.empty and 'person_id' in approved_makes_df.columns:
+            approved_makes_df['person_id'] = approved_makes_df['person_id'].astype(int)
+
+        if not partners_df.empty and 'person_id' in partners_df.columns:
+            partners_df['person_id'] = partners_df['person_id'].astype(int)
+
+        # Build candidate DataFrame for scoring
+        slot_vehicles = vehicles_df[vehicles_df['vin'].isin(slot_vins)].copy()
+        slot_vehicles['person_id'] = int(person_id)
+        slot_vehicles['market'] = office
+
+        # Rename 'office' column to avoid conflict with partners_df merge
+        if 'office' in slot_vehicles.columns:
+            slot_vehicles = slot_vehicles.rename(columns={'office': 'vehicle_office'})
+
+        # Score candidates using optimizer logic
+        scored_candidates = compute_candidate_scores(
+            candidates_df=slot_vehicles,
+            partner_rank_df=approved_makes_df,
+            partners_df=partners_df,
+            publication_df=pd.DataFrame()
+        )
+
+        if scored_candidates.empty:
+            return {
+                "status": "success",
+                "slot": {
+                    "index": slot_index,
+                    "start_date": slot_start,
+                    "end_date": slot_end
+                },
+                "eligible_vehicles": [],
+                "total_eligible": 0,
+                "message": "No scored vehicles available for this slot"
+            }
+
+        # Sort by score (best first)
+        scored_candidates = scored_candidates.sort_values('score', ascending=False)
+
+        # Limit to top 50 vehicles to avoid overwhelming the frontend
+        max_vehicles = 50
+        top_candidates = scored_candidates.head(max_vehicles)
+
+        # Build response list
+        eligible_vehicles = []
+        for _, vehicle in top_candidates.iterrows():
+            vin = vehicle['vin']
+            last_4_vin = vin[-4:] if len(vin) >= 4 else vin
+
+            eligible_vehicles.append({
+                "vin": vin,
+                "make": vehicle.get('make', 'Unknown'),
+                "model": vehicle.get('model', 'Unknown'),
+                "trim": vehicle.get('trim', ''),
+                "year": str(vehicle.get('year', '')),
+                "score": int(vehicle['score']),
+                "tier": vehicle.get('rank', 'C'),
+                "last_4_vin": last_4_vin
+            })
+
+        logger.info(f"Returning {len(eligible_vehicles)} eligible vehicles for slot {slot_index}")
+
+        return {
+            "status": "success",
+            "slot": {
+                "index": slot_index,
+                "start_date": slot_start,
+                "end_date": slot_end
+            },
+            "eligible_vehicles": eligible_vehicles,
+            "total_eligible": len(eligible_vehicles),
+            "message": f"Found {len(eligible_vehicles)} eligible vehicles for slot {slot_index + 1}"
+        }
+
+    except ValueError as e:
+        logger.error(f"Invalid date format: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {start_date}. Use YYYY-MM-DD")
+
+    except Exception as e:
+        logger.error(f"Error getting slot options: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/save-chain")
 async def save_chain(
     request: Dict[str, Any],

@@ -45,9 +45,11 @@ function Calendar({ sharedOffice }) {
   const [selectedPartners, setSelectedPartners] = useState([]); // Array of person_ids
   const [selectedVehicles, setSelectedVehicles] = useState([]); // Array of VINs
   const [selectedTiers, setSelectedTiers] = useState([]); // Array of tier ranks (A+, A, B, C)
+  const [selectedMakes, setSelectedMakes] = useState([]); // Array of makes
   const [showPartnerDropdown, setShowPartnerDropdown] = useState(false);
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
   const [showTierDropdown, setShowTierDropdown] = useState(false);
+  const [showMakeDropdown, setShowMakeDropdown] = useState(false);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -56,6 +58,7 @@ function Calendar({ sharedOffice }) {
         setShowPartnerDropdown(false);
         setShowVehicleDropdown(false);
         setShowTierDropdown(false);
+        setShowMakeDropdown(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -171,6 +174,7 @@ function Calendar({ sharedOffice }) {
     setSelectedPartners([]);
     setSelectedVehicles([]);
     setSelectedTiers([]);
+    setSelectedMakes([]);
     setSortBy('make');
     setSortOrder('asc');
   };
@@ -422,6 +426,9 @@ function Calendar({ sharedOffice }) {
     const hasActivityThisMonth = vehicle.activities.some(a => activityOverlapsMonth(a));
     if (activityFilter === 'with-activity' && !hasActivityThisMonth) return false;
     if (activityFilter === 'no-activity' && hasActivityThisMonth) return false;
+
+    // Multi-select make filter
+    if (selectedMakes.length > 0 && !selectedMakes.includes(vehicle.make)) return false;
 
     // Other filters
     if (vinFilter && !vehicle.vin.toLowerCase().includes(vinFilter.toLowerCase())) return false;
@@ -1143,18 +1150,47 @@ function Calendar({ sharedOffice }) {
             )}
           </div>
 
-          <div>
+          <div className="relative multi-select-dropdown w-40">
             <label className="block text-xs font-medium text-gray-700 mb-1">Make</label>
-            <select
-              value={makeFilter}
-              onChange={(e) => setMakeFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+            <button
+              onClick={() => setShowMakeDropdown(!showMakeDropdown)}
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs text-left bg-white hover:bg-gray-50 flex justify-between items-center"
             >
-              <option value="">All</option>
-              {uniqueMakes.map(make => (
-                <option key={make} value={make}>{make}</option>
-              ))}
-            </select>
+              <span>{selectedMakes.length > 0 ? `${selectedMakes.length} selected` : 'All'}</span>
+              <span>▼</span>
+            </button>
+            {showMakeDropdown && (
+              <div className="absolute z-50 mt-1 w-48 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                <div className="p-2 border-b sticky top-0 bg-white">
+                  <button
+                    onClick={() => setSelectedMakes([])}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                {uniqueMakes.map(make => (
+                  <label
+                    key={make}
+                    className="flex items-center px-2 py-1.5 hover:bg-gray-50 cursor-pointer text-xs"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedMakes.includes(make)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedMakes([...selectedMakes, make]);
+                        } else {
+                          setSelectedMakes(selectedMakes.filter(m => m !== make));
+                        }
+                      }}
+                      className="mr-2"
+                    />
+                    <span>{make}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="relative multi-select-dropdown">
@@ -1200,7 +1236,7 @@ function Calendar({ sharedOffice }) {
             )}
           </div>
 
-          <div className="relative multi-select-dropdown">
+          <div className="relative multi-select-dropdown w-48">
             <label className="block text-xs font-medium text-gray-700 mb-1">Partners</label>
             <button
               onClick={() => setShowPartnerDropdown(!showPartnerDropdown)}

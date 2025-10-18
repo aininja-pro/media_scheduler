@@ -553,6 +553,11 @@ function ChainBuilder({ sharedOffice }) {
         days_per_loan: daysPerLoan
       });
 
+      // IMPORTANT: Pass make filter so counts are accurate
+      if (selectedMakes.length > 0) {
+        params.append('preferred_makes', selectedMakes.join(','));
+      }
+
       const response = await fetch(`http://localhost:8081/api/chain-builder/suggest-chain?${params}`);
       const data = await response.json();
 
@@ -567,7 +572,7 @@ function ChainBuilder({ sharedOffice }) {
         end_date: slot.end_date,
         selected_vehicle: null,
         eligible_vehicles: [],
-        available_count: slot.available_count
+        available_count: slot.available_count  // This now reflects filtered count
       }));
 
       setManualSlots(slots);
@@ -1404,11 +1409,20 @@ function ChainBuilder({ sharedOffice }) {
                         {/* Header: Slot + Available Count */}
                         <div className="flex items-center justify-between mb-3">
                           <span className="text-sm font-bold text-gray-700">Slot {slot.slot}</span>
-                          {slot.available_count > 0 && (
-                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                              {slot.available_count} avail
+                          {/* Show actual dropdown count if loaded, otherwise show estimated count */}
+                          {loadingSlotOptions[index] ? (
+                            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                              Loading...
                             </span>
-                          )}
+                          ) : slot.eligible_vehicles.length > 0 ? (
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                              {slot.eligible_vehicles.length} avail
+                            </span>
+                          ) : slot.available_count > 0 ? (
+                            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                              ~{slot.available_count} est
+                            </span>
+                          ) : null}
                         </div>
 
                         {/* Dates */}
@@ -1422,11 +1436,23 @@ function ChainBuilder({ sharedOffice }) {
                         {/* Vehicle Selection Dropdown */}
                         {!slot.selected_vehicle ? (
                           <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              Select Vehicle:
-                            </label>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="block text-xs font-medium text-gray-700">
+                                Select Vehicle:
+                              </label>
+                              {slot.eligible_vehicles.length > 0 && (
+                                <button
+                                  onClick={() => loadSlotOptions(index)}
+                                  disabled={loadingSlotOptions[index]}
+                                  className="text-xs text-blue-600 hover:text-blue-800 underline"
+                                >
+                                  {loadingSlotOptions[index] ? 'Loading...' : 'Reload'}
+                                </button>
+                              )}
+                            </div>
                             <select
-                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-48 overflow-y-auto"
+                              size="1"
                               onChange={(e) => {
                                 if (e.target.value) {
                                   const vehicle = slot.eligible_vehicles.find(v => v.vin === e.target.value);
@@ -1444,13 +1470,23 @@ function ChainBuilder({ sharedOffice }) {
                               value=""
                             >
                               <option value="">
-                                {loadingSlotOptions[index] ? 'Loading...' : 'Choose vehicle...'}
+                                {loadingSlotOptions[index] ? 'Loading options...' :
+                                 slot.eligible_vehicles.length === 0 ? 'Click to load options...' :
+                                 'Choose vehicle...'}
                               </option>
-                              {slot.eligible_vehicles.map(vehicle => (
-                                <option key={vehicle.vin} value={vehicle.vin}>
-                                  {vehicle.make} {vehicle.model} ({vehicle.tier}) - {vehicle.last_4_vin}
-                                </option>
-                              ))}
+                              {slot.eligible_vehicles
+                                .sort((a, b) => {
+                                  // Sort by Make alphabetically, then by Score descending
+                                  if (a.make !== b.make) {
+                                    return a.make.localeCompare(b.make);
+                                  }
+                                  return b.score - a.score;
+                                })
+                                .map(vehicle => (
+                                  <option key={vehicle.vin} value={vehicle.vin}>
+                                    {vehicle.make} {vehicle.model} ({vehicle.tier}) - Score: {vehicle.score} - {vehicle.last_4_vin}
+                                  </option>
+                                ))}
                             </select>
                             {slot.available_count === 0 && (
                               <p className="text-xs text-red-600 mt-1">No vehicles available</p>

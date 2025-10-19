@@ -741,7 +741,7 @@ function ChainBuilder({ sharedOffice }) {
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Chain Builder</h1>
+            <h1 className="!text-base font-semibold text-gray-900">Chain Builder</h1>
             <p className="text-sm text-gray-500 mt-1">Create sequential vehicle assignments for a media partner</p>
           </div>
 

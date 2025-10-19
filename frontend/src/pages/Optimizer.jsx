@@ -570,7 +570,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
       {/* Compact Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-gray-900">Schedule Optimizer</h1>
+          <h1 className="!text-base font-semibold text-gray-900">Schedule Optimizer</h1>
 
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">

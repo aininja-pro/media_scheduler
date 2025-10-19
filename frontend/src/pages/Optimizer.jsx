@@ -56,6 +56,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   // Capacity editing state
   const [editingDay, setEditingDay] = useState(null);
   const [editValue, setEditValue] = useState(0);
+  const [capacityExpanded, setCapacityExpanded] = useState(true);
 
   // Load offices from database
   const [offices, setOffices] = useState([]);
@@ -953,8 +954,54 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
           {metrics ? (
             <div>
               {/* Capacity Controls */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                <div className="flex items-center justify-between mb-4">
+              <div className="bg-white border border-gray-300 rounded-lg mb-6 overflow-hidden">
+                {/* Collapsible Header */}
+                <div
+                  className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-200"
+                  onClick={() => setCapacityExpanded(!capacityExpanded)}
+                >
+                  <div className="flex items-center gap-3">
+                    <svg
+                      className={`w-4 h-4 text-gray-600 transition-transform ${capacityExpanded ? 'rotate-90' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <h3 className="text-sm font-semibold text-gray-900">Daily Capacity Settings</h3>
+                    <span className="text-xs text-gray-500">
+                      ({Object.values(dailyCapacities).reduce((a, b) => a + b, 0)} total slots)
+                    </span>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const loadOfficeDefaults = async () => {
+                        try {
+                          const response = await fetch(`http://localhost:8081/api/ui/phase7/office-default-capacity?office=${encodeURIComponent(selectedOffice)}`);
+                          if (response.ok) {
+                            const data = await response.json();
+                            if (data.daily_capacities) {
+                              setDailyCapacities(data.daily_capacities);
+                            }
+                          }
+                        } catch (err) {
+                          console.error('Error loading defaults:', err);
+                        }
+                      };
+                      loadOfficeDefaults();
+                    }}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                  >
+                    Reset to Defaults
+                  </button>
+                </div>
+
+                {/* Collapsible Content */}
+                {capacityExpanded && (
+                  <div className="p-4">
+                    <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-4">
                     <label className="text-sm font-medium text-gray-700">
                       Weekly Total:
@@ -979,33 +1026,9 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                           sun: 0
                         });
                       }}
-                      className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm font-semibold text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-24 px-3 py-2 bg-white border-2 border-gray-300 rounded-md text-sm font-semibold text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-blue-400 transition-colors"
                     />
                     <span className="text-sm text-gray-600">slots</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        // Reset to office defaults (loaded from API)
-                        const loadOfficeDefaults = async () => {
-                          try {
-                            const response = await fetch(`http://localhost:8081/api/ui/phase7/office-default-capacity?office=${encodeURIComponent(selectedOffice)}`);
-                            if (response.ok) {
-                              const data = await response.json();
-                              if (data.daily_capacities) {
-                                setDailyCapacities(data.daily_capacities);
-                              }
-                            }
-                          } catch (err) {
-                            console.error('Error loading defaults:', err);
-                          }
-                        };
-                        loadOfficeDefaults();
-                      }}
-                      className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                    >
-                      Reset to Defaults
-                    </button>
                   </div>
                 </div>
 
@@ -1036,7 +1059,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                             [day.key]: value
                           });
                         }}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm font-semibold text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-2 py-1.5 bg-white border-2 border-gray-300 rounded-md text-sm font-semibold text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-blue-400 transition-colors"
                       />
                     </div>
                   ))}
@@ -1045,6 +1068,8 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                 <p className="mt-3 text-xs text-gray-600">
                   Set weekly total to distribute evenly across weekdays, or edit individual days. Changes apply when you run the optimizer.
                 </p>
+                  </div>
+                )}
               </div>
 
               {/* Day Tiles Grid */}

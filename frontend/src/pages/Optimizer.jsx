@@ -1182,14 +1182,23 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                           </div>
                         ) : (
                           <>
-                            {/* Progress Bar */}
+                            {/* Progress Bar - Stacked: Blue (scheduled) + Green (optimizer) */}
                             <div className="mt-2 mb-1">
-                              <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                              <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden flex">
+                                {/* Blue segment: Already scheduled */}
                                 <div
-                                  className="bg-blue-500 h-2.5 rounded-full transition-all"
+                                  className="bg-blue-500 h-2.5 transition-all"
                                   style={{ width: totalSlots > 0 ? `${(alreadyScheduled / totalSlots) * 100}%` : '0%' }}
                                   title={`${alreadyScheduled} already scheduled`}
                                 ></div>
+                                {/* Green segment: Optimizer recommendations */}
+                                {optimizerFound > 0 && (
+                                  <div
+                                    className="bg-green-500 h-2.5 transition-all"
+                                    style={{ width: totalSlots > 0 ? `${(optimizerFound / totalSlots) * 100}%` : '0%' }}
+                                    title={`${optimizerFound} optimizer recommendations`}
+                                  ></div>
+                                )}
                               </div>
                               <div className="text-xs text-gray-600 mt-1">
                                 {totalSlots} capacity

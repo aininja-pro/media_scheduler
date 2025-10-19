@@ -1582,9 +1582,9 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                         </div>
                         {data.planned > 0 && (
                           <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
-                            <span>+${data.planned?.toLocaleString()} this run → </span>
+                            <span>+${Math.round(data.planned).toLocaleString()} this run → </span>
                             <span className={data.projected > data.budget ? 'text-red-600 font-medium ml-1' : 'text-blue-600 font-medium ml-1'}>
-                              ${data.projected?.toLocaleString()} projected
+                              ${Math.round(data.projected).toLocaleString()} projected
                             </span>
                           </div>
                         )}
@@ -1606,9 +1606,9 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                         </div>
                         {runResult.budget_summary.total.planned > 0 && (
                           <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
-                            <span>+${runResult.budget_summary.total.planned?.toLocaleString()} this run → </span>
+                            <span>+${Math.round(runResult.budget_summary.total.planned).toLocaleString()} this run → </span>
                             <span className={runResult.budget_summary.total.projected > runResult.budget_summary.total.budget ? 'text-red-600 font-semibold ml-1' : 'text-blue-600 font-semibold ml-1'}>
-                              ${runResult.budget_summary.total.projected?.toLocaleString()} projected
+                              ${Math.round(runResult.budget_summary.total.projected).toLocaleString()} projected
                             </span>
                           </div>
                         )}
@@ -1617,6 +1617,63 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                   </div>
                 ) : (
                   <div className="text-sm text-gray-400">Run optimizer to see metrics</div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-medium text-gray-700 mb-3">Cost Analysis</h3>
+              <div className="bg-gray-50 rounded p-3">
+                {runResult?.cost_breakdown ? (
+                  <div className="space-y-3 text-sm">
+                    {/* Total Cost */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-700 font-semibold">Total Cost:</span>
+                        <span className="text-lg font-bold text-blue-600">
+                          ${runResult.cost_breakdown.total_cost?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-600">Average per assignment:</span>
+                        <span className="font-medium text-gray-900">
+                          ${runResult.cost_breakdown.average_cost?.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Tier Breakdown */}
+                    <div className="border-t pt-2">
+                      <p className="text-xs font-medium text-gray-500 uppercase mb-1.5">Cost Data Quality</p>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">Exact matches:</span>
+                          <span className="font-medium text-green-600">
+                            {runResult.cost_breakdown.tier_breakdown?.exact || 0} assignments
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">Partner averages:</span>
+                          <span className="font-medium text-yellow-600">
+                            {runResult.cost_breakdown.tier_breakdown?.partner_avg || 0} assignments
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">Default ($400):</span>
+                          <span className="font-medium text-gray-600">
+                            {runResult.cost_breakdown.tier_breakdown?.default || 0} assignments
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        {runResult.cost_breakdown.tier_breakdown?.exact === runResult.assignments_count
+                          ? '✓ All costs from exact data'
+                          : `${Math.round((runResult.cost_breakdown.tier_breakdown?.exact / runResult.assignments_count) * 100)}% exact matches`}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-400">Run optimizer to see cost analysis</div>
                 )}
               </div>
             </div>

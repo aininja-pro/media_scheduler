@@ -19,6 +19,7 @@ from ..solver.ortools_solver_v6 import solve_with_all_constraints
 from ..solver.ortools_solver_v2 import add_score_to_triples
 from ..etl.publication import compute_publication_rate_24m, compute_recency_scores
 from ..utils.geocoding import get_distance_from_office
+from ..utils.media_costs import get_cost_for_assignment, calculate_assignment_costs
 
 router = APIRouter(prefix="/ui/phase7", tags=["UI Phase 7"])
 logger = logging.getLogger(__name__)
@@ -373,14 +374,21 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             else:
                 person_id = int(person_id)
 
+            # Get real cost for this assignment using 3-tier lookup
+            make = str(assignment['make'])
+            cost_info = get_cost_for_assignment(person_id, make)
+
             assignments.append({
                 'start_day': start_day,
                 'vin': str(assignment['vin']),
                 'person_id': person_id,
                 'partner_name': partner_names.get(person_id, f"Partner {person_id}"),
-                'make': str(assignment['make']),
+                'make': make,
                 'model': str(assignment.get('model', '')),
-                'score': int(assignment.get('score', 0))
+                'score': int(assignment.get('score', 0)),
+                'cost': cost_info['cost'],
+                'cost_tier': cost_info['tier'],
+                'cost_source': cost_info['source']
             })
 
         # Convert DataFrames to serializable dicts
@@ -476,11 +484,46 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             budget_total_planned += int(planned_spend)
             budget_total['budget'] += int(budget_amount)
 
-        # Set total with breakdown
-        budget_total['current'] = budget_total_current
-        budget_total['planned'] = budget_total_planned
-        budget_total['projected'] = budget_total_current + budget_total_planned
+        # Calculate actual cost breakdown using real media cost data FIRST
+        print(f"\n=== CALCULATING REAL MEDIA COSTS FOR {len(assignments)} ASSIGNMENTS ===")
+        cost_breakdown = calculate_assignment_costs(assignments)
+        print(f"REAL COST TOTAL: ${cost_breakdown['total_cost']:.2f}")
+        logger.info(f"Cost calculation: ${cost_breakdown['total_cost']:.2f} total, "
+                   f"${cost_breakdown['average_cost']:.2f} avg, "
+                   f"Tiers: {cost_breakdown['tier_breakdown']}")
 
+        # Calculate actual planned spend by fleet/make from assignments with real costs
+        print(f"DEBUG: About to calculate planned spend for {len(assignments)} assignments")
+        planned_by_fleet_real = {}
+        for assignment in assignments:
+            make = assignment['make'].upper()  # UPPERCASE to match budget_fleets keys
+            cost = assignment.get('cost', 0)
+            planned_by_fleet_real[make] = planned_by_fleet_real.get(make, 0) + cost
+            print(f"  Assignment: {make} = ${cost:.2f}")
+
+        print(f"DEBUG: Planned spend by make (real costs): {planned_by_fleet_real}")
+        logger.info(f"Planned spend by make (real costs): {planned_by_fleet_real}")
+
+        # Update budget_fleets with real costs instead of solver estimates
+        print(f"DEBUG: Updating {len(budget_fleets)} budget fleets with real costs")
+        for fleet in budget_fleets.keys():
+            real_planned = planned_by_fleet_real.get(fleet, 0)
+            budget_fleets[fleet]['planned'] = real_planned  # Keep as float for accuracy
+            budget_fleets[fleet]['projected'] = budget_fleets[fleet]['current'] + real_planned
+            print(f"  {fleet}: current=${budget_fleets[fleet]['current']}, planned=${real_planned:.2f}, projected=${budget_fleets[fleet]['projected']:.2f}")
+            logger.info(f"  {fleet}: planned=${real_planned:.2f}, projected=${budget_fleets[fleet]['projected']:.2f}")
+
+        print(f"DEBUG: Final budget_fleets keys: {list(budget_fleets.keys())}")
+        print(f"DEBUG: Sample Mazda entry: {budget_fleets.get('Mazda', 'NOT FOUND')}")
+
+        # Update totals with real planned costs
+        real_total_planned = sum(planned_by_fleet_real.values())
+        budget_total_current = sum(budget_fleets[f]['current'] for f in budget_fleets.keys())
+        budget_total['current'] = budget_total_current
+        budget_total['planned'] = real_total_planned
+        budget_total['projected'] = budget_total_current + real_total_planned
+
+        # NOW create budget_summary with updated values
         budget_summary = {
             'fleets': budget_fleets,
             'total': budget_total if budget_fleets else None
@@ -498,6 +541,7 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             'cap_summary': cap_summary,
             'fairness_summary': fairness_summary,
             'budget_summary': budget_summary,
+            'cost_breakdown': cost_breakdown,  # Real media costs with 3-tier lookup
             'objective_breakdown': solver_result.get('objective_breakdown', {})
         }
 

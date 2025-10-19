@@ -1232,7 +1232,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
 
                             {/* Status Line */}
                             <div className="text-xs text-gray-700 leading-tight">
-                              <div>↳ {alreadyScheduled} scheduled | {availableSlots} avail</div>
+                              <div>↳ {alreadyScheduled} sched | {availableSlots} avail</div>
                               {runResult && enabled && (
                                 <div className={`mt-0.5 font-medium ${
                                   optimizerFound === availableSlots ? 'text-green-600' :

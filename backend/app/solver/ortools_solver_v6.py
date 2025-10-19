@@ -211,15 +211,98 @@ def solve_with_all_constraints(
             week_start=week_start
         )
 
-    # Apply capacity constraints
+    # Count existing activities per start day to reduce available capacity
+    existing_count_by_day = {}
+
+    print(f"DEBUG: Checking for existing activities to reduce capacity (db_client={'present' if db_client else 'MISSING'})")
+
+    if db_client:
+        try:
+            # Calculate week end date
+            week_end_date = week_start_date + timedelta(days=6)
+
+            # Query current_activity for activities starting in this week
+            # Note: current_activity doesn't have office column, so we get all and filter by VIN later
+            print(f"DEBUG: Querying current_activity from {week_start_date.date()} to {week_end_date.date()}")
+            existing_response = db_client.table('current_activity')\
+                .select('start_date, vehicle_vin')\
+                .gte('start_date', str(week_start_date.date()))\
+                .lte('start_date', str(week_end_date.date()))\
+                .execute()
+
+            print(f"DEBUG: Found {len(existing_response.data) if existing_response.data else 0} current_activity records")
+
+            # Get ALL VINs for this office by querying vehicles table
+            # (office_triples only has available vehicles, we need ALL office vehicles to filter activities)
+            try:
+                vehicles_response = db_client.table('vehicles')\
+                    .select('vin')\
+                    .eq('office', office)\
+                    .execute()
+                office_vins = set(v['vin'] for v in vehicles_response.data) if vehicles_response.data else set()
+                print(f"DEBUG: Office has {len(office_vins)} total VINs (from vehicles table)")
+            except Exception as ve:
+                print(f"DEBUG: Could not load office vehicles, using triples VINs: {ve}")
+                office_vins = set(office_triples['vin'].unique()) if not office_triples.empty else set()
+                print(f"DEBUG: Office has {len(office_vins)} unique VINs (from triples)")
+
+            # Count by start day (only for this office's vehicles)
+            filtered_count = 0
+            total_count = 0
+            if existing_response.data:
+                for activity in existing_response.data:
+                    total_count += 1
+                    vehicle_vin = activity.get('vehicle_vin')
+
+                    # Only count if this vehicle belongs to this office
+                    if vehicle_vin not in office_vins:
+                        continue
+
+                    filtered_count += 1
+                    start_date_str = activity.get('start_date')
+                    if start_date_str:
+                        start_dt = pd.to_datetime(start_date_str).date()
+                        existing_count_by_day[start_dt] = existing_count_by_day.get(start_dt, 0) + 1
+
+                print(f"DEBUG: Filtered {filtered_count}/{total_count} activities to this office")
+
+            # Also count manual scheduled assignments (Chain Builder picks)
+            manual_response = db_client.table('scheduled_assignments')\
+                .select('start_day')\
+                .eq('office', office)\
+                .eq('status', 'manual')\
+                .gte('start_day', str(week_start_date.date()))\
+                .lte('start_day', str(week_end_date.date()))\
+                .execute()
+
+            if manual_response.data:
+                for assignment in manual_response.data:
+                    start_date_str = assignment.get('start_day')
+                    if start_date_str:
+                        start_dt = pd.to_datetime(start_date_str).date()
+                        existing_count_by_day[start_dt] = existing_count_by_day.get(start_dt, 0) + 1
+
+            print(f"DEBUG: existing_count_by_day = {existing_count_by_day}")
+            if verbose and existing_count_by_day:
+                print(f"  Found existing activities reducing capacity: {existing_count_by_day}")
+        except Exception as e:
+            if verbose:
+                print(f"  Warning: Could not query existing activities for capacity: {e}")
+
+    # Apply capacity constraints (reduced by existing activities)
     start_day_groups = office_triples.groupby('start_day').groups
     for start_day_str, indices in start_day_groups.items():
         start_day = pd.to_datetime(start_day_str).date()
         if start_day in capacity_map:
-            capacity = capacity_map[start_day]
-            # Capacity 0 = blackout day, no assignments allowed
-            if capacity >= 0:
-                model.Add(sum(y[i] for i in indices) <= capacity)
+            total_capacity = capacity_map[start_day]
+            existing_count = existing_count_by_day.get(start_day, 0)
+            available_capacity = max(0, total_capacity - existing_count)
+
+            # Capacity 0 = blackout day or fully booked, no assignments allowed
+            if available_capacity >= 0:
+                model.Add(sum(y[i] for i in indices) <= available_capacity)
+                if verbose and existing_count > 0:
+                    print(f"  {start_day}: {total_capacity} capacity - {existing_count} existing = {available_capacity} available")
 
     if verbose:
         # Identify special days

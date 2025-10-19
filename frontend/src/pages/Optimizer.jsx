@@ -160,6 +160,16 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
     setAssignmentFilter('');
     sessionStorage.removeItem('optimizer_run_result');
 
+    // Auto-clear old optimizer suggestions when loading new data
+    try {
+      await fetch(`http://localhost:8081/api/ui/phase7/clear-optimizer-suggestions?office=${encodeURIComponent(selectedOffice)}`, {
+        method: 'DELETE'
+      });
+      console.log('Cleared old optimizer suggestions');
+    } catch (err) {
+      console.error('Failed to clear old suggestions:', err);
+    }
+
     console.log(`Loading metrics for ${selectedOffice} week of ${weekStart}`);
 
     try {
@@ -622,13 +632,36 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
               )}
 
               {metrics && (
-                <button
-                  onClick={clearCachedData}
-                  className="text-xs text-gray-500 hover:text-gray-700 underline"
-                  title="Clear cached data and reset"
-                >
-                  Clear
-                </button>
+                <>
+                  <button
+                    onClick={clearCachedData}
+                    className="text-xs text-gray-500 hover:text-gray-700 underline"
+                    title="Clear cached data and reset"
+                  >
+                    Clear Cache
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const response = await fetch(`http://localhost:8081/api/ui/phase7/clear-optimizer-suggestions?office=${encodeURIComponent(selectedOffice)}`, {
+                          method: 'DELETE'
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                          alert(`✅ ${data.message}`);
+                          // Reload metrics to refresh counts
+                          loadOfficeData();
+                        }
+                      } catch (err) {
+                        alert(`❌ Failed to clear suggestions: ${err.message}`);
+                      }
+                    }}
+                    className="text-xs text-red-600 hover:text-red-800 underline"
+                    title="Clear all optimizer suggestions (green bars) for this office"
+                  >
+                    Clear Suggestions
+                  </button>
+                </>
               )}
 
               <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
@@ -1037,13 +1070,20 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                   dayDate.setDate(weekStartDate.getDate() + day.dayOffset);
                   const dayNumber = dayDate.getDate();
 
-                  // Calculate usage if assignments exist
-                  let usedSlots = 0;
+                  // Get already-scheduled count from metrics
+                  const alreadyScheduled = metrics.existing_schedule?.[day.key] || 0;
+
+                  // Calculate available slots
+                  const availableSlots = Math.max(0, totalSlots - alreadyScheduled);
+
+                  // Calculate optimizer usage if assignments exist
+                  let optimizerFound = 0;
                   if (runResult?.starts_by_day) {
-                    usedSlots = runResult.starts_by_day[day.key] || 0;
+                    optimizerFound = runResult.starts_by_day[day.key] || 0;
                   }
-                  const isFull = usedSlots >= totalSlots && totalSlots > 0;
-                  const isNearCapacity = usedSlots > totalSlots * 0.8 && !isFull && totalSlots > 0;
+
+                  const isFull = alreadyScheduled >= totalSlots && totalSlots > 0;
+                  const isNearCapacity = (alreadyScheduled + optimizerFound) > totalSlots * 0.8 && !isFull && totalSlots > 0;
 
                   const isSelected = selectedDay === day.key;
                   const isEditing = editingDay === day.key;
@@ -1142,29 +1182,35 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                           </div>
                         ) : (
                           <>
-                            <div className={[
-                              "text-2xl font-semibold leading-tight mt-1",
-                              isFull ? "text-green-700" :
-                              isNearCapacity ? "text-yellow-700" :
-                              enabled ? "text-emerald-700" : "text-rose-700"
-                            ].join(" ")}>
-                              {runResult ? (
-                                enabled ? (
-                                  <span>{usedSlots}/{totalSlots}</span>
-                                ) : (
-                                  <span className="line-through">{totalSlots}</span>
-                                )
-                              ) : (
-                                enabled ? totalSlots : <span className="line-through">{totalSlots}</span>
-                              )}
+                            {/* Progress Bar */}
+                            <div className="mt-2 mb-1">
+                              <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                <div
+                                  className="bg-blue-500 h-2.5 rounded-full transition-all"
+                                  style={{ width: totalSlots > 0 ? `${(alreadyScheduled / totalSlots) * 100}%` : '0%' }}
+                                  title={`${alreadyScheduled} already scheduled`}
+                                ></div>
+                              </div>
+                              <div className="text-xs text-gray-600 mt-1">
+                                {totalSlots} capacity
+                              </div>
                             </div>
-                            <div className="text-xs text-slate-500 mt-1">
-                              {isFull ? 'Full' :
-                               capacity?.notes ? (
-                                capacity.notes === 'blackout' ? 'Blackout' :
-                                capacity.notes.includes('Default') ? 'Default' :
-                                capacity.notes
-                              ) : runResult && enabled ? `${Math.round((usedSlots/totalSlots)*100)}% used` : 'Available'}
+
+                            {/* Status Line */}
+                            <div className="text-xs text-gray-700 leading-tight">
+                              <div>↳ {alreadyScheduled} scheduled | {availableSlots} available</div>
+                              {runResult && enabled && (
+                                <div className={`mt-0.5 font-medium ${
+                                  optimizerFound === availableSlots ? 'text-green-600' :
+                                  optimizerFound > availableSlots ? 'text-red-600' :
+                                  'text-blue-600'
+                                }`}>
+                                  Optimizer: {optimizerFound}/{availableSlots} {optimizerFound === availableSlots && '✓'}
+                                </div>
+                              )}
+                              {isFull && (
+                                <div className="text-red-600 font-medium mt-0.5">Fully Booked</div>
+                              )}
                             </div>
                           </>
                         )}

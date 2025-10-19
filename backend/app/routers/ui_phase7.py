@@ -8,6 +8,7 @@ from pydantic import BaseModel
 import pandas as pd
 from datetime import datetime, timedelta
 import time
+import logging
 
 from ..services.database import DatabaseService
 from ..solver.ortools_feasible_v2 import build_feasible_start_day_triples
@@ -20,6 +21,7 @@ from ..etl.publication import compute_publication_rate_24m, compute_recency_scor
 from ..utils.geocoding import get_distance_from_office
 
 router = APIRouter(prefix="/ui/phase7", tags=["UI Phase 7"])
+logger = logging.getLogger(__name__)
 
 
 def calculate_cost_per_make(budgets_df: pd.DataFrame, loan_history_df: pd.DataFrame, office: str) -> Dict[str, float]:
@@ -721,6 +723,8 @@ async def get_overview(
 
     try:
         week_start_date = pd.to_datetime(week_start)
+        week_end_date = week_start_date + timedelta(days=6)
+        week_end_str = week_end_date.strftime('%Y-%m-%d')
 
         # 1. Load vehicles (filter to office)
         vehicles_response = db.client.table('vehicles').select('*').eq('office', office).execute()
@@ -736,12 +740,17 @@ async def get_overview(
         offices_response = db.client.table('offices').select('*').execute()
         offices_df = pd.DataFrame(offices_response.data) if offices_response.data else pd.DataFrame()
 
-        # 3. Load current activity WITH PAGINATION
+        # 3. Load current activity WITH PAGINATION (filter to this week, then filter by office via vehicle)
         all_activity = []
         offset = 0
         limit = 1000
         while True:
-            activity_response = db.client.table('current_activity').select('*').range(offset, offset + limit - 1).execute()
+            activity_response = db.client.table('current_activity')\
+                .select('*')\
+                .gte('start_date', week_start)\
+                .lte('start_date', week_end_str)\
+                .range(offset, offset + limit - 1)\
+                .execute()
             if not activity_response.data:
                 break
             all_activity.extend(activity_response.data)
@@ -751,9 +760,36 @@ async def get_overview(
 
         current_activity_df = pd.DataFrame(all_activity) if all_activity else pd.DataFrame()
 
+        # Filter to this office by joining with vehicles
+        if not current_activity_df.empty and not vehicles_df.empty:
+            # Create a mapping of VIN to office from vehicles
+            vin_to_office = dict(zip(vehicles_df['vin'], vehicles_df['office']))
+
+            # Add office column to current_activity
+            vin_col = 'vehicle_vin' if 'vehicle_vin' in current_activity_df.columns else 'vin'
+            current_activity_df['office'] = current_activity_df[vin_col].map(vin_to_office)
+
+            # Filter to this office
+            current_activity_df = current_activity_df[current_activity_df['office'] == office].copy()
+
+        logger.info(f"Loaded {len(current_activity_df)} current activities for {office} week starting {week_start}")
+
         # Rename column to match expected format
         if 'vehicle_vin' in current_activity_df.columns:
             current_activity_df = current_activity_df.rename(columns={'vehicle_vin': 'vin'})
+
+        # Load scheduled assignments ONLY with status='manual' (Chain Builder real picks)
+        # Exclude status='planned' (optimizer suggestions - those are just recommendations, don't reduce capacity)
+        manual_scheduled_response = db.client.table('scheduled_assignments')\
+            .select('*')\
+            .eq('office', office)\
+            .eq('status', 'manual')\
+            .gte('start_day', week_start)\
+            .lte('start_day', week_end_str)\
+            .execute()
+        manual_scheduled_df = pd.DataFrame(manual_scheduled_response.data) if manual_scheduled_response.data else pd.DataFrame()
+
+        logger.info(f"Found {len(manual_scheduled_df)} manual assignments (Chain Builder) for {office} week starting {week_start}")
 
         # 4. Build availability grid using existing function
         availability_df = build_availability_grid(
@@ -872,6 +908,63 @@ async def get_overview(
                 'notes': notes
             }
 
+        # 8b. Count already-scheduled activities per day (current_activity + scheduled_assignments)
+        existing_by_day = {'mon': 0, 'tue': 0, 'wed': 0, 'thu': 0, 'fri': 0, 'sat': 0, 'sun': 0}
+
+        # Count current activities that START in this week AND match this office
+        if not current_activity_df.empty and 'start_date' in current_activity_df.columns:
+            # Filter to this office if office column exists
+            office_activity_df = current_activity_df
+            if 'office' in current_activity_df.columns:
+                office_activity_df = current_activity_df[current_activity_df['office'] == office]
+
+            for _, activity in office_activity_df.iterrows():
+                try:
+                    start_date_str = activity['start_date']
+                    if pd.isna(start_date_str):
+                        continue
+
+                    # Parse start date
+                    if isinstance(start_date_str, str):
+                        start_dt = pd.to_datetime(start_date_str).date()
+                    else:
+                        start_dt = pd.to_datetime(start_date_str).date()
+
+                    # Check if it's in this week
+                    days_diff = (start_dt - week_start_date.date()).days
+                    if 0 <= days_diff < 7:
+                        day_key = days_map[days_diff]
+                        existing_by_day[day_key] += 1
+                except Exception as e:
+                    continue  # Skip malformed dates
+
+            logger.info(f"Current activity starts this week: {existing_by_day}")
+
+        # Count manual scheduled assignments that START in this week (already filtered by query above)
+        if not manual_scheduled_df.empty and 'start_day' in manual_scheduled_df.columns:
+            for _, assignment in manual_scheduled_df.iterrows():
+                try:
+                    start_date_str = assignment['start_day']
+                    if pd.isna(start_date_str):
+                        continue
+
+                    # Parse start date
+                    if isinstance(start_date_str, str):
+                        start_dt = pd.to_datetime(start_date_str).date()
+                    else:
+                        start_dt = pd.to_datetime(start_date_str).date()
+
+                    # Check if it's in this week (should always be true due to query filter, but double-check)
+                    days_diff = (start_dt - week_start_date.date()).days
+                    if 0 <= days_diff < 7:
+                        day_key = days_map[days_diff]
+                        existing_by_day[day_key] += 1
+                except Exception as e:
+                    continue  # Skip malformed dates
+
+            logger.info(f"Scheduled assignments starts this week: {existing_by_day}")
+            logger.info(f"Total existing schedule breakdown: {existing_by_day}")
+
         # 9. Load budget status for current quarter and YTD
         budgets_response = db.client.table('budgets').select('*').eq('office', office).execute()
         budgets_df = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
@@ -935,6 +1028,7 @@ async def get_overview(
             "cooldown_removed_triples": cooldown_removed_triples,
             "makes_in_scope": makes_in_scope,
             "capacity": capacity,
+            "existing_schedule": existing_by_day,  # Already-scheduled count per day
             "budget_status": {
                 "year": current_year,
                 "current_quarter": current_quarter,
@@ -956,6 +1050,45 @@ async def get_overview(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
+
+@router.delete("/clear-optimizer-suggestions")
+async def clear_optimizer_suggestions(
+    office: str = Query(..., description="Office name")
+) -> Dict[str, Any]:
+    """
+    Clear all optimizer suggestions (status='planned') for a specific office.
+
+    This removes green bars from the calendar that were generated by previous
+    optimizer runs. Does NOT remove manual assignments (status='manual').
+    """
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        # Delete all planned assignments for this office
+        result = db.client.table('scheduled_assignments')\
+            .delete()\
+            .eq('office', office)\
+            .eq('status', 'planned')\
+            .execute()
+
+        deleted_count = len(result.data) if result.data else 0
+
+        logger.info(f"Cleared {deleted_count} optimizer suggestions for {office}")
+
+        return {
+            "success": True,
+            "message": f"Cleared {deleted_count} optimizer suggestions for {office}",
+            "deleted_count": deleted_count
+        }
+
+    except Exception as e:
+        logger.error(f"Error clearing optimizer suggestions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        await db.close()
+
 
 @router.get("/office-default-capacity")
 async def get_office_default_capacity(

@@ -298,12 +298,12 @@ function Calendar({ sharedOffice }) {
     loadPartners();
   }, [selectedOffice]);
 
-  // Load activities when office or date range changes
+  // Load activities when office changes (NOT when scrolling view)
   useEffect(() => {
     if (selectedOffice && viewStartDate && viewEndDate) {
       loadActivities();
     }
-  }, [selectedOffice, viewStartDate, viewEndDate]);
+  }, [selectedOffice]); // Removed viewStartDate/viewEndDate to prevent reload on scroll
 
   // Fetch distances for partners with activities (optimization - only fetch what we need)
   useEffect(() => {

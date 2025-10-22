@@ -175,7 +175,7 @@ function Calendar({ sharedOffice }) {
     loadOffices();
   }, []);
 
-  // Set current month as default
+  // Set current month as default and center on today
   useEffect(() => {
     const now = new Date();
     const year = now.getFullYear();
@@ -183,11 +183,15 @@ function Calendar({ sharedOffice }) {
     const monthStr = `${year}-${month}`;
     setSelectedMonth(monthStr);
 
-    // Initialize view dates to show full month
-    const startOfMonth = new Date(year, now.getMonth(), 1);
-    const endOfMonth = new Date(year, now.getMonth() + 1, 0);
-    setViewStartDate(startOfMonth);
-    setViewEndDate(endOfMonth);
+    // Center view on today (2 weeks before and after)
+    const today = new Date();
+    const viewStart = new Date(today);
+    viewStart.setDate(today.getDate() - 14);
+    const viewEnd = new Date(today);
+    viewEnd.setDate(today.getDate() + 14);
+
+    setViewStartDate(viewStart);
+    setViewEndDate(viewEnd);
   }, []);
 
   // When month selector changes, reset view to show full month

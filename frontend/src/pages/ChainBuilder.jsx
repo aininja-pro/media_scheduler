@@ -1209,10 +1209,12 @@ function ChainBuilder({ sharedOffice }) {
                                 const left = ((startDayOffset + 0.5) / totalDays) * 100;
                                 const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
 
-                                // Color by type: BLUE for active, GREEN for scheduled
+                                // Color by type and status: BLUE for active, MAGENTA for requested, GREEN for planned/manual
                                 const barColor = activity.type === 'active'
                                   ? 'bg-gradient-to-br from-blue-500 to-blue-600 border-blue-700'
-                                  : 'bg-gradient-to-br from-green-400 to-green-500 border-green-600';
+                                  : activity.status === 'requested'
+                                    ? 'bg-gradient-to-br from-pink-500 to-pink-600 border-pink-700'
+                                    : 'bg-gradient-to-br from-green-400 to-green-500 border-green-600';
 
                                 return (
                                   <div

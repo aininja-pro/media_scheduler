@@ -21,6 +21,7 @@ function ChainBuilder({ sharedOffice }) {
   const [offices, setOffices] = useState([]);
   const [partners, setPartners] = useState([]);
   const [partnerSearchQuery, setPartnerSearchQuery] = useState('');
+  const [showPartnerDropdown, setShowPartnerDropdown] = useState(false);
 
   // Partner intelligence (current/scheduled activities)
   const [partnerIntelligence, setPartnerIntelligence] = useState(null);
@@ -895,8 +896,8 @@ function ChainBuilder({ sharedOffice }) {
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Chain Parameters</h2>
 
           <div className="space-y-6">
-            {/* Partner Selector with Search */}
-            <div>
+            {/* Partner Selector with Dropdown */}
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Media Partner
               </label>
@@ -906,38 +907,44 @@ function ChainBuilder({ sharedOffice }) {
                 type="text"
                 placeholder="Type to search partners..."
                 value={partnerSearchQuery}
-                onChange={(e) => setPartnerSearchQuery(e.target.value)}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+                onChange={(e) => {
+                  setPartnerSearchQuery(e.target.value);
+                  setShowPartnerDropdown(true);
+                }}
+                onFocus={() => setShowPartnerDropdown(true)}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
 
-              {/* Filtered Partner List */}
-              <div className="border border-gray-300 rounded max-h-48 overflow-y-auto">
-                {partners
-                  .filter(partner =>
-                    partner.name.toLowerCase().includes(partnerSearchQuery.toLowerCase())
-                  )
-                  .map(partner => (
-                    <button
-                      key={partner.person_id}
-                      onClick={() => {
-                        setSelectedPartner(partner.person_id);
-                        setPartnerSearchQuery(partner.name); // Show selected name
-                      }}
-                      className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${
-                        selectedPartner === partner.person_id ? 'bg-blue-100 font-medium' : ''
-                      }`}
-                    >
-                      {partner.name}
-                    </button>
-                  ))}
-                {partners.filter(p => p.name.toLowerCase().includes(partnerSearchQuery.toLowerCase())).length === 0 && (
-                  <div className="px-3 py-4 text-sm text-gray-500 text-center">
-                    No partners found
-                  </div>
-                )}
-              </div>
+              {/* Dropdown - only show when focused and has results */}
+              {showPartnerDropdown && partnerSearchQuery.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {partners
+                    .filter(partner =>
+                      partner.name.toLowerCase().includes(partnerSearchQuery.toLowerCase())
+                    )
+                    .slice(0, 20)  // Limit to 20 results
+                    .map(partner => (
+                      <button
+                        key={partner.person_id}
+                        onClick={() => {
+                          setSelectedPartner(partner.person_id);
+                          setPartnerSearchQuery(partner.name);
+                          setShowPartnerDropdown(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors border-b last:border-b-0"
+                      >
+                        {partner.name}
+                      </button>
+                    ))}
+                  {partners.filter(p => p.name.toLowerCase().includes(partnerSearchQuery.toLowerCase())).length === 0 && (
+                    <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                      No partners found
+                    </div>
+                  )}
+                </div>
+              )}
 
-              {selectedPartner && (
+              {selectedPartner && !showPartnerDropdown && (
                 <p className="text-xs text-gray-500 mt-1">
                   Selected: {partners.find(p => p.person_id === selectedPartner)?.name}
                 </p>

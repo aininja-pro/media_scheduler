@@ -796,20 +796,42 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                     <label className="text-sm font-medium text-gray-700">Media Partner Quality</label>
                     <span className="text-xs font-semibold text-blue-600">{getPartnerQualityLabel(rankWeight)}</span>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    value={rankWeight}
-                    onChange={(e) => setRankWeight(parseFloat(e.target.value))}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
-                  <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
-                    <span>All Tiers</span>
-                    <span>B+</span>
-                    <span>A</span>
-                    <span>A+</span>
+                  {/* Discrete notch selector */}
+                  <div className="relative pt-2 pb-1">
+                    {/* Notch dots */}
+                    <div className="flex justify-between items-center mb-2">
+                      {[
+                        { label: 'All Tiers', value: 0, weight: 0.3 },
+                        { label: 'B+', value: 1, weight: 0.8 },
+                        { label: 'A', value: 2, weight: 1.2 },
+                        { label: 'A+', value: 3, weight: 1.6 }
+                      ].map((notch) => {
+                        const isSelected = (
+                          (notch.value === 0 && rankWeight <= 0.3) ||
+                          (notch.value === 1 && rankWeight > 0.3 && rankWeight <= 0.8) ||
+                          (notch.value === 2 && rankWeight > 0.8 && rankWeight <= 1.2) ||
+                          (notch.value === 3 && rankWeight > 1.2)
+                        );
+                        return (
+                          <button
+                            key={notch.value}
+                            onClick={() => setRankWeight(notch.weight)}
+                            className="flex flex-col items-center gap-1 flex-1"
+                          >
+                            <div className={`w-4 h-4 rounded-full border-2 transition-all ${
+                              isSelected
+                                ? 'bg-blue-600 border-blue-600 scale-125'
+                                : 'bg-white border-gray-300 hover:border-blue-400'
+                            }`}></div>
+                            <span className={`text-[10px] ${isSelected ? 'text-blue-600 font-semibold' : 'text-gray-400'}`}>
+                              {notch.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* Connecting line */}
+                    <div className="absolute top-4 left-2 right-2 h-0.5 bg-gray-300 -z-10"></div>
                   </div>
                 </div>
 
@@ -1343,14 +1365,26 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                                 {new Date(assignment.start_day + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900 relative">
-                                <button
-                                  onClick={() => handleVinClick(assignment.vin)}
-                                  onMouseEnter={() => handleVinHover(assignment.vin)}
-                                  onMouseLeave={handleVinLeave}
-                                  className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer focus:outline-none"
-                                >
-                                  {assignment.vin}
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <a
+                                    href={`https://fms.driveshop.com/list_activities/${assignment.vin}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 hover:underline"
+                                    title="Open in FMS"
+                                  >
+                                    {assignment.vin}
+                                  </a>
+                                  <button
+                                    onClick={() => handleVinClick(assignment.vin)}
+                                    onMouseEnter={() => handleVinHover(assignment.vin)}
+                                    onMouseLeave={handleVinLeave}
+                                    className="text-gray-400 hover:text-gray-600 text-xs"
+                                    title="Show context"
+                                  >
+                                    ℹ️
+                                  </button>
+                                </div>
 
                                 {/* Hover Tooltip */}
                                 {hoveredVin === assignment.vin && hoverContext && (

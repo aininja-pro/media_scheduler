@@ -1578,9 +1578,15 @@ function ChainBuilder({ sharedOffice }) {
 
                             <div className="pt-2 border-t border-gray-200">
                               <p className="text-xs text-gray-500 font-medium">VIN</p>
-                              <p className="text-xs font-mono text-gray-700">
+                              <a
+                                href={`https://fms.driveshop.com/list_activities/${slot.selected_vehicle.vin}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs font-mono text-blue-600 hover:text-blue-800 hover:underline"
+                                title="Open in FMS"
+                              >
                                 ...{slot.selected_vehicle.last_4_vin}
-                              </p>
+                              </a>
                             </div>
 
                             <div className="pt-2 border-t border-gray-200">

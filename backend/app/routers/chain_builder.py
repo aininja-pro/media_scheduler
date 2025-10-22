@@ -711,6 +711,7 @@ async def save_chain(
             "person_id": int,
             "partner_name": str,
             "office": str,
+            "status": str (optional, default='manual', can be 'manual' or 'requested'),
             "chain": [
                 {
                     "vin": str,
@@ -730,6 +731,7 @@ async def save_chain(
         person_id = request.get('person_id')
         partner_name = request.get('partner_name')
         office = request.get('office')
+        status = request.get('status', 'manual')  # Default to 'manual', can be 'requested'
         chain_vehicles = request.get('chain', [])
 
         if not person_id or not office or not chain_vehicles:
@@ -757,7 +759,7 @@ async def save_chain(
                 'partner_name': partner_name,
                 'score': vehicle.get('score', 0),
                 'week_start': week_start,  # Monday of the week
-                'status': 'manual'  # Green in calendar (manually created, not optimizer)
+                'status': status  # 'manual' (green) or 'requested' (magenta)
             })
 
         # Insert all assignments

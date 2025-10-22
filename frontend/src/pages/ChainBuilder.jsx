@@ -518,6 +518,27 @@ function ChainBuilder({ sharedOffice }) {
 
       setChain(data);
       console.log('Chain generated:', data);
+
+      // Convert auto-generated chain to manual slots format for editing
+      const slots = data.chain.map((vehicle, index) => ({
+        slot: vehicle.slot,
+        start_date: vehicle.start_date,
+        end_date: vehicle.end_date,
+        selected_vehicle: {
+          vin: vehicle.vin,
+          make: vehicle.make,
+          model: vehicle.model,
+          year: vehicle.year,
+          score: vehicle.score,
+          tier: vehicle.tier,
+          last_4_vin: vehicle.vin.slice(-4)
+        },
+        eligible_vehicles: [],  // Will load on dropdown open
+        available_count: data.slot_availability?.[index]?.available_count || 0
+      }));
+
+      setManualSlots(slots);
+      console.log('Converted to editable slots:', slots);
     } catch (err) {
       setError(err.message);
       setChain(null);
@@ -663,7 +684,7 @@ function ChainBuilder({ sharedOffice }) {
     });
   };
 
-  const saveManualChain = async () => {
+  const saveManualChain = async (status = 'manual') => {
     // Check if all slots have vehicles selected
     const unfilledSlots = manualSlots.filter(s => !s.selected_vehicle);
     if (unfilledSlots.length > 0) {
@@ -677,7 +698,8 @@ function ChainBuilder({ sharedOffice }) {
       return;
     }
 
-    if (!window.confirm(`Save this ${manualSlots.length}-vehicle chain for ${partner.name}?`)) {
+    const statusLabel = status === 'requested' ? 'and send to FMS' : 'as recommendations';
+    if (!window.confirm(`Save this ${manualSlots.length}-vehicle chain ${statusLabel} for ${partner.name}?`)) {
       return;
     }
 
@@ -703,6 +725,7 @@ function ChainBuilder({ sharedOffice }) {
           person_id: selectedPartner,
           partner_name: partner.name,
           office: selectedOffice,
+          status: status,  // 'manual' or 'requested'
           chain: chainData
         })
       });
@@ -1214,8 +1237,8 @@ function ChainBuilder({ sharedOffice }) {
                               });
                             })()}
 
-                            {/* Manual Mode Slots - show empty slots OR filled slots */}
-                            {buildMode === 'manual' && manualSlots.map((slot, idx) => {
+                            {/* Unified Slots - works for both Auto and Manual modes */}
+                            {manualSlots.map((slot, idx) => {
                               // Parse dates as local (avoid timezone shift)
                               const [sYear, sMonth, sDay] = slot.start_date.split('-').map(Number);
                               const [eYear, eMonth, eDay] = slot.end_date.split('-').map(Number);
@@ -1280,8 +1303,8 @@ function ChainBuilder({ sharedOffice }) {
                               );
                             })}
 
-                            {/* NEW Chain vehicles - stair-stepped in groups of 3 */}
-                            {buildMode === 'auto' && chain && chain.chain.map((vehicle, idx) => {
+                            {/* OLD Auto chain timeline - now using unified slots above */}
+                            {false && buildMode === 'auto' && chain && chain.chain.map((vehicle, idx) => {
                               // Parse dates as local (avoid timezone shift)
                               const [sYear, sMonth, sDay] = vehicle.start_date.split('-').map(Number);
                               const [eYear, eMonth, eDay] = vehicle.end_date.split('-').map(Number);
@@ -1367,25 +1390,41 @@ function ChainBuilder({ sharedOffice }) {
                 </div>
               </div>
 
-              {/* Manual Mode Vehicle Cards with Dropdowns */}
-              {buildMode === 'manual' && manualSlots.length > 0 && (
+              {/* Vehicle Cards with Dropdowns - Works for BOTH Auto and Manual modes */}
+              {manualSlots.length > 0 && (
                 <div className="bg-white rounded-lg shadow-sm border p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-md font-semibold text-gray-900">Select Vehicles for Each Slot</h3>
+                    <h3 className="text-md font-semibold text-gray-900">
+                      {buildMode === 'manual' ? 'Select Vehicles for Each Slot' : 'Chain Vehicles (Editable)'}
+                    </h3>
 
-                    {/* Save Manual Chain Button */}
-                    <button
-                      onClick={saveManualChain}
-                      disabled={isSaving || manualSlots.some(s => !s.selected_vehicle)}
-                      className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
-                        isSaving || manualSlots.some(s => !s.selected_vehicle)
-                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                          : 'bg-green-600 text-white hover:bg-green-700'
-                      }`}
-                      title={manualSlots.some(s => !s.selected_vehicle) ? 'Select vehicles for all slots first' : 'Save chain'}
-                    >
-                      {isSaving ? 'Saving...' : 'Save Chain'}
-                    </button>
+                    {/* Save Chain Buttons */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={saveManualChain}
+                        disabled={isSaving || manualSlots.some(s => !s.selected_vehicle)}
+                        className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
+                          isSaving || manualSlots.some(s => !s.selected_vehicle)
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
+                        title={manualSlots.some(s => !s.selected_vehicle) ? 'Select vehicles for all slots first' : 'Save as recommendations (green)'}
+                      >
+                        {isSaving ? 'Saving...' : 'Save Chain'}
+                      </button>
+                      <button
+                        onClick={() => saveManualChain('requested')}
+                        disabled={isSaving || manualSlots.some(s => !s.selected_vehicle)}
+                        className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
+                          isSaving || manualSlots.some(s => !s.selected_vehicle)
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-pink-600 text-white hover:bg-pink-700'
+                        }`}
+                        title={manualSlots.some(s => !s.selected_vehicle) ? 'Select vehicles for all slots first' : 'Save and send to FMS (magenta)'}
+                      >
+                        {isSaving ? 'Saving...' : 'Save as Requested'}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Save Message */}
@@ -1406,6 +1445,19 @@ function ChainBuilder({ sharedOffice }) {
                         key={slot.slot}
                         className="border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all relative"
                       >
+                        {/* Delete button - top right corner */}
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Remove Slot ${slot.slot} from chain?`)) {
+                              setManualSlots(prev => prev.filter((_, i) => i !== index));
+                            }
+                          }}
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full hover:bg-red-700 flex items-center justify-center text-sm font-bold shadow-lg z-10"
+                          title="Delete this slot"
+                        >
+                          ×
+                        </button>
+
                         {/* Header: Slot + Available Count */}
                         <div className="flex items-center justify-between mb-3">
                           <span className="text-sm font-bold text-gray-700">Slot {slot.slot}</span>
@@ -1541,8 +1593,8 @@ function ChainBuilder({ sharedOffice }) {
                 </div>
               )}
 
-              {/* Vehicle Details - Horizontal Cards */}
-              {buildMode === 'auto' && chain && (
+              {/* OLD Auto-Generate Cards - Now using unified Manual mode cards above */}
+              {false && buildMode === 'auto' && chain && (
                 <div className="bg-white rounded-lg shadow-sm border p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-md font-semibold text-gray-900">Chain Vehicles</h3>

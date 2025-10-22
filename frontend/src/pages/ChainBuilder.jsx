@@ -6,7 +6,7 @@ function ChainBuilder({ sharedOffice }) {
   const [selectedPartner, setSelectedPartner] = useState('');
   const [startDate, setStartDate] = useState('');
   const [numVehicles, setNumVehicles] = useState(4);
-  const [daysPerLoan, setDaysPerLoan] = useState(7);
+  const [daysPerLoan, setDaysPerLoan] = useState(8);
   const [isLoading, setIsLoading] = useState(false);
   const [chain, setChain] = useState(null);
   const [error, setError] = useState('');

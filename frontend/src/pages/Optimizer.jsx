@@ -9,7 +9,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
     }
   };
   const [weekStart, setWeekStart] = useState('');
-  const [minDays, setMinDays] = useState(7);
+  const [minDays, setMinDays] = useState(8);
   const [isLoading, setIsLoading] = useState(false);
 
   // State for metrics

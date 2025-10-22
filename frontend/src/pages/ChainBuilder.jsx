@@ -1528,15 +1528,18 @@ function ChainBuilder({ sharedOffice }) {
                               </option>
                               {slot.eligible_vehicles
                                 .sort((a, b) => {
-                                  // Sort by Make alphabetically, then by Score descending
+                                  // Sort conflicts to bottom, then by Make alphabetically, then by Score
+                                  if (a.has_conflict !== b.has_conflict) {
+                                    return a.has_conflict ? 1 : -1;  // Non-conflicts first
+                                  }
                                   if (a.make !== b.make) {
                                     return a.make.localeCompare(b.make);
                                   }
                                   return b.score - a.score;
                                 })
                                 .map(vehicle => (
-                                  <option key={vehicle.vin} value={vehicle.vin}>
-                                    {vehicle.make} {vehicle.model} ({vehicle.tier}) - Score: {vehicle.score} - {vehicle.last_4_vin}
+                                  <option key={vehicle.vin} value={vehicle.vin} disabled={vehicle.has_conflict}>
+                                    {vehicle.has_conflict ? '⚠️ ' : ''}{vehicle.make} {vehicle.model} ({vehicle.tier}) - Score: {vehicle.score} - {vehicle.last_4_vin}{vehicle.has_conflict ? ' - HAS ACTIVITY' : ''}
                                   </option>
                                 ))}
                             </select>

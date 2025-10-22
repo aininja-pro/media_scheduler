@@ -671,11 +671,34 @@ async def get_slot_options(
         max_vehicles = 50
         top_candidates = scored_candidates.head(max_vehicles)
 
-        # Build response list
+        # Check for conflicts with existing activities on these dates
+        # Load current_activity to check for overlaps
+        all_activity_response = db.client.table('current_activity').select('vehicle_vin, start_date, end_date, activity_type').execute()
+        current_activity_df = pd.DataFrame(all_activity_response.data) if all_activity_response.data else pd.DataFrame()
+
+        # Build response list with conflict flags
         eligible_vehicles = []
         for _, vehicle in top_candidates.iterrows():
             vin = vehicle['vin']
             last_4_vin = vin[-4:] if len(vin) >= 4 else vin
+
+            # Check if this vehicle has activity overlapping with slot dates
+            has_conflict = False
+            conflict_details = None
+
+            if not current_activity_df.empty:
+                vin_activities = current_activity_df[current_activity_df['vehicle_vin'] == vin]
+                for _, activity in vin_activities.iterrows():
+                    activity_start = pd.to_datetime(activity['start_date']).date()
+                    activity_end = pd.to_datetime(activity['end_date']).date()
+                    slot_start_dt = datetime.strptime(slot_start, '%Y-%m-%d').date()
+                    slot_end_dt = datetime.strptime(slot_end, '%Y-%m-%d').date()
+
+                    # Check if dates overlap
+                    if activity_start <= slot_end_dt and activity_end >= slot_start_dt:
+                        has_conflict = True
+                        conflict_details = f"{activity.get('activity_type', 'Activity')} {activity_start} - {activity_end}"
+                        break
 
             eligible_vehicles.append({
                 "vin": vin,
@@ -685,7 +708,9 @@ async def get_slot_options(
                 "year": str(vehicle.get('year', '')),
                 "score": int(vehicle['score']),
                 "tier": vehicle.get('rank', 'C'),
-                "last_4_vin": last_4_vin
+                "last_4_vin": last_4_vin,
+                "has_conflict": has_conflict,
+                "conflict_details": conflict_details
             })
 
         logger.info(f"Returning {len(eligible_vehicles)} eligible vehicles for slot {slot_index}")

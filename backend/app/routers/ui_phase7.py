@@ -221,15 +221,32 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             default_cooldown_days=30
         )
 
-        # 4a. Filter out partner-VIN combinations that already exist in current_activity
-        # This prevents suggesting the same vehicle to the same partner twice in the same window
-        if not current_activity_df.empty and not triples_post.empty:
-            # Create set of existing (person_id, vin) pairs
-            existing_pairs = set(
-                zip(current_activity_df['person_id'], current_activity_df['vin'])
-            )
+        # 4a. Filter out partner-VIN combinations from current_activity AND loan_history
+        # CRITICAL: Never give a partner a VIN they've had before
+        if not triples_post.empty:
+            existing_pairs = set()
+
+            # Add current active loans
+            if not current_activity_df.empty:
+                existing_pairs.update(
+                    zip(current_activity_df['person_id'], current_activity_df['vin'])
+                )
+
+            # Add historical loans (check last 12 months to be safe)
+            if not loan_history_df.empty:
+                # Filter to recent history (last 12 months)
+                recent_cutoff = pd.to_datetime('now') - pd.Timedelta(days=365)
+                recent_history = loan_history_df[
+                    pd.to_datetime(loan_history_df['start_date']) >= recent_cutoff
+                ] if 'start_date' in loan_history_df.columns else loan_history_df
+
+                existing_pairs.update(
+                    zip(recent_history['person_id'], recent_history['vin'])
+                )
+
             # Filter out triples that match existing pairs
             pre_filter_count = len(triples_post)
+            print(f"DEBUG: Checking {len(existing_pairs)} existing (partner, VIN) pairs from current + history")
             triples_post = triples_post[
                 ~triples_post.apply(
                     lambda row: (row['person_id'], row['vin']) in existing_pairs,

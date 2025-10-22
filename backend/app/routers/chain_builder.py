@@ -249,6 +249,7 @@ async def suggest_chain(
         suggested_chain = []
         used_vins = set()  # Track VINs already used in chain
         used_models = set()  # Track (make, model) combos already used - HARD RULE: no duplicates
+        recent_makes = []  # Track last 2 makes to prevent 3+ in a row
 
         for slot_index, smart_slot in enumerate(smart_slots):
             slot_start = smart_slot['start_date']
@@ -296,7 +297,8 @@ async def suggest_chain(
                 break
 
             # HARD RULE: Filter out models already used in this chain
-            # Sort by score and pick the first one that doesn't duplicate a model
+            # ALSO: Prevent 3+ same make in a row (e.g., Toyota, Toyota, Toyota)
+            # Sort by score and pick the first one that doesn't violate rules
             scored_candidates = scored_candidates.sort_values('score', ascending=False)
 
             best_vehicle = None
@@ -306,9 +308,17 @@ async def suggest_chain(
                 model_key = (make, model)
 
                 # Check if this model was already used in chain
-                if model_key not in used_models:
-                    best_vehicle = candidate
-                    break
+                if model_key in used_models:
+                    continue
+
+                # Check if this would be 3rd consecutive same make
+                # Example: recent_makes = ['Toyota', 'Toyota'], candidate make = 'Toyota' → SKIP
+                if len(recent_makes) >= 2 and recent_makes[-1] == make and recent_makes[-2] == make:
+                    continue  # Would be 3rd in a row
+
+                # This vehicle passes all rules!
+                best_vehicle = candidate
+                break
 
             if best_vehicle is None:
                 logger.warning(f"No unique models available for slot {slot_index + 1}")
@@ -326,6 +336,11 @@ async def suggest_chain(
             # Track this model as used
             model_key = (make, model)
             used_models.add(model_key)
+
+            # Track make for consecutive rule (keep last 2)
+            recent_makes.append(make)
+            if len(recent_makes) > 2:
+                recent_makes.pop(0)  # Keep only last 2
 
             # Check for conflicts with existing recommendations
             # TODO: Query scheduled_assignments for conflicts

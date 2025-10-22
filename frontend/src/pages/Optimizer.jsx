@@ -1026,18 +1026,19 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                     <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-4">
                     <label className="text-sm font-medium text-gray-700">
-                      Weekly Total:
+                      Weekly Drivers:
                     </label>
                     <input
                       type="number"
                       min="0"
-                      max="350"
-                      value={Object.values(dailyCapacities).reduce((a, b) => a + b, 0)}
+                      max="175"
+                      value={Math.round(Object.values(dailyCapacities).reduce((a, b) => a + b, 0) / 2)}
                       onChange={(e) => {
-                        const newTotal = Math.max(0, Math.min(350, parseInt(e.target.value) || 0));
+                        const drivers = Math.max(0, Math.min(175, parseInt(e.target.value) || 0));
+                        const totalSlots = drivers * 2;  // 2 moves per driver
                         // Distribute evenly across weekdays only
-                        const perDay = Math.floor(newTotal / 5);
-                        const remainder = newTotal % 5;
+                        const perDay = Math.floor(totalSlots / 5);
+                        const remainder = totalSlots % 5;
                         setDailyCapacities({
                           mon: perDay + (remainder > 0 ? 1 : 0),
                           tue: perDay + (remainder > 1 ? 1 : 0),
@@ -1050,11 +1051,11 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                       }}
                       className="w-24 px-3 py-2 bg-white border-2 border-gray-300 rounded-md text-sm font-semibold text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-blue-400 transition-colors"
                     />
-                    <span className="text-sm text-gray-600">slots</span>
+                    <span className="text-sm text-gray-600">(2 moves each = {Object.values(dailyCapacities).reduce((a, b) => a + b, 0)} slots)</span>
                   </div>
                 </div>
 
-                {/* Individual Day Inputs */}
+                {/* Individual Day Inputs - Show as drivers (slots ÷ 2) */}
                 <div className="grid grid-cols-7 gap-2">
                   {[
                     { key: 'mon', label: 'Mon' },
@@ -1072,17 +1073,19 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                       <input
                         type="number"
                         min="0"
-                        max="50"
-                        value={dailyCapacities[day.key]}
+                        max="25"
+                        value={Math.round(dailyCapacities[day.key] / 2)}
                         onChange={(e) => {
-                          const value = Math.max(0, Math.min(50, parseInt(e.target.value) || 0));
+                          const drivers = Math.max(0, Math.min(25, parseInt(e.target.value) || 0));
+                          const slots = drivers * 2;  // 2 moves per driver
                           setDailyCapacities({
                             ...dailyCapacities,
-                            [day.key]: value
+                            [day.key]: slots
                           });
                         }}
                         className="w-full px-2 py-1.5 bg-white border-2 border-gray-300 rounded-md text-sm font-semibold text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-blue-400 transition-colors"
                       />
+                      <span className="text-[10px] text-gray-400 text-center mt-0.5">{dailyCapacities[day.key]} slots</span>
                     </div>
                   ))}
                 </div>

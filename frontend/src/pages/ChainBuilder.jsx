@@ -40,6 +40,9 @@ function ChainBuilder({ sharedOffice }) {
   const [manualSlots, setManualSlots] = useState([]); // Array of {slot, start_date, end_date, selected_vehicle, eligible_vehicles}
   const [loadingSlotOptions, setLoadingSlotOptions] = useState({});
 
+  // Budget calculation for chain
+  const [chainBudget, setChainBudget] = useState(null);
+
   // Update selectedOffice when sharedOffice prop changes
   useEffect(() => {
     if (sharedOffice) {
@@ -539,6 +542,9 @@ function ChainBuilder({ sharedOffice }) {
 
       setManualSlots(slots);
       console.log('Converted to editable slots:', slots);
+
+      // Calculate budget for auto-generated chain
+      setTimeout(() => calculateChainBudget(), 100);
     } catch (err) {
       setError(err.message);
       setChain(null);
@@ -598,6 +604,8 @@ function ChainBuilder({ sharedOffice }) {
 
       setManualSlots(slots);
       console.log('Manual slots generated:', slots);
+
+      // Budget will be calculated as vehicles are selected
 
       // Initialize timeline view to show the chain period
       if (slots.length > 0) {
@@ -682,6 +690,45 @@ function ChainBuilder({ sharedOffice }) {
       };
       return updated;
     });
+  };
+
+  // Recalculate budget whenever manualSlots changes
+  useEffect(() => {
+    if (manualSlots.length > 0 && selectedPartner) {
+      calculateChainBudget();
+    }
+  }, [manualSlots, selectedPartner]);
+
+  const calculateChainBudget = async () => {
+    // Only calculate if we have slots with selected vehicles
+    const filledSlots = manualSlots.filter(s => s.selected_vehicle);
+    if (filledSlots.length === 0) {
+      setChainBudget(null);
+      return;
+    }
+
+    try {
+      const chainData = filledSlots.map(slot => ({
+        person_id: selectedPartner,
+        make: slot.selected_vehicle.make,
+        start_date: slot.start_date
+      }));
+
+      const response = await fetch('http://localhost:8081/api/chain-builder/calculate-chain-budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          office: selectedOffice,
+          chain: chainData
+        })
+      });
+
+      const data = await response.json();
+      setChainBudget(data);
+    } catch (err) {
+      console.error('Error calculating budget:', err);
+      setChainBudget(null);
+    }
   };
 
   const saveManualChain = async (status = 'manual') => {
@@ -1751,10 +1798,71 @@ function ChainBuilder({ sharedOffice }) {
         </div>
 
         {/* Right Panel - Info */}
-        <div className="w-80 bg-white border-l p-6">
+        <div className="w-80 bg-white border-l p-6 overflow-y-auto">
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Chain Info</h2>
 
           <div className="space-y-4 text-sm">
+            {/* Budget Status - EXACT COPY from Optimizer */}
+            {chainBudget && chainBudget.fleets && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Budget Status</h3>
+                <div className="bg-gray-50 rounded p-3">
+                  <div className="space-y-3 text-sm">
+                    {Object.entries(chainBudget.fleets).map(([fleet, data]) => (
+                      <div key={fleet}>
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium text-gray-900">{fleet}:</span>
+                          <div className="flex items-center gap-1">
+                            <span className={data.current > data.budget ? 'text-red-600 font-medium' : 'text-green-600 font-medium'}>
+                              ${data.current?.toLocaleString()}
+                            </span>
+                            <span className="text-gray-400">/</span>
+                            <span className={data.current > data.budget ? 'text-red-600 font-medium' : 'text-green-700 font-semibold'}>
+                              ${data.budget?.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                        {data.planned > 0 && (
+                          <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
+                            <span>+${Math.round(data.planned).toLocaleString()} this chain → </span>
+                            <span className={data.projected > data.budget ? 'text-red-600 font-medium ml-1' : 'text-blue-600 font-medium ml-1'}>
+                              ${Math.round(data.projected).toLocaleString()} projected
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {chainBudget.total && (
+                      <div className="border-t pt-2 mt-2">
+                        <div className="flex justify-between items-center font-semibold">
+                          <span className="text-gray-900">Total:</span>
+                          <div className="flex items-center gap-1">
+                            <span className={chainBudget.total.current > chainBudget.total.budget ? 'text-red-600' : 'text-green-600'}>
+                              ${chainBudget.total.current?.toLocaleString()}
+                            </span>
+                            <span className="text-gray-400">/</span>
+                            <span className={chainBudget.total.current > chainBudget.total.budget ? 'text-red-600' : 'text-green-700'}>
+                              ${chainBudget.total.budget?.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                        {chainBudget.total.planned > 0 && (
+                          <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
+                            <span>+${Math.round(chainBudget.total.planned).toLocaleString()} this chain → </span>
+                            <span className={chainBudget.total.projected > chainBudget.total.budget ? 'text-red-600 font-semibold ml-1' : 'text-blue-600 font-semibold ml-1'}>
+                              ${Math.round(chainBudget.total.projected).toLocaleString()} projected
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4 text-sm mt-4">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <h3 className="font-medium text-blue-900 mb-2">What is Chain Builder?</h3>
               <p className="text-blue-700 text-xs">

@@ -15,6 +15,7 @@ import pandas as pd
 
 from ..services.database import get_database, DatabaseService
 from ..chain_builder.exclusions import get_vehicles_not_reviewed, get_model_cooldown_status
+from ..utils.media_costs import get_cost_for_assignment
 from ..chain_builder.availability import (
     build_chain_availability_grid,
     get_available_vehicles_for_slot,
@@ -796,4 +797,105 @@ async def save_chain(
 
     except Exception as e:
         logger.error(f"Error saving chain: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/calculate-chain-budget")
+async def calculate_chain_budget(
+    request: Dict[str, Any],
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Calculate budget impact for a proposed chain in the EXACT same format as Optimizer.
+
+    Request body:
+        {
+            "office": str,
+            "chain": [{"person_id": int, "make": str, "start_date": str}]
+        }
+
+    Returns budget_summary in same format as Optimizer for consistent UI.
+    """
+    try:
+        office = request.get('office')
+        chain = request.get('chain', [])
+
+        # Load budgets for this office
+        budgets_response = db.client.table('budgets').select('*').eq('office', office).execute()
+        budgets_df = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+
+        # Determine quarter from first vehicle (or use current quarter)
+        if chain and len(chain) > 0:
+            start_dt = datetime.strptime(chain[0]['start_date'], '%Y-%m-%d')
+            current_year = start_dt.year
+            current_quarter = f'Q{((start_dt.month - 1) // 3) + 1}'
+        else:
+            now = datetime.now()
+            current_year = now.year
+            current_quarter = f'Q{((now.month - 1) // 3) + 1}'
+
+        # Get quarter budgets
+        quarter_budgets = budgets_df[
+            (budgets_df['year'] == current_year) &
+            (budgets_df['quarter'] == current_quarter)
+        ]
+
+        # Calculate chain costs by make
+        planned_by_make = {}
+        for assignment in chain:
+            person_id = assignment.get('person_id')
+            make = assignment.get('make')
+            if not person_id or not make:
+                continue
+
+            cost_info = get_cost_for_assignment(person_id, make)
+            make_upper = make.upper()
+            planned_by_make[make_upper] = planned_by_make.get(make_upper, 0) + cost_info['cost']
+
+        # Build budget_summary in same format as Optimizer
+        budget_fleets = {}
+
+        # First, add all makes from quarter_budgets table
+        for _, row in quarter_budgets.iterrows():
+            fleet = row['fleet']
+            current_used = float(row['amount_used']) if pd.notna(row['amount_used']) else 0
+            budget_amount = float(row['budget_amount']) if pd.notna(row['budget_amount']) else 0
+            planned_spend = planned_by_make.get(fleet, 0)
+
+            budget_fleets[fleet] = {
+                'current': int(current_used),
+                'planned': planned_spend,
+                'projected': current_used + planned_spend,
+                'budget': int(budget_amount)
+            }
+
+        # Second, add any makes from the chain that aren't in budgets table
+        for make, cost in planned_by_make.items():
+            if make not in budget_fleets:
+                budget_fleets[make] = {
+                    'current': 0,
+                    'planned': cost,
+                    'projected': cost,
+                    'budget': 0  # No budget entry for this make
+                }
+
+        # Calculate totals
+        total_current = sum(f['current'] for f in budget_fleets.values())
+        total_planned = sum(f['planned'] for f in budget_fleets.values())
+        total_budget = sum(f['budget'] for f in budget_fleets.values())
+
+        budget_summary = {
+            'fleets': budget_fleets,
+            'total': {
+                'current': total_current,
+                'planned': total_planned,
+                'projected': total_current + total_planned,
+                'budget': total_budget
+            } if budget_fleets else None
+        }
+
+        return budget_summary
+
+    except Exception as e:
+        logger.error(f"Error calculating chain budget: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

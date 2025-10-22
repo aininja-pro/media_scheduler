@@ -123,6 +123,29 @@ function ChainBuilder({ sharedOffice }) {
       setSelectedPartner(parseInt(savedPartnerId));
       setPartnerSearchQuery(savedPartnerName || '');
     }
+
+    // Restore chain/slots from sessionStorage
+    const savedManualSlots = sessionStorage.getItem('chainbuilder_manual_slots');
+    const savedBuildMode = sessionStorage.getItem('chainbuilder_build_mode');
+    const savedStartDate = sessionStorage.getItem('chainbuilder_start_date');
+    const savedNumVehicles = sessionStorage.getItem('chainbuilder_num_vehicles');
+    const savedDaysPerLoan = sessionStorage.getItem('chainbuilder_days_per_loan');
+
+    if (savedManualSlots) {
+      try {
+        console.time('Restoring chain');
+        const restored = JSON.parse(savedManualSlots);
+        console.log('Restoring', restored.length, 'slots');
+        setManualSlots(restored);
+        console.timeEnd('Restoring chain');
+      } catch (e) {
+        console.error('Error restoring manual slots:', e);
+      }
+    }
+    if (savedBuildMode) setBuildMode(savedBuildMode);
+    if (savedStartDate) setStartDate(savedStartDate);
+    if (savedNumVehicles) setNumVehicles(parseInt(savedNumVehicles));
+    if (savedDaysPerLoan) setDaysPerLoan(parseInt(savedDaysPerLoan));
   }, []);
 
   // Save selected partner to sessionStorage
@@ -417,6 +440,11 @@ function ChainBuilder({ sharedOffice }) {
     // Clear sessionStorage
     sessionStorage.removeItem('chainbuilder_partner_id');
     sessionStorage.removeItem('chainbuilder_partner_name');
+    sessionStorage.removeItem('chainbuilder_manual_slots');
+    sessionStorage.removeItem('chainbuilder_build_mode');
+    sessionStorage.removeItem('chainbuilder_start_date');
+    sessionStorage.removeItem('chainbuilder_num_vehicles');
+    sessionStorage.removeItem('chainbuilder_days_per_loan');
   };
 
   const saveChain = async () => {
@@ -690,14 +718,31 @@ function ChainBuilder({ sharedOffice }) {
       };
       return updated;
     });
+    setShouldCalculateBudget(true);  // Trigger budget calc on user action
   };
 
-  // Recalculate budget whenever manualSlots changes
+  // Recalculate budget only when user actively changes slots (not on restore)
+  const [shouldCalculateBudget, setShouldCalculateBudget] = useState(false);
+
   useEffect(() => {
-    if (manualSlots.length > 0 && selectedPartner) {
-      calculateChainBudget();
+    if (shouldCalculateBudget && manualSlots.length > 0 && selectedPartner) {
+      const timer = setTimeout(() => {
+        calculateChainBudget();
+      }, 300);
+      return () => clearTimeout(timer);
     }
-  }, [manualSlots, selectedPartner]);
+  }, [manualSlots, selectedPartner, shouldCalculateBudget]);
+
+  // Save chain state to sessionStorage when it changes
+  useEffect(() => {
+    if (manualSlots.length > 0) {
+      sessionStorage.setItem('chainbuilder_manual_slots', JSON.stringify(manualSlots));
+      sessionStorage.setItem('chainbuilder_build_mode', buildMode);
+      sessionStorage.setItem('chainbuilder_start_date', startDate);
+      sessionStorage.setItem('chainbuilder_num_vehicles', numVehicles.toString());
+      sessionStorage.setItem('chainbuilder_days_per_loan', daysPerLoan.toString());
+    }
+  }, [manualSlots, buildMode, startDate, numVehicles, daysPerLoan]);
 
   const calculateChainBudget = async () => {
     // Only calculate if we have slots with selected vehicles
@@ -1066,7 +1111,18 @@ function ChainBuilder({ sharedOffice }) {
         <div className="flex-1 p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Chain Preview</h2>
 
-          {selectedPartner && partnerIntelligence ? (
+          {selectedPartner && loadingIntelligence ? (
+            <div className="bg-white rounded-lg shadow-sm border p-12">
+              <div className="text-center">
+                <svg className="animate-spin h-12 w-12 text-blue-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p className="text-sm text-gray-600">Loading partner data...</p>
+                <p className="text-xs text-gray-400 mt-1">Restoring your chain</p>
+              </div>
+            </div>
+          ) : selectedPartner && partnerIntelligence ? (
             <div className="space-y-6">
               {/* Chain Header */}
               {chain && (

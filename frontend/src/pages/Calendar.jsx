@@ -1524,7 +1524,16 @@ function Calendar({ sharedOffice }) {
                           <h3 className="font-semibold text-sm text-gray-900 group-hover:text-blue-600">
                             {item.make} {item.model}
                           </h3>
-                          <p className="text-xs text-gray-500 font-mono">{item.vin}</p>
+                          <a
+                            href={`https://fms.driveshop.com/list_activities/${item.vin}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs font-mono text-blue-600 hover:text-blue-800 hover:underline"
+                            title="Open in FMS"
+                          >
+                            {item.vin}
+                          </a>
                           {item.expected_turn_in_date && (
                             <p className="text-xs text-orange-600 mt-1">
                               Expected Turn-In: {formatFullDate(item.expected_turn_in_date)}
@@ -1686,7 +1695,15 @@ function Calendar({ sharedOffice }) {
                     <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">VIN:</span>
-                        <span className="text-sm font-mono font-medium text-gray-900">{vehicleContext.vin}</span>
+                        <a
+                          href={`https://fms.driveshop.com/list_activities/${vehicleContext.vin}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-mono font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                          title="Open in FMS"
+                        >
+                          {vehicleContext.vin}
+                        </a>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">Make:</span>

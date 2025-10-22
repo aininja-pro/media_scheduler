@@ -245,11 +245,11 @@ async def get_calendar_activity(
             active_loans = []
 
         # 3. Get PLANNED/PROPOSED loans from scheduled_assignments
-        # Include both 'planned' (from optimizer) and 'manual' (from Partners tab)
+        # Include 'planned' (optimizer), 'manual' (chain builder), and 'requested' (sent to FMS)
         planned_query = db.client.table('scheduled_assignments')\
             .select('*')\
             .eq('office', office)\
-            .in_('status', ['planned', 'manual'])\
+            .in_('status', ['planned', 'manual', 'requested'])\
             .gte('start_day', start_date)\
             .lte('start_day', end_date)
 
@@ -356,6 +356,7 @@ async def get_calendar_activity(
             # Only add if no conflict
             if not has_conflict:
                 activities.append({
+                    'assignment_id': loan.get('assignment_id'),  # CRITICAL for status changes and delete
                     'vin': loan.get('vin'),
                     'make': loan.get('make'),
                     'model': loan.get('model'),
@@ -364,7 +365,7 @@ async def get_calendar_activity(
                     'person_id': loan.get('person_id'),
                     'partner_name': loan.get('partner_name'),
                     'office': loan.get('office'),
-                    'status': loan.get('status', 'planned'),  # Use actual status from DB
+                    'status': loan.get('status', 'planned'),  # Use actual status from DB (planned/manual/requested)
                     'activity_type': 'Planned Loan',
                     'optimizer_run_id': loan.get('optimizer_run_id'),
                     'score': loan.get('score'),
@@ -546,11 +547,58 @@ async def schedule_manual_assignment(request: ScheduleAssignmentRequest) -> Dict
     finally:
         await db.close()
 
+@router.patch("/change-assignment-status/{assignment_id}")
+async def change_assignment_status(
+    assignment_id: int,
+    new_status: str = Query(..., description="New status: 'planned', 'manual', 'requested'")
+) -> Dict[str, Any]:
+    """
+    Change the status of a scheduled assignment.
+
+    Workflow:
+    - 'planned' (green) → 'requested' (magenta) when sent to FMS
+    - 'manual' (green dashed) → 'requested' (magenta) when sent to FMS
+    - Cannot change to 'active' (that comes from current_activity sync)
+    """
+    db = DatabaseService()
+    await db.initialize()
+
+    try:
+        # Validate status
+        allowed_statuses = ['planned', 'manual', 'requested']
+        if new_status not in allowed_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status. Allowed: {allowed_statuses}"
+            )
+
+        # Update the assignment
+        result = db.client.table('scheduled_assignments')\
+            .update({'status': new_status})\
+            .eq('assignment_id', assignment_id)\
+            .execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail=f"Assignment {assignment_id} not found")
+
+        return {
+            'success': True,
+            'message': f'Assignment {assignment_id} status changed to {new_status}',
+            'assignment_id': assignment_id,
+            'new_status': new_status
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
+
+
 @router.delete("/delete-assignment/{assignment_id}")
 async def delete_assignment(assignment_id: int) -> Dict[str, Any]:
     """
-    Delete a scheduled assignment (typically manual picks from Partners tab).
-    Only allows deletion of status='manual' assignments.
+    Delete a scheduled assignment (green or magenta bars).
+    Cannot delete blue bars (current_activity - those are managed in FMS).
     """
     db = DatabaseService()
     await db.initialize()
@@ -570,11 +618,13 @@ async def delete_assignment(assignment_id: int) -> Dict[str, Any]:
 
         assignment = check_response.data[0]
 
-        # Only allow deletion of manual assignments (not optimizer planned)
-        if assignment.get('status') != 'manual':
+        # Allow deletion of green (planned/manual) and magenta (requested) assignments
+        # Do NOT allow deletion of blue (active) - those are in FMS
+        allowed_delete_statuses = ['manual', 'planned', 'requested']
+        if assignment.get('status') not in allowed_delete_statuses:
             return {
                 'success': False,
-                'message': 'Only manual recommendations can be deleted from Partners tab'
+                'message': f'Can only delete scheduled assignments (green/magenta bars), not active assignments (blue bars from FMS)'
             }
 
         # Delete the assignment

@@ -48,6 +48,48 @@ function Calendar({ sharedOffice }) {
   const [selectedMakes, setSelectedMakes] = useState([]); // Array of makes
   const [showPartnerDropdown, setShowPartnerDropdown] = useState(false);
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+
+  // Hover actions for timeline bars
+  const [hoveredAssignment, setHoveredAssignment] = useState(null); // assignment_id of hovered bar
+
+  // Handle status change (green → magenta)
+  const requestAssignment = async (assignmentId) => {
+    try {
+      const response = await fetch(`http://localhost:8081/api/calendar/change-assignment-status/${assignmentId}?new_status=requested`, {
+        method: 'PATCH'
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Reload activities to show magenta bar
+        loadActivities();
+      } else {
+        alert(`Failed to request: ${data.message}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  // Handle delete assignment
+  const deleteAssignment = async (assignmentId) => {
+    if (!confirm('Delete this assignment?')) return;
+
+    try {
+      const response = await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignmentId}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Reload activities
+        loadActivities();
+      } else {
+        alert(`Failed to delete: ${data.message}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
   const [showTierDropdown, setShowTierDropdown] = useState(false);
   const [showMakeDropdown, setShowMakeDropdown] = useState(false);
 
@@ -858,11 +900,14 @@ function Calendar({ sharedOffice }) {
       case 'completed': return 'bg-gradient-to-br from-gray-400 to-gray-500 border-2 border-gray-600';
       case 'active': return 'bg-gradient-to-br from-blue-500 to-blue-600 border-2 border-blue-700';
       case 'planned':
-        // Optimizer AI: solid border
+        // Optimizer/Chain Builder recommendation: solid green border
         return 'bg-gradient-to-br from-green-400 to-green-500 border-2 border-green-600';
       case 'manual':
-        // Manual pick: dashed border to distinguish from optimizer
+        // Manual Chain Builder pick: dashed green border to distinguish
         return 'bg-gradient-to-br from-green-400 to-green-500 border-2 border-dashed border-green-600';
+      case 'requested':
+        // Sent to FMS, awaiting approval: magenta/pink
+        return 'bg-gradient-to-br from-pink-500 to-pink-600 border-2 border-pink-700';
       case 'unavailable':
         // Lifecycle unavailability (not in service, turn-in, etc)
         return 'bg-gradient-to-br from-orange-400 to-orange-500 border-2 border-orange-600';
@@ -876,6 +921,7 @@ function Calendar({ sharedOffice }) {
       case 'active': return 'Active';
       case 'planned': return 'Proposed (AI)';
       case 'manual': return 'Proposed (Manual)';
+      case 'requested': return 'Requested (FMS)';
       default: return status;
     }
   };
@@ -1357,6 +1403,10 @@ function Calendar({ sharedOffice }) {
             <span className="text-gray-600">Proposed (Manual)</span>
           </div>
           <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-pink-500 rounded border-2 border-pink-700"></div>
+            <span className="text-gray-600">📤 Requested (FMS)</span>
+          </div>
+          <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-orange-400 rounded"></div>
             <span className="text-gray-600">Unavailable</span>
           </div>
@@ -1537,25 +1587,62 @@ function Calendar({ sharedOffice }) {
                         const color = getActivityColor(activity, location?.color);
 
                         return (
-                          <button
+                          <div
                             key={idx}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (viewMode === 'vehicle') {
-                                handleActivityClick(item.vin);
-                              } else {
-                                handlePartnerClick(item.person_id, item.partner_name);
-                              }
-                            }}
-                            className={`absolute h-7 ${color} ${hasChaining ? 'ring-2 ring-yellow-400 ring-offset-1' : ''} rounded-lg shadow-lg hover:shadow-xl hover:scale-105 hover:z-10 transition-all cursor-pointer flex items-center gap-1 text-white text-xs font-semibold px-2 overflow-hidden`}
+                            className={`absolute h-7 ${color} ${hasChaining ? 'ring-2 ring-yellow-400 ring-offset-1' : ''} rounded-lg shadow-lg hover:shadow-xl hover:z-20 transition-all flex items-center text-white text-xs font-semibold px-2 overflow-hidden group`}
                             style={{ left: barStyle.left, width: barStyle.width, minWidth: '20px', top: `${topOffset}px` }}
                             title={`${label}\nVIN: ...${vinSuffix}\n${formatActivityDate(activity.start_date)} - ${formatActivityDate(activity.end_date)}\n${location ? location.label : ''}${hasChaining ? '\n⛓️ Chaining opportunity!' : ''}`}
                           >
-                            {activity.status === 'planned' && <span className="text-xs">🤖</span>}
-                            {location?.badge && <span className="text-sm">{location.badge}</span>}
-                            {hasChaining && <span>⛓️</span>}
-                            <span className="truncate">{label}</span>
-                          </button>
+                            {/* Main content - clickable */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (viewMode === 'vehicle') {
+                                  handleActivityClick(item.vin);
+                                } else {
+                                  handlePartnerClick(item.person_id, item.partner_name);
+                                }
+                              }}
+                              className="flex items-center gap-1 flex-1 cursor-pointer"
+                            >
+                              {activity.status === 'planned' && <span className="text-xs">🤖</span>}
+                              {activity.status === 'manual' && <span className="text-xs">✋</span>}
+                              {activity.status === 'requested' && <span className="text-xs">📤</span>}
+                              {location?.badge && <span className="text-sm">{location.badge}</span>}
+                              {hasChaining && <span>⛓️</span>}
+                              <span className="truncate">{label}</span>
+                            </button>
+
+                            {/* Hover actions - only for editable statuses */}
+                            {(activity.status === 'planned' || activity.status === 'manual' || activity.status === 'requested') && activity.assignment_id && (
+                              <div className="hidden group-hover:flex items-center gap-0.5 ml-1">
+                                {/* Request button - only for green bars */}
+                                {(activity.status === 'planned' || activity.status === 'manual') && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      requestAssignment(activity.assignment_id);
+                                    }}
+                                    className="bg-white text-pink-600 hover:bg-pink-100 rounded px-1 py-0.5 text-[10px] font-bold shadow-sm"
+                                    title="Send to FMS"
+                                  >
+                                    📤
+                                  </button>
+                                )}
+                                {/* Delete button - for all non-blue bars */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteAssignment(activity.assignment_id);
+                                  }}
+                                  className="bg-white text-red-600 hover:bg-red-100 rounded px-1 py-0.5 text-[10px] font-bold shadow-sm"
+                                  title="Delete"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                   </div>

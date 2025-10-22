@@ -298,12 +298,20 @@ function Calendar({ sharedOffice }) {
     loadPartners();
   }, [selectedOffice]);
 
-  // Load activities when office changes (NOT when scrolling view)
+  // Load activities initially and when office changes (NOT when scrolling view)
+  const [activitiesLoaded, setActivitiesLoaded] = useState(false);
+
   useEffect(() => {
-    if (selectedOffice && viewStartDate && viewEndDate) {
+    if (selectedOffice && viewStartDate && viewEndDate && !activitiesLoaded) {
       loadActivities();
+      setActivitiesLoaded(true);
     }
-  }, [selectedOffice]); // Removed viewStartDate/viewEndDate to prevent reload on scroll
+  }, [selectedOffice, viewStartDate, viewEndDate, activitiesLoaded]);
+
+  // When office changes, reset loaded flag to trigger reload
+  useEffect(() => {
+    setActivitiesLoaded(false);
+  }, [selectedOffice]);
 
   // Fetch distances for partners with activities (optimization - only fetch what we need)
   useEffect(() => {

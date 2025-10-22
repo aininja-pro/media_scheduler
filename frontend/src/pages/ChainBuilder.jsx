@@ -1103,7 +1103,7 @@ function ChainBuilder({ sharedOffice }) {
 
                     return (
                       <>
-                        {/* Header Row - Day headers like Calendar (Mon 1, Tue 2, etc.) */}
+                        {/* Header Row - Day headers like Calendar (Month Day format) */}
                         <div className="flex border-b bg-gray-50">
                           <div className="w-48 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700">
                             {chain ? chain.partner_info.name : partnerIntelligence.partner.name}
@@ -1112,8 +1112,7 @@ function ChainBuilder({ sharedOffice }) {
                             {days.map((date, idx) => {
                               const dayOfWeek = date.getDay();
                               const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                              const dayNum = date.getDate();
-                              const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
+                              const monthDay = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
                               return (
                                 <div
@@ -1122,9 +1121,8 @@ function ChainBuilder({ sharedOffice }) {
                                     isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-gray-600'
                                   }`}
                                 >
-                                  <div className="leading-tight">
-                                    <div>{weekday}</div>
-                                    <div className="font-semibold">{dayNum}</div>
+                                  <div className="leading-tight font-semibold">
+                                    {monthDay}
                                   </div>
                                 </div>
                               );

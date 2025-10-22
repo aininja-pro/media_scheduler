@@ -70,6 +70,25 @@ function Calendar({ sharedOffice }) {
     }
   };
 
+  // Handle unrequest (magenta → green)
+  const unrequestAssignment = async (assignmentId) => {
+    try {
+      // Change back to 'planned' status
+      const response = await fetch(`http://localhost:8081/api/calendar/change-assignment-status/${assignmentId}?new_status=planned`, {
+        method: 'PATCH'
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Reload activities to show green bar again
+        loadActivities();
+      } else {
+        alert(`Failed to unrequest: ${data.message}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
   // Handle delete assignment
   const deleteAssignment = async (assignmentId) => {
     if (!confirm('Delete this assignment?')) return;
@@ -1636,6 +1655,19 @@ function Calendar({ sharedOffice }) {
                                     title="Send to FMS"
                                   >
                                     📤
+                                  </button>
+                                )}
+                                {/* Unrequest button - only for magenta bars */}
+                                {activity.status === 'requested' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      unrequestAssignment(activity.assignment_id);
+                                    }}
+                                    className="bg-white text-green-600 hover:bg-green-100 rounded px-1 py-0.5 text-[10px] font-bold shadow-sm"
+                                    title="Change back to recommendation"
+                                  >
+                                    ↩️
                                   </button>
                                 )}
                                 {/* Delete button - for all non-blue bars */}

@@ -1063,7 +1063,9 @@ function Calendar({ sharedOffice }) {
     if (!viewStartDate || !viewEndDate) return { left: 0, width: 0 };
 
     const rangeStart = new Date(viewStartDate);
+    rangeStart.setHours(0, 0, 0, 0); // Reset to midnight to match parseLocalDate behavior
     const rangeEnd = new Date(viewEndDate);
+    rangeEnd.setHours(0, 0, 0, 0); // Reset to midnight
 
     const activityStart = parseLocalDate(activity.start_date);
     const activityEnd = parseLocalDate(activity.end_date);

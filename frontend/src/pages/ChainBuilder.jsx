@@ -137,7 +137,12 @@ function ChainBuilder({ sharedOffice }) {
         console.time('Restoring chain');
         const restored = JSON.parse(savedManualSlots);
         console.log('Restoring', restored.length, 'slots');
-        setManualSlots(restored);
+        // Ensure eligible_vehicles array exists (wasn't saved to sessionStorage)
+        const restoredWithDefaults = restored.map(slot => ({
+          ...slot,
+          eligible_vehicles: slot.eligible_vehicles || []
+        }));
+        setManualSlots(restoredWithDefaults);
         console.timeEnd('Restoring chain');
       } catch (e) {
         console.error('Error restoring manual slots:', e);
@@ -202,6 +207,37 @@ function ChainBuilder({ sharedOffice }) {
     loadPartnerIntelligence();
   }, [selectedPartner, selectedOffice]);
 
+  // Refresh partner intelligence when tab becomes visible (detect visibility change)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      // When tab becomes visible and we have a selected partner, refresh intelligence
+      if (!document.hidden && selectedPartner && selectedOffice) {
+        const refreshPartnerIntelligence = async () => {
+          try {
+            const response = await fetch(
+              `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+            );
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success) {
+                setPartnerIntelligence(data);
+                console.log('Partner intelligence refreshed on tab visibility');
+              }
+            }
+          } catch (err) {
+            console.error('Error refreshing partner intelligence:', err);
+          }
+        };
+        refreshPartnerIntelligence();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [selectedPartner, selectedOffice]);
+
   // Initialize timeline view when chain is generated
   useEffect(() => {
     if (chain && chain.chain.length > 0) {
@@ -236,6 +272,36 @@ function ChainBuilder({ sharedOffice }) {
     newEnd.setDate(newEnd.getDate() - 7);
     setViewStartDate(newStart);
     setViewEndDate(newEnd);
+  };
+
+  // Refresh partner intelligence manually
+  const refreshPartnerIntelligence = async () => {
+    if (!selectedPartner || !selectedOffice) return;
+
+    setLoadingIntelligence(true);
+    try {
+      const response = await fetch(
+        `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setPartnerIntelligence(data);
+
+          // If there are no upcoming assignments, clear the proposed chain
+          if (!data.upcoming_assignments || data.upcoming_assignments.length === 0) {
+            setManualSlots([]);
+            setChain(null);
+          }
+
+          console.log('Partner intelligence refreshed manually');
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing partner intelligence:', err);
+    } finally {
+      setLoadingIntelligence(false);
+    }
   };
 
   // Parse date string as local date (avoid timezone issues)
@@ -737,11 +803,33 @@ function ChainBuilder({ sharedOffice }) {
   // Save chain state to sessionStorage when it changes
   useEffect(() => {
     if (manualSlots.length > 0) {
-      sessionStorage.setItem('chainbuilder_manual_slots', JSON.stringify(manualSlots));
-      sessionStorage.setItem('chainbuilder_build_mode', buildMode);
-      sessionStorage.setItem('chainbuilder_start_date', startDate);
-      sessionStorage.setItem('chainbuilder_num_vehicles', numVehicles.toString());
-      sessionStorage.setItem('chainbuilder_days_per_loan', daysPerLoan.toString());
+      try {
+        // Sanitize manualSlots to remove any circular references or DOM elements
+        const sanitizedSlots = manualSlots.map(slot => ({
+          slot: slot.slot,
+          start_date: slot.start_date,
+          end_date: slot.end_date,
+          selected_vehicle: slot.selected_vehicle ? {
+            vin: slot.selected_vehicle.vin,
+            make: slot.selected_vehicle.make,
+            model: slot.selected_vehicle.model,
+            year: slot.selected_vehicle.year,
+            score: slot.selected_vehicle.score,
+            tier: slot.selected_vehicle.tier,
+            last_4_vin: slot.selected_vehicle.last_4_vin
+          } : null,
+          available_count: slot.available_count
+          // Do NOT save eligible_vehicles array - it can be huge and cause issues
+        }));
+
+        sessionStorage.setItem('chainbuilder_manual_slots', JSON.stringify(sanitizedSlots));
+        sessionStorage.setItem('chainbuilder_build_mode', buildMode);
+        sessionStorage.setItem('chainbuilder_start_date', startDate);
+        sessionStorage.setItem('chainbuilder_num_vehicles', numVehicles.toString());
+        sessionStorage.setItem('chainbuilder_days_per_loan', daysPerLoan.toString());
+      } catch (err) {
+        console.error('Error saving to sessionStorage:', err);
+      }
     }
   }, [manualSlots, buildMode, startDate, numVehicles, daysPerLoan]);
 
@@ -832,6 +920,10 @@ function ChainBuilder({ sharedOffice }) {
       setSaveMessage(`✅ ${data.message} View in Calendar tab.`);
       console.log('Manual chain saved:', data);
 
+      // Clear the proposed chain slots since they're now saved
+      setManualSlots([]);
+      setChain(null);
+
       // Reload partner intelligence to get assignment IDs
       if (selectedPartner && selectedOffice) {
         const resp = await fetch(
@@ -874,6 +966,18 @@ function ChainBuilder({ sharedOffice }) {
                 ))}
               </select>
             </div>
+
+            {/* Refresh Button */}
+            {selectedPartner && (
+              <button
+                onClick={refreshPartnerIntelligence}
+                disabled={loadingIntelligence}
+                className="px-3 py-1.5 border border-gray-300 rounded text-sm text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                title="Refresh partner calendar data"
+              >
+                {loadingIntelligence ? 'Refreshing...' : '🔄 Refresh'}
+              </button>
+            )}
 
             {/* Clear/Reset Button */}
             {selectedPartner && (

@@ -1026,16 +1026,15 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                     <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-4">
                     <label className="text-sm font-medium text-gray-700">
-                      Weekly Drivers:
+                      Weekly Slots Available:
                     </label>
                     <input
                       type="number"
                       min="0"
-                      max="175"
-                      value={Math.round(Object.values(dailyCapacities).reduce((a, b) => a + b, 0) / 2)}
+                      max="350"
+                      value={Object.values(dailyCapacities).reduce((a, b) => a + b, 0)}
                       onChange={(e) => {
-                        const drivers = Math.max(0, Math.min(175, parseInt(e.target.value) || 0));
-                        const totalSlots = drivers * 2;  // 2 moves per driver
+                        const totalSlots = Math.max(0, Math.min(350, parseInt(e.target.value) || 0));
                         // Distribute evenly across weekdays only
                         const perDay = Math.floor(totalSlots / 5);
                         const remainder = totalSlots % 5;
@@ -1051,7 +1050,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                       }}
                       className="w-24 px-3 py-2 bg-white border-2 border-gray-300 rounded-md text-sm font-semibold text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-blue-400 transition-colors"
                     />
-                    <span className="text-sm text-gray-600">(2 moves each = {Object.values(dailyCapacities).reduce((a, b) => a + b, 0)} slots)</span>
+                    <span className="text-sm text-gray-600">({Math.round(Object.values(dailyCapacities).reduce((a, b) => a + b, 0) / 2)} drivers × 2 runs)</span>
                   </div>
                 </div>
 
@@ -1251,13 +1250,13 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                                 )}
                               </div>
                               <div className="text-xs text-gray-600 mt-1">
-                                {totalSlots} capacity
+                                Daily Capacity: {totalSlots}
                               </div>
                             </div>
 
                             {/* Status Line */}
                             <div className="text-xs text-gray-700 leading-tight">
-                              <div>↳ {alreadyScheduled} sched | {availableSlots} avail</div>
+                              <div>{alreadyScheduled} sched | {availableSlots} avail</div>
                               {runResult && enabled && (
                                 <div className={`mt-0.5 font-medium ${
                                   optimizerFound === availableSlots ? 'text-green-600' :

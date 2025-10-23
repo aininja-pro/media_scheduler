@@ -1158,7 +1158,7 @@ async def get_office_default_capacity(
     """
     Get the default daily capacity for a specific office from ops_capacity table.
 
-    Returns default drivers_per_day which represents weekday capacity.
+    Returns daily_capacities as SLOTS (drivers_per_day × 2, since each driver does 2 runs/day).
     Weekend capacity defaults to 0.
     """
     db = DatabaseService()
@@ -1172,32 +1172,37 @@ async def get_office_default_capacity(
             .execute()
 
         if not capacity_response.data or len(capacity_response.data) == 0:
-            # Return sensible defaults if office not found
+            # Return sensible defaults if office not found (default 5 drivers = 10 slots)
+            default_drivers = 5
+            default_slots = default_drivers * 2
             return {
                 "office": office,
                 "daily_capacities": {
-                    "mon": 15,
-                    "tue": 15,
-                    "wed": 15,
-                    "thu": 15,
-                    "fri": 15,
+                    "mon": default_slots,
+                    "tue": default_slots,
+                    "wed": default_slots,
+                    "thu": default_slots,
+                    "fri": default_slots,
                     "sat": 0,
                     "sun": 0
                 },
-                "default_found": False
+                "default_found": False,
+                "drivers_per_day": default_drivers
             }
 
         office_data = capacity_response.data[0]
-        drivers_per_day = office_data.get('drivers_per_day', 15)
+        drivers_per_day = office_data.get('drivers_per_day', 5)
+        # Convert drivers to slots (each driver can do 2 runs per day)
+        slots_per_day = drivers_per_day * 2
 
         return {
             "office": office,
             "daily_capacities": {
-                "mon": drivers_per_day,
-                "tue": drivers_per_day,
-                "wed": drivers_per_day,
-                "thu": drivers_per_day,
-                "fri": drivers_per_day,
+                "mon": slots_per_day,
+                "tue": slots_per_day,
+                "wed": slots_per_day,
+                "thu": slots_per_day,
+                "fri": slots_per_day,
                 "sat": 0,  # Weekends default to 0
                 "sun": 0
             },

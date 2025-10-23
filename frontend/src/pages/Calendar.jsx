@@ -349,9 +349,15 @@ function Calendar({ sharedOffice, isActive }) {
     setError('');
 
     try {
-      // Fetch current view range only
-      const startDate = viewStartDate.toISOString().split('T')[0];
-      const endDate = viewEndDate.toISOString().split('T')[0];
+      // Fetch 6-week buffer (2 weeks back, 4 weeks forward) for smooth scrolling
+      const today = new Date();
+      const fetchStart = new Date(today);
+      fetchStart.setDate(today.getDate() - 14);
+      const fetchEnd = new Date(today);
+      fetchEnd.setDate(today.getDate() + 28);
+
+      const startDate = fetchStart.toISOString().split('T')[0];
+      const endDate = fetchEnd.toISOString().split('T')[0];
 
       const params = new URLSearchParams({
         office: selectedOffice,

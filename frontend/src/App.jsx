@@ -604,11 +604,12 @@ function App() {
         )}
 
         {/* Calendar Tab */}
-        {activeTab === 'calendar' && (
+        <div style={{ display: activeTab === 'calendar' ? 'block' : 'none' }}>
           <Calendar
             sharedOffice={optimizerOffice}
+            isActive={activeTab === 'calendar'}
           />
-        )}
+        </div>
 
         {/* Partners Tab */}
         {activeTab === 'partners' && (

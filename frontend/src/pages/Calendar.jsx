@@ -12,7 +12,7 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-function Calendar({ sharedOffice }) {
+function Calendar({ sharedOffice, isActive }) {
   // Use shared office from parent, default to 'Los Angeles' if not provided
   const [selectedOffice, setSelectedOffice] = useState(sharedOffice || 'Los Angeles');
 
@@ -298,20 +298,12 @@ function Calendar({ sharedOffice }) {
     loadPartners();
   }, [selectedOffice]);
 
-  // Load activities initially and when office changes (NOT when scrolling view)
-  const [activitiesLoaded, setActivitiesLoaded] = useState(false);
-
+  // Load activities when tab becomes active or office changes
   useEffect(() => {
-    if (selectedOffice && viewStartDate && viewEndDate && !activitiesLoaded) {
+    if (isActive && selectedOffice && viewStartDate && viewEndDate) {
       loadActivities();
-      setActivitiesLoaded(true);
     }
-  }, [selectedOffice, viewStartDate, viewEndDate, activitiesLoaded]);
-
-  // When office changes, reset loaded flag to trigger reload
-  useEffect(() => {
-    setActivitiesLoaded(false);
-  }, [selectedOffice]);
+  }, [isActive, selectedOffice]);
 
   // Fetch distances for partners with activities (optimization - only fetch what we need)
   useEffect(() => {
@@ -357,8 +349,15 @@ function Calendar({ sharedOffice }) {
     setError('');
 
     try {
-      const startDate = viewStartDate.toISOString().split('T')[0];
-      const endDate = viewEndDate.toISOString().split('T')[0];
+      // Fetch a wider range (60 days before and after current view) to minimize reloads
+      const today = new Date();
+      const fetchStart = new Date(today);
+      fetchStart.setDate(today.getDate() - 60);
+      const fetchEnd = new Date(today);
+      fetchEnd.setDate(today.getDate() + 90);
+
+      const startDate = fetchStart.toISOString().split('T')[0];
+      const endDate = fetchEnd.toISOString().split('T')[0];
 
       const params = new URLSearchParams({
         office: selectedOffice,
@@ -1098,6 +1097,16 @@ function Calendar({ sharedOffice }) {
 
           {/* View Mode Toggle and What-If Mode */}
           <div className="flex gap-3 items-center">
+            {/* Reload Button */}
+            <button
+              onClick={() => loadActivities()}
+              disabled={isLoading}
+              className="px-3 py-1.5 border border-gray-300 rounded text-sm text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+              title="Reload calendar data"
+            >
+              {isLoading ? 'Loading...' : '🔄 Reload'}
+            </button>
+
             <div className="flex bg-gray-100 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('vehicle')}

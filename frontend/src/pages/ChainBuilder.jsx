@@ -287,13 +287,6 @@ function ChainBuilder({ sharedOffice }) {
         const data = await response.json();
         if (data.success) {
           setPartnerIntelligence(data);
-
-          // If there are no upcoming assignments, clear the proposed chain
-          if (!data.upcoming_assignments || data.upcoming_assignments.length === 0) {
-            setManualSlots([]);
-            setChain(null);
-          }
-
           console.log('Partner intelligence refreshed manually');
         }
       }
@@ -920,11 +913,11 @@ function ChainBuilder({ sharedOffice }) {
       setSaveMessage(`✅ ${data.message} View in Calendar tab.`);
       console.log('Manual chain saved:', data);
 
-      // Clear the proposed chain slots since they're now saved
+      // Clear the proposed chain slots (green bars) since they're now saved
       setManualSlots([]);
       setChain(null);
 
-      // Reload partner intelligence to get assignment IDs
+      // Reload partner intelligence to show the saved assignments (magenta/green bars)
       if (selectedPartner && selectedOffice) {
         const resp = await fetch(
           `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`

@@ -246,11 +246,12 @@ async def get_calendar_activity(
 
         # 3. Get PLANNED/PROPOSED loans from scheduled_assignments
         # Include 'planned' (optimizer), 'manual' (chain builder), and 'requested' (sent to FMS)
+        # Use overlap logic: show if end_day >= start_date AND start_day <= end_date
         planned_query = db.client.table('scheduled_assignments')\
             .select('*')\
             .eq('office', office)\
             .in_('status', ['planned', 'manual', 'requested'])\
-            .gte('start_day', start_date)\
+            .gte('end_day', start_date)\
             .lte('start_day', end_date)
 
         if vin:

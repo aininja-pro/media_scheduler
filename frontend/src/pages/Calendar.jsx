@@ -349,15 +349,9 @@ function Calendar({ sharedOffice, isActive }) {
     setError('');
 
     try {
-      // Fetch a wider range (60 days before and after current view) to minimize reloads
-      const today = new Date();
-      const fetchStart = new Date(today);
-      fetchStart.setDate(today.getDate() - 60);
-      const fetchEnd = new Date(today);
-      fetchEnd.setDate(today.getDate() + 90);
-
-      const startDate = fetchStart.toISOString().split('T')[0];
-      const endDate = fetchEnd.toISOString().split('T')[0];
+      // Fetch current view range only
+      const startDate = viewStartDate.toISOString().split('T')[0];
+      const endDate = viewEndDate.toISOString().split('T')[0];
 
       const params = new URLSearchParams({
         office: selectedOffice,

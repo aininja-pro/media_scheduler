@@ -21,7 +21,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   const [loadingStage, setLoadingStage] = useState('');
 
   // Policy state (sliders)
-  const [rankWeight, setRankWeight] = useState(1.0);
+  const [selectedTiers, setSelectedTiers] = useState(['A+', 'A', 'B', 'C']); // Multi-select quality tiers
   const [geoMatch, setGeoMatch] = useState(100);
   const [pubRate, setPubRate] = useState(150);
   const [historyBonus, setHistoryBonus] = useState(50);
@@ -241,12 +241,25 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   };
 
   // Helper functions to display slider values
-  const getPartnerQualityLabel = (weight) => {
-    if (weight <= 0.3) return 'All Tiers (A+/A/B/C/D)';
-    if (weight <= 0.8) return 'B+ and Better';
-    if (weight <= 1.2) return 'A Tier and Better';
-    if (weight <= 1.6) return 'A+ and A Only';
-    return 'A+ Only';
+  const getPartnerQualityLabel = (tiers) => {
+    if (tiers.length === 0) return 'None Selected';
+    if (tiers.length === 4) return 'All Tiers';
+    return tiers.sort().reverse().join(', ');
+  };
+
+  const toggleTier = (tier) => {
+    setSelectedTiers(prev => {
+      if (prev.includes(tier)) {
+        // Remove tier if already selected
+        return prev.filter(t => t !== tier);
+      } else {
+        // Add tier if not selected
+        return [...prev, tier].sort((a, b) => {
+          const order = { 'A+': 0, 'A': 1, 'B': 2, 'C': 3 };
+          return order[a] - order[b];
+        });
+      }
+    });
   };
 
   const getLocalPriorityLabel = (value) => {
@@ -396,7 +409,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
         office: selectedOffice,
         week_start: weekStart,
         seed: 42,
-        rank_weight: rankWeight,  // Partner Quality slider value
+        selected_tiers: selectedTiers,  // Partner Quality tiers to include (multi-select)
         geo_match: geoMatch,  // Local Priority slider value
         pub_rate: pubRate,  // Publishing Success slider value
         engagement_priority: historyBonus,  // Engagement Priority slider value
@@ -794,44 +807,35 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <label className="text-sm font-medium text-gray-700">Media Partner Quality</label>
-                    <span className="text-xs font-semibold text-blue-600">{getPartnerQualityLabel(rankWeight)}</span>
+                    <span className="text-xs font-semibold text-blue-600">{getPartnerQualityLabel(selectedTiers)}</span>
                   </div>
-                  {/* Discrete notch selector */}
-                  <div className="relative pt-2 pb-1">
-                    {/* Notch dots */}
-                    <div className="flex justify-between items-center mb-2">
-                      {[
-                        { label: 'All Tiers', value: 0, weight: 0.3 },
-                        { label: 'B+', value: 1, weight: 0.8 },
-                        { label: 'A', value: 2, weight: 1.2 },
-                        { label: 'A+', value: 3, weight: 1.6 }
-                      ].map((notch) => {
-                        const isSelected = (
-                          (notch.value === 0 && rankWeight <= 0.3) ||
-                          (notch.value === 1 && rankWeight > 0.3 && rankWeight <= 0.8) ||
-                          (notch.value === 2 && rankWeight > 0.8 && rankWeight <= 1.2) ||
-                          (notch.value === 3 && rankWeight > 1.2)
-                        );
-                        return (
-                          <button
-                            key={notch.value}
-                            onClick={() => setRankWeight(notch.weight)}
-                            className="flex flex-col items-center gap-1 flex-1"
-                          >
-                            <div className={`w-4 h-4 rounded-full border-2 transition-all ${
-                              isSelected
-                                ? 'bg-blue-600 border-blue-600 scale-125'
-                                : 'bg-white border-gray-300 hover:border-blue-400'
-                            }`}></div>
-                            <span className={`text-[10px] ${isSelected ? 'text-blue-600 font-semibold' : 'text-gray-400'}`}>
-                              {notch.label}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {/* Connecting line */}
-                    <div className="absolute top-4 left-2 right-2 h-0.5 bg-gray-300 -z-10"></div>
+                  {/* Multi-select checkboxes */}
+                  <div className="flex justify-between items-center gap-2">
+                    {['C', 'B', 'A', 'A+'].map((tier) => {
+                      const isSelected = selectedTiers.includes(tier);
+                      return (
+                        <button
+                          key={tier}
+                          onClick={() => toggleTier(tier)}
+                          className="flex flex-col items-center gap-1 flex-1"
+                        >
+                          <div className={`w-4 h-4 rounded border-2 transition-all ${
+                            isSelected
+                              ? 'bg-blue-600 border-blue-600'
+                              : 'bg-white border-gray-300 hover:border-blue-400'
+                          }`}>
+                            {isSelected && (
+                              <svg className="w-full h-full text-white" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" viewBox="0 0 24 24" stroke="currentColor">
+                                <path d="M5 13l4 4L19 7"></path>
+                              </svg>
+                            )}
+                          </div>
+                          <span className={`text-[10px] ${isSelected ? 'text-blue-600 font-semibold' : 'text-gray-400'}`}>
+                            {tier}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

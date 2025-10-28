@@ -3,7 +3,7 @@ UI endpoints for Phase 7 - read-only metrics using existing Phase 7 functions.
 """
 
 from fastapi import APIRouter, Query, HTTPException
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 import pandas as pd
 from datetime import datetime, timedelta
@@ -63,7 +63,7 @@ class RunRequest(BaseModel):
     office: str
     week_start: str
     seed: int = 42
-    rank_weight: float = 1.0  # Partner Quality slider (0.0 - 2.0)
+    selected_tiers: List[str] = ['A+', 'A', 'B', 'C']  # Partner Quality tiers to include (multi-select)
     geo_match: int = 100  # Local Priority slider (0 - 200)
     pub_rate: int = 150  # Publishing Success slider (0 - 300)
     engagement_priority: int = 50  # Engagement Priority slider (0-100: 0=dormant, 50=neutral, 100=momentum)
@@ -119,12 +119,22 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
 
         # Load committed (requested) assignments - they should block availability just like active loans
         committed_response = db.client.table('scheduled_assignments')\
-            .select('vin, start_day, end_day')\
+            .select('vin, person_id, start_day, end_day')\
             .eq('office', request.office)\
             .eq('status', 'requested')\
             .execute()
 
         committed_assignments_df = pd.DataFrame(committed_response.data) if committed_response.data else pd.DataFrame()
+
+        print(f"\n=== COMMITTED ASSIGNMENTS LOADED ===")
+        print(f"Office: {request.office}")
+        print(f"Found {len(committed_assignments_df)} committed assignments with status='requested'")
+        if not committed_assignments_df.empty:
+            print(f"Columns: {list(committed_assignments_df.columns)}")
+            print(f"Sample: {committed_assignments_df.iloc[0].to_dict()}")
+
+        # Keep a separate copy for partner availability checking before merging
+        committed_for_partner_check = committed_assignments_df.copy() if not committed_assignments_df.empty else pd.DataFrame()
 
         # Merge committed assignments into activity data so they block availability
         if not committed_assignments_df.empty:
@@ -160,7 +170,7 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             week_start=request.week_start,
             office=request.office,
             availability_horizon_days=14,
-            loan_length_days=7
+            loan_length_days=8  # 8-day loans per client requirement
         )
 
         if 'day' in availability_df.columns:
@@ -276,6 +286,44 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             if filtered_count > 0:
                 print(f"  Filtered {filtered_count} triples with existing partner-VIN combinations")
 
+        # 4a-2. Filter out triples where partner is already busy with a committed assignment
+        if not triples_post.empty and not committed_for_partner_check.empty:
+            pre_partner_filter = len(triples_post)
+            print(f"\n=== PARTNER CONFLICT CHECK ===")
+            print(f"Committed assignments to check: {len(committed_for_partner_check)}")
+            print(f"Sample committed: {committed_for_partner_check.iloc[0].to_dict() if len(committed_for_partner_check) > 0 else 'EMPTY'}")
+
+            # Convert committed dates to datetime
+            committed_for_partner_check['start_date'] = pd.to_datetime(committed_for_partner_check['start_day'])
+            committed_for_partner_check['end_date'] = pd.to_datetime(committed_for_partner_check['end_day'])
+
+            # Check each triple for partner conflicts
+            def partner_has_conflict(row):
+                person_id = int(row['person_id'])  # Ensure integer for comparison
+                # Triple spans from start_day to start_day + 7 days (8-day loan, inclusive)
+                triple_start = pd.to_datetime(row['start_day'])
+                triple_end = triple_start + pd.Timedelta(days=7)
+
+                # Check if this partner has any committed assignment that overlaps
+                partner_committed = committed_for_partner_check[
+                    committed_for_partner_check['person_id'] == person_id
+                ]
+
+                for _, commitment in partner_committed.iterrows():
+                    comm_start = commitment['start_date']
+                    comm_end = commitment['end_date']
+
+                    # Check for date overlap: two periods overlap if one starts before the other ends
+                    if triple_start <= comm_end and triple_end >= comm_start:
+                        print(f"  CONFLICT: person_id={person_id}, triple {triple_start.date()}-{triple_end.date()} overlaps committed {comm_start.date()}-{comm_end.date()}")
+                        return True
+                return False
+
+            triples_post = triples_post[~triples_post.apply(partner_has_conflict, axis=1)].copy()
+            filtered_partners = pre_partner_filter - len(triples_post)
+            if filtered_partners > 0:
+                print(f"  Filtered {filtered_partners} triples where partner has conflicting committed assignment")
+
         # 4b. Calculate publication rates from loan history
         publication_df = compute_publication_rate_24m(
             loan_history_df=loan_history_df,
@@ -302,6 +350,16 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             partners_df=partners_df,
             publication_df=publication_df
         )
+
+        # 4d-1. Filter triples by selected quality tiers
+        if request.selected_tiers and len(request.selected_tiers) > 0 and not triples_post.empty:
+            pre_tier_filter = len(triples_post)
+            # Only keep triples where the partner's rank matches one of the selected tiers
+            triples_post = triples_post[triples_post['rank'].isin(request.selected_tiers)].copy()
+            filtered_tiers = pre_tier_filter - len(triples_post)
+            if filtered_tiers > 0:
+                print(f"  Filtered {filtered_tiers} triples not matching selected quality tiers: {request.selected_tiers}")
+            print(f"  Remaining triples after tier filter: {len(triples_post)}")
 
         # 4e. Merge recency data into triples
         if not recency_df.empty:
@@ -343,7 +401,7 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             points_per_dollar=3,
             enforce_budget_hard=False,
 
-            w_rank=request.rank_weight,  # From Partner Quality slider
+            w_rank=1.0,  # Neutral weight - tier filtering happens before solver
             w_geo=request.geo_match,  # From Local Priority slider
             w_pub=request.pub_rate,  # From Publishing Success slider
             w_recency=abs(request.engagement_priority - 50) * 2,  # Weight magnitude (0-100, scaled from slider distance)

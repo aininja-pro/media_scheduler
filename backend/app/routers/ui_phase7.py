@@ -117,6 +117,25 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         if 'vehicle_vin' in current_activity_df.columns:
             current_activity_df = current_activity_df.rename(columns={'vehicle_vin': 'vin'})
 
+        # Load committed (requested) assignments - they should block availability just like active loans
+        committed_response = db.client.table('scheduled_assignments')\
+            .select('vin, start_day, end_day')\
+            .eq('office', request.office)\
+            .eq('status', 'requested')\
+            .execute()
+
+        committed_assignments_df = pd.DataFrame(committed_response.data) if committed_response.data else pd.DataFrame()
+
+        # Merge committed assignments into activity data so they block availability
+        if not committed_assignments_df.empty:
+            # Rename columns to match current_activity format
+            committed_assignments_df = committed_assignments_df.rename(columns={
+                'start_day': 'start_date',
+                'end_day': 'end_date'
+            })
+            # Combine with current activity
+            current_activity_df = pd.concat([current_activity_df, committed_assignments_df], ignore_index=True)
+
         # Load approved makes with pagination
         all_approved = []
         offset = 0

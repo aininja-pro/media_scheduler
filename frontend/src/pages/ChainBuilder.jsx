@@ -2416,58 +2416,21 @@ function ChainBuilder({ sharedOffice }) {
             </div>
           )}
 
-          {/* Vehicle Chain Mode Preview - TIMELINE (Phase 6) */}
+          {/* Vehicle Chain Mode Preview - Placeholder until Phase 6 Timeline */}
           {chainMode === 'vehicle' && (
-            <div>
-              {vehicleChain && vehicleChain.optimal_chain && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-                  <h3 className="text-lg font-medium text-green-900 mb-2">
-                    ✓ Vehicle Chain Generated Successfully!
-                  </h3>
-                  <div className="text-sm text-green-700 space-y-2">
-                    <p>
-                      <strong>{vehicleChain.optimal_chain.length} partners</strong> selected for{' '}
-                      <strong>{vehicleChain.vehicle_info.make} {vehicleChain.vehicle_info.model}</strong>
-                    </p>
-                    <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
-                      <div>Total Distance: <strong>{vehicleChain.logistics_summary.total_distance_miles} mi</strong></div>
-                      <div>Drive Time: <strong>~{vehicleChain.logistics_summary.total_drive_time_min} min</strong></div>
-                      <div>Cost: <strong>${vehicleChain.logistics_summary.total_logistics_cost}</strong></div>
-                      <div>Avg Hop: <strong>{vehicleChain.logistics_summary.average_distance_miles} mi</strong></div>
-                    </div>
-                    <div className="mt-4 text-xs">
-                      <p className="font-medium mb-1">Partners:</p>
-                      {vehicleChain.optimal_chain.map((p, i) => (
-                        <div key={i}>
-                          {i + 1}. {p.name} (Score: {p.score}, Tier: {p.tier})
-                          {p.handoff && <span className="text-green-600"> → {p.handoff.distance_miles} mi</span>}
-                        </div>
-                      ))}
-                    </div>
+            <div className="bg-white rounded-lg shadow-sm border p-12">
+              <div className="text-center">
+                <div className="text-yellow-600 text-4xl mb-4">🚧</div>
+                <p className="text-sm text-gray-700 font-medium">Vehicle Timeline Coming in Phase 6</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Will show vehicle's calendar with partner bars (like partner chain shows vehicle bars)
+                </p>
+                {vehicleChain && (
+                  <div className="mt-4 text-xs text-green-700">
+                    ✓ Chain generated successfully! {vehicleChain.optimal_chain?.length} partners, {vehicleChain.logistics_summary?.total_distance_miles} miles
                   </div>
-                  <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
-                    <strong>Coming in Phase 6:</strong> Timeline calendar view showing vehicle's schedule with partner bars
-                    (like partner chain timeline but showing partners instead of vehicles)
-                  </div>
-                </div>
-              )}
-
-              {!vehicleChain && !isLoading && selectedVehicle && (
-                <div className="bg-white rounded-lg shadow-sm border p-12">
-                  <div className="text-center text-gray-500">
-                    <p className="text-sm">Select build mode and click Generate to create a chain</p>
-                    <p className="text-xs mt-2">Vehicle: {selectedVehicle.make} {selectedVehicle.model}</p>
-                  </div>
-                </div>
-              )}
-
-              {!selectedVehicle && (
-                <div className="bg-white rounded-lg shadow-sm border p-12">
-                  <div className="text-center text-gray-500">
-                    <p className="text-sm">Select a vehicle to begin</p>
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
         </div>

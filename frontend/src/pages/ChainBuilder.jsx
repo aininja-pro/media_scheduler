@@ -1005,25 +1005,61 @@ function ChainBuilder({ sharedOffice }) {
       setVehicleChain(data);
       console.log('Vehicle chain generated:', data);
 
+      // Helper to calculate distance
+      const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        const R = 3956;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+          Math.sin(dLat/2) * Math.sin(dLat/2) +
+          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+          Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+      };
+
       // Convert to manual slots format for editing
-      const slots = data.optimal_chain.map((partner, index) => ({
-        slot: partner.slot,
-        start_date: partner.start_date,
-        end_date: partner.end_date,
-        selected_partner: {
-          person_id: partner.person_id,
-          name: partner.name,
-          address: partner.address,
-          base_score: partner.base_score,
-          final_score: partner.base_score, // Use base_score as final for display
-          tier: partner.tier,
-          engagement_level: partner.engagement_level,
-          latitude: partner.latitude,
-          longitude: partner.longitude,
-          distance_from_previous: index === 0 ? partner.office_distance : (partner.handoff ? partner.handoff.distance_miles : null)
-        },
-        eligible_partners: []  // Will load on dropdown open
-      }));
+      const slots = data.optimal_chain.map((partner, index) => {
+        let distanceFromPrev = null;
+
+        if (index === 0) {
+          // Slot 0: use office distance
+          distanceFromPrev = partner.office_distance || null;
+        } else if (partner.handoff) {
+          // Slot 1+ with handoff: use handoff distance
+          distanceFromPrev = partner.handoff.distance_miles;
+        } else if (index > 0) {
+          // Last slot (no handoff): calculate from previous partner
+          const prevPartner = data.optimal_chain[index - 1];
+          if (prevPartner.latitude && prevPartner.longitude && partner.latitude && partner.longitude) {
+            distanceFromPrev = calculateDistance(
+              prevPartner.latitude,
+              prevPartner.longitude,
+              partner.latitude,
+              partner.longitude
+            );
+          }
+        }
+
+        return {
+          slot: partner.slot,
+          start_date: partner.start_date,
+          end_date: partner.end_date,
+          selected_partner: {
+            person_id: partner.person_id,
+            name: partner.name,
+            address: partner.address || 'Address not available',
+            base_score: partner.score,
+            final_score: partner.score,
+            tier: partner.tier,
+            engagement_level: partner.engagement_level,
+            latitude: partner.latitude,
+            longitude: partner.longitude,
+            distance_from_previous: distanceFromPrev
+          },
+          eligible_partners: []
+        };
+      });
 
       setManualPartnerSlots(slots);
       console.log('Converted to editable partner slots:', slots);

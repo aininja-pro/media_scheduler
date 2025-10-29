@@ -25,6 +25,7 @@ class Partner:
     """Partner candidate for vehicle chain slot"""
     person_id: int
     name: str
+    address: Optional[str]
     latitude: Optional[float]
     longitude: Optional[float]
     base_score: int
@@ -369,12 +370,14 @@ def solve_vehicle_chain(
                             'slot': slot,
                             'person_id': candidate.person_id,
                             'name': candidate.name,
+                            'address': candidate.address,
                             'start_date': slot_data.start_date,
                             'end_date': slot_data.end_date,
                             'nominal_duration': slot_data.nominal_duration,
                             'actual_duration': slot_data.actual_duration,
                             'extended_for_weekend': slot_data.extended_for_weekend,
                             'handoff': handoff,
+                            'base_score': candidate.base_score,
                             'score': candidate.base_score,
                             'tier': candidate.tier_rank,
                             'engagement_level': candidate.engagement_level,

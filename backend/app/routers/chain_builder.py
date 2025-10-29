@@ -1313,6 +1313,7 @@ async def suggest_vehicle_chain(
             candidates.append(Partner(
                 person_id=person_id,
                 name=partner.get('name', f'Partner {person_id}'),
+                address=partner.get('address', ''),
                 latitude=partner.get('latitude'),
                 longitude=partner.get('longitude'),
                 base_score=score_data.get('base_score', 0),

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 
 function ChainBuilder({ sharedOffice }) {
+  // Chain mode: 'partner' (existing) or 'vehicle' (new)
+  const [chainMode, setChainMode] = useState('partner');
+
   // Use shared office from parent, default to 'Los Angeles'
   const [selectedOffice, setSelectedOffice] = useState(sharedOffice || 'Los Angeles');
   const [selectedPartner, setSelectedPartner] = useState('');
@@ -117,6 +120,12 @@ function ChainBuilder({ sharedOffice }) {
   useEffect(() => {
     setStartDate(getCurrentMonday());
 
+    // Restore chain mode from sessionStorage
+    const savedChainMode = sessionStorage.getItem('chainbuilder_chain_mode');
+    if (savedChainMode && (savedChainMode === 'partner' || savedChainMode === 'vehicle')) {
+      setChainMode(savedChainMode);
+    }
+
     // Restore selected partner from sessionStorage
     const savedPartnerId = sessionStorage.getItem('chainbuilder_partner_id');
     const savedPartnerName = sessionStorage.getItem('chainbuilder_partner_name');
@@ -153,6 +162,11 @@ function ChainBuilder({ sharedOffice }) {
     if (savedNumVehicles) setNumVehicles(parseInt(savedNumVehicles));
     if (savedDaysPerLoan) setDaysPerLoan(parseInt(savedDaysPerLoan));
   }, []);
+
+  // Save chain mode to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem('chainbuilder_chain_mode', chainMode);
+  }, [chainMode]);
 
   // Save selected partner to sessionStorage
   useEffect(() => {
@@ -943,7 +957,11 @@ function ChainBuilder({ sharedOffice }) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="!text-base font-semibold text-gray-900">Chain Builder</h1>
-            <p className="text-sm text-gray-500 mt-1">Create sequential vehicle assignments for a media partner</p>
+            <p className="text-sm text-gray-500 mt-1">
+              {chainMode === 'partner'
+                ? 'Create sequential vehicle assignments for a media partner'
+                : 'Create sequential partner assignments for a vehicle'}
+            </p>
           </div>
 
           <div className="flex items-center gap-4">
@@ -986,6 +1004,34 @@ function ChainBuilder({ sharedOffice }) {
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="bg-white border-b">
+        <div className="px-6">
+          <div className="flex gap-1">
+            <button
+              onClick={() => setChainMode('partner')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                chainMode === 'partner'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Partner Chain
+            </button>
+            <button
+              onClick={() => setChainMode('vehicle')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                chainMode === 'vehicle'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Vehicle Chain
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Main Content */}
       <div className="flex h-full">
         {/* Left Panel - Chain Parameters */}
@@ -993,11 +1039,12 @@ function ChainBuilder({ sharedOffice }) {
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Chain Parameters</h2>
 
           <div className="space-y-6">
-            {/* Partner Selector with Dropdown */}
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Media Partner
-              </label>
+            {/* Partner Chain Mode - Partner Selector */}
+            {chainMode === 'partner' && (
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Media Partner
+                </label>
 
               {/* Search Input */}
               <input
@@ -1046,7 +1093,20 @@ function ChainBuilder({ sharedOffice }) {
                   Selected: {partners.find(p => p.person_id === selectedPartner)?.name}
                 </p>
               )}
-            </div>
+              </div>
+            )}
+
+            {/* Vehicle Chain Mode - Vehicle Selector (Placeholder for Chunk 1.2) */}
+            {chainMode === 'vehicle' && (
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Vehicle
+                </label>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
+                  Vehicle selector coming in next chunk...
+                </div>
+              </div>
+            )}
 
             {/* Start Date */}
             <div>

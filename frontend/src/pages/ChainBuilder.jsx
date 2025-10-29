@@ -272,9 +272,17 @@ function ChainBuilder({ sharedOffice }) {
     }
   }, [selectedPartner, partners]);
 
-  // Save selected vehicle to sessionStorage
+  // Clear chain when vehicle changes and save to sessionStorage
   useEffect(() => {
     if (selectedVehicle) {
+      // Clear existing chain when vehicle changes
+      setManualPartnerSlots([]);
+      setVehicleChain(null);
+      setChainModified(false);
+      setError('');
+      setSaveMessage('');
+
+      // Save to sessionStorage
       sessionStorage.setItem('chainbuilder_vehicle_vin', selectedVehicle.vin);
       sessionStorage.setItem('chainbuilder_vehicle_make', selectedVehicle.make || '');
       sessionStorage.setItem('chainbuilder_vehicle_model', selectedVehicle.model || '');

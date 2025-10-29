@@ -1327,7 +1327,8 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto">
+                  {/* Scrollable assignments table */}
+                  <div className="overflow-x-auto max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
@@ -1441,6 +1442,25 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* AI Summary Section */}
+                  {runResult.ai_summary && (
+                    <div className="mt-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-6">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0">
+                          <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-sm font-semibold text-blue-900 mb-2">AI Analysis</h3>
+                          <div className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">
+                            {runResult.ai_summary}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : runResult ? (
                 <div className="bg-white rounded-lg shadow-sm border p-12">

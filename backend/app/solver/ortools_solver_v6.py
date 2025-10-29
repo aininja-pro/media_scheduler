@@ -97,6 +97,7 @@ def solve_with_all_constraints(
     w_recency: float = DEFAULT_W_RECENCY,
     engagement_mode: str = 'neutral',
     w_preferred_day: float = 0,  # Weight for preferred day match (0=off)
+    w_turnaround: float = 1000,  # Weight for same-day vehicle turnaround bonus
     # General
     seed: int = 42,
     verbose: bool = True,
@@ -144,6 +145,59 @@ def solve_with_all_constraints(
     if office_triples.empty:
         return _empty_result(office, week_start, start_time)
 
+    # Query current_activity for turnaround bonus calculation
+    # Include partner location to check if same-day handoff is geographically feasible
+    current_activity_df = None
+    partners_location_df = None
+    if db_client and w_turnaround > 0:
+        try:
+            week_start_date = pd.to_datetime(week_start)
+            week_end_date = week_start_date + timedelta(days=6)
+
+            # Query current_activity with partner info
+            turnaround_response = db_client.table('current_activity')\
+                .select('vehicle_vin, end_date, person_id')\
+                .gte('end_date', str(week_start_date.date()))\
+                .lte('end_date', str(week_end_date.date()))\
+                .execute()
+
+            if turnaround_response.data:
+                current_activity_df = pd.DataFrame(turnaround_response.data)
+                # Rename vehicle_vin to vin for consistency
+                if 'vehicle_vin' in current_activity_df.columns:
+                    current_activity_df = current_activity_df.rename(columns={'vehicle_vin': 'vin'})
+
+                # Get partner locations (lat/lon) for distance calculation
+                # Query ALL partners for this office (need both previous and new partner locations)
+                try:
+                    all_partners_response = db_client.table('media_partners')\
+                        .select('person_id, latitude, longitude')\
+                        .eq('office', office)\
+                        .execute()
+
+                    if all_partners_response.data:
+                        all_partners_df = pd.DataFrame(all_partners_response.data)
+
+                        # Merge previous partner locations into current_activity
+                        if not current_activity_df.empty and 'person_id' in current_activity_df.columns:
+                            current_activity_df = current_activity_df.merge(
+                                all_partners_df,
+                                on='person_id',
+                                how='left',
+                                suffixes=('', '_prev')
+                            )
+
+                        # Store for passing to objective shaping
+                        partners_location_df = all_partners_df
+                    else:
+                        partners_location_df = None
+                except Exception as e2:
+                    print(f"Warning: Could not query partner locations: {e2}")
+                    partners_location_df = None
+        except Exception as e:
+            print(f"Warning: Could not query current_activity for turnaround bonus: {e}")
+            partners_location_df = None
+
     # Apply objective shaping (Phase 7.8)
     office_triples = apply_objective_shaping(
         office_triples,
@@ -153,6 +207,9 @@ def solve_with_all_constraints(
         w_recency=w_recency,
         engagement_mode=engagement_mode,
         w_preferred_day=w_preferred_day,
+        w_turnaround=w_turnaround,
+        current_activity_df=current_activity_df,
+        partners_df=partners_location_df,
         verbose=verbose
     )
 

@@ -411,6 +411,7 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             max_per_partner_per_day=request.max_per_partner_per_day,  # Max vehicles per partner per day
             max_per_partner_per_week=request.max_per_partner_per_week,  # Max vehicles per partner per week
             w_preferred_day=150 if request.prefer_normal_days else 0,  # Preferred Day toggle
+            w_turnaround=0,  # DISABLED - Turnaround bonus causes issues, needs more work
 
             cost_per_assignment=cost_per_assignment,  # Actual costs from budget history
             solver_time_limit_s=30,  # Increased from 10s for 58k triples

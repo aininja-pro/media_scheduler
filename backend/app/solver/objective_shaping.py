@@ -18,6 +18,7 @@ DEFAULT_W_GEO = 100       # Bonus for same-office match
 DEFAULT_W_PUB = 150       # Bonus for publication rate (0-1 normalized)
 DEFAULT_W_RECENCY = 50    # Weight for engagement recency (replaces history)
 DEFAULT_W_PREFERRED_DAY = 0  # Weight for preferred day match (0=off by default)
+DEFAULT_W_TURNAROUND = 1000  # Bonus for same-day turnaround (vehicle loan ends = new loan starts)
 
 
 def apply_objective_shaping(
@@ -28,6 +29,9 @@ def apply_objective_shaping(
     w_recency: float = DEFAULT_W_RECENCY,
     engagement_mode: str = 'neutral',  # 'dormant', 'neutral', or 'momentum'
     w_preferred_day: float = DEFAULT_W_PREFERRED_DAY,
+    w_turnaround: float = DEFAULT_W_TURNAROUND,
+    current_activity_df: Optional[pd.DataFrame] = None,
+    partners_df: Optional[pd.DataFrame] = None,
     verbose: bool = False
 ) -> pd.DataFrame:
     """
@@ -138,6 +142,31 @@ def apply_objective_shaping(
     else:
         df['_tiebreaker'] = 0
 
+    # Calculate turnaround bonus for same-day vehicle reassignments
+    # Vectorized for performance - simplified without location check
+    df['_turnaround_bonus'] = 0.0
+    if w_turnaround > 0 and current_activity_df is not None and not current_activity_df.empty:
+        # Prepare activity lookup with normalized dates
+        activity_lookup = current_activity_df[['vin', 'end_date']].copy()
+        activity_lookup['end_date'] = pd.to_datetime(activity_lookup['end_date']).dt.date
+        activity_lookup = activity_lookup.rename(columns={'end_date': 'prev_end_date'})
+
+        # Merge with triples
+        df['_start_date'] = pd.to_datetime(df['start_day']).dt.date
+        df_with_activity = df.merge(activity_lookup, on='vin', how='left')
+
+        # Calculate bonus: same day = full, next day = 30%
+        same_day_mask = df_with_activity['_start_date'] == df_with_activity['prev_end_date']
+        next_day_mask = df_with_activity['_start_date'] == (df_with_activity['prev_end_date'] + pd.Timedelta(days=1))
+
+        df.loc[same_day_mask, '_turnaround_bonus'] = w_turnaround
+        df.loc[next_day_mask, '_turnaround_bonus'] = w_turnaround * 0.3
+
+        # Clean up temp columns
+        df.drop(columns=['_start_date'], inplace=True, errors='ignore')
+
+    turnaround_score = df['_turnaround_bonus'].values
+
     # Compute shaped score
     df['score_shaped'] = (
         w_rank * df['rank_weight'] +
@@ -145,6 +174,7 @@ def apply_objective_shaping(
         w_pub * pub_rate_normalized +
         w_recency * recency_score +
         w_preferred_day * preferred_day_score +
+        turnaround_score +
         df['_tiebreaker']  # Tiny deterministic noise
     )
 
@@ -157,11 +187,15 @@ def apply_objective_shaping(
     df['_score_pub'] = w_pub * pub_rate_normalized
     df['_score_recency'] = w_recency * recency_score
     df['_score_preferred_day'] = w_preferred_day * preferred_day_score
+    df['_score_turnaround'] = turnaround_score
 
     if verbose:
         print(f"\n=== Objective Shaping Applied ===")
-        print(f"  Weights: rank={w_rank}, geo={w_geo}, pub={w_pub}, recency={w_recency}, preferred_day={w_preferred_day}")
+        print(f"  Weights: rank={w_rank}, geo={w_geo}, pub={w_pub}, recency={w_recency}, preferred_day={w_preferred_day}, turnaround={w_turnaround}")
         print(f"  Engagement mode: {engagement_mode}")
+        if w_turnaround > 0:
+            turnaround_count = (turnaround_score > 0).sum()
+            print(f"  Same-day turnarounds: {turnaround_count} triples ({turnaround_count/len(df)*100:.1f}%)")
         print(f"  Triples: {len(df):,}")
         print(f"  Score range: {df['score_shaped'].min():.1f} - {df['score_shaped'].max():.1f}")
 

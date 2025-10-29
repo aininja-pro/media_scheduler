@@ -2416,95 +2416,38 @@ function ChainBuilder({ sharedOffice }) {
             </div>
           )}
 
-          {/* Vehicle Chain Mode Preview */}
+          {/* Vehicle Chain Mode Preview - TIMELINE (Phase 6) */}
           {chainMode === 'vehicle' && (
             <div>
               {vehicleChain && vehicleChain.optimal_chain && (
-                <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-medium text-gray-900">
-                        {vehicleChain.vehicle_info.make} {vehicleChain.vehicle_info.model}
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        VIN: {vehicleChain.vehicle_info.vin}
-                      </p>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+                  <h3 className="text-lg font-medium text-green-900 mb-2">
+                    ✓ Vehicle Chain Generated Successfully!
+                  </h3>
+                  <div className="text-sm text-green-700 space-y-2">
+                    <p>
+                      <strong>{vehicleChain.optimal_chain.length} partners</strong> selected for{' '}
+                      <strong>{vehicleChain.vehicle_info.make} {vehicleChain.vehicle_info.model}</strong>
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                      <div>Total Distance: <strong>{vehicleChain.logistics_summary.total_distance_miles} mi</strong></div>
+                      <div>Drive Time: <strong>~{vehicleChain.logistics_summary.total_drive_time_min} min</strong></div>
+                      <div>Cost: <strong>${vehicleChain.logistics_summary.total_logistics_cost}</strong></div>
+                      <div>Avg Hop: <strong>{vehicleChain.logistics_summary.average_distance_miles} mi</strong></div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-2xl font-semibold text-gray-900">
-                        {vehicleChain.optimal_chain.length}
-                      </div>
-                      <div className="text-xs text-gray-500">Partners</div>
+                    <div className="mt-4 text-xs">
+                      <p className="font-medium mb-1">Partners:</p>
+                      {vehicleChain.optimal_chain.map((p, i) => (
+                        <div key={i}>
+                          {i + 1}. {p.name} (Score: {p.score}, Tier: {p.tier})
+                          {p.handoff && <span className="text-green-600"> → {p.handoff.distance_miles} mi</span>}
+                        </div>
+                      ))}
                     </div>
                   </div>
-
-                  {/* Logistics Summary */}
-                  {vehicleChain.logistics_summary && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                      <h4 className="text-sm font-medium text-blue-900 mb-2">Logistics Summary</h4>
-                      <div className="grid grid-cols-2 gap-3 text-xs">
-                        <div>
-                          <div className="text-blue-700 font-medium">Total Distance</div>
-                          <div className="text-blue-900">{vehicleChain.logistics_summary.total_distance_miles} miles</div>
-                        </div>
-                        <div>
-                          <div className="text-blue-700 font-medium">Drive Time</div>
-                          <div className="text-blue-900">~{vehicleChain.logistics_summary.total_drive_time_min} min</div>
-                        </div>
-                        <div>
-                          <div className="text-blue-700 font-medium">Logistics Cost</div>
-                          <div className="text-blue-900">${vehicleChain.logistics_summary.total_logistics_cost}</div>
-                        </div>
-                        <div>
-                          <div className="text-blue-700 font-medium">Avg per Hop</div>
-                          <div className="text-blue-900">{vehicleChain.logistics_summary.average_distance_miles} mi</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Partner Chain */}
-                  <div className="space-y-3">
-                    {vehicleChain.optimal_chain.map((partner, index) => (
-                      <div key={partner.slot} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <div className="font-medium text-gray-900">
-                              Slot {partner.slot}: {partner.name}
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">
-                              {partner.start_date} → {partner.end_date} ({partner.actual_duration} days)
-                              {partner.extended_for_weekend && (
-                                <span className="ml-2 text-orange-600">(extended to Mon)</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-sm font-semibold text-gray-700">
-                              Score: {partner.score}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              Tier: {partner.tier}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Handoff Info */}
-                        {partner.handoff && (
-                          <div className="mt-2 pt-2 border-t border-gray-300">
-                            <div className="flex items-center gap-2 text-xs text-gray-600">
-                              <span className="font-medium">Handoff on {partner.handoff.date}:</span>
-                              <span>→ {partner.handoff.to_partner}</span>
-                            </div>
-                            <div className="flex items-center gap-4 text-xs text-gray-500 mt-1">
-                              <span>🚗 {partner.handoff.distance_miles} miles</span>
-                              <span>⏱️ ~{partner.handoff.estimated_drive_time_min} min</span>
-                              <span>💰 ${partner.handoff.logistics_cost}</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                  <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+                    <strong>Coming in Phase 6:</strong> Timeline calendar view showing vehicle's schedule with partner bars
+                    (like partner chain timeline but showing partners instead of vehicles)
                   </div>
                 </div>
               )}

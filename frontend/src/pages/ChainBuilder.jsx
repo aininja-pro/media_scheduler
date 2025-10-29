@@ -1025,20 +1025,19 @@ function ChainBuilder({ sharedOffice }) {
         if (index === 0) {
           // Slot 0: use office distance
           distanceFromPrev = partner.office_distance || null;
-        } else if (partner.handoff) {
-          // Slot 1+ with handoff: use handoff distance
-          distanceFromPrev = partner.handoff.distance_miles;
-        } else if (index > 0) {
-          // Last slot (no handoff): calculate from previous partner
+        } else {
+          // Slot 1+: Get distance from PREVIOUS partner's handoff (handoff goes TO this slot)
           const prevPartner = data.optimal_chain[index - 1];
-          if (prevPartner.latitude && prevPartner.longitude && partner.latitude && partner.longitude) {
+          if (prevPartner && prevPartner.handoff) {
+            distanceFromPrev = prevPartner.handoff.distance_miles;
+          } else if (prevPartner && prevPartner.latitude && prevPartner.longitude && partner.latitude && partner.longitude) {
+            // Fallback if handoff missing
             distanceFromPrev = calculateDistance(
               prevPartner.latitude,
               prevPartner.longitude,
               partner.latitude,
               partner.longitude
             );
-            console.log(`Calculated distance for slot ${index} from previous: ${distanceFromPrev.toFixed(2)} mi`);
           }
         }
 
@@ -2738,7 +2737,11 @@ function ChainBuilder({ sharedOffice }) {
                 {manualPartnerSlots.map((slot, index) => (
                   <div
                     key={slot.slot}
-                    className="border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all relative"
+                    className={`border-2 rounded-lg p-4 hover:shadow-lg transition-all relative ${
+                      slot.selected_partner
+                        ? 'border-green-500 bg-green-50 shadow-md'
+                        : 'border-gray-300 bg-white'
+                    }`}
                   >
                     {/* Delete button - top right corner */}
                     <button
@@ -2894,8 +2897,8 @@ function ChainBuilder({ sharedOffice }) {
                           <p className="text-sm font-bold text-blue-600">{slot.selected_partner.final_score}</p>
                         </div>
 
-                        {/* Engagement Level */}
-                        {slot.selected_partner.engagement_level && (
+                        {/* Engagement Level - Only show if NOT neutral */}
+                        {slot.selected_partner.engagement_level && slot.selected_partner.engagement_level !== 'neutral' && (
                           <div className="pt-2 border-t border-gray-200">
                             <p className="text-xs text-gray-500 font-medium">Engagement</p>
                             <p className="text-xs text-gray-700 capitalize">{slot.selected_partner.engagement_level}</p>

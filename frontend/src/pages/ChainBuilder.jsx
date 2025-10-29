@@ -2774,9 +2774,16 @@ function ChainBuilder({ sharedOffice }) {
           {chainMode === 'vehicle' && manualPartnerSlots.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-md font-semibold text-gray-900">
-                  {vehicleBuildMode === 'manual' ? 'Select Partners for Each Slot' : 'Chain Partners (Editable)'}
-                </h3>
+                <div>
+                  <h3 className="text-md font-semibold text-gray-900">
+                    {vehicleBuildMode === 'manual' ? 'Select Partners for Each Slot' : 'Chain Partners (Editable)'}
+                  </h3>
+                  {selectedVehicle && (
+                    <p className="text-xs text-gray-600 mt-1">
+                      Vehicle: {selectedVehicle.make} {selectedVehicle.model} {selectedVehicle.year} (VIN: ...{selectedVehicle.vin.slice(-4)})
+                    </p>
+                  )}
+                </div>
 
                 {/* Save Chain Buttons - Phase 6.1 */}
                 <div className="flex gap-2">

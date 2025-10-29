@@ -1220,16 +1220,89 @@ function ChainBuilder({ sharedOffice }) {
   };
 
   const selectPartnerForSlot = (slotIndex, partner) => {
+    // Haversine distance formula
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+      const R = 3956;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a =
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    };
+
     setManualPartnerSlots(prev => {
       const updated = [...prev];
+
+      // Update the selected partner for this slot
       updated[slotIndex] = {
         ...updated[slotIndex],
         selected_partner: partner
       };
+
+      // CRITICAL: Recalculate distances for ALL downstream slots
+      for (let i = slotIndex + 1; i < updated.length; i++) {
+        const prevSlot = updated[i - 1];
+        const currSlot = updated[i];
+
+        if (currSlot.selected_partner && prevSlot.selected_partner) {
+          if (prevSlot.selected_partner.latitude && prevSlot.selected_partner.longitude &&
+              currSlot.selected_partner.latitude && currSlot.selected_partner.longitude) {
+            const distance = calculateDistance(
+              prevSlot.selected_partner.latitude,
+              prevSlot.selected_partner.longitude,
+              currSlot.selected_partner.latitude,
+              currSlot.selected_partner.longitude
+            );
+
+            updated[i].selected_partner = {
+              ...updated[i].selected_partner,
+              distance_from_previous: distance
+            };
+          }
+        }
+      }
+
       return updated;
     });
 
-    console.log(`Selected ${partner.name} for slot ${slotIndex}`);
+    // Recalculate logistics summary immediately using the updated slots
+    setManualPartnerSlots(prevSlots => {
+      // Use the already-updated slots from above
+      if (vehicleChain) {
+        let totalDistance = 0;
+
+        for (let i = 0; i < prevSlots.length; i++) {
+          const slot = prevSlots[i];
+          if (slot.selected_partner && slot.selected_partner.distance_from_previous) {
+            totalDistance += slot.selected_partner.distance_from_previous;
+          }
+        }
+
+        const estimateDriveTime = (miles) => Math.round(miles / 20 * 60);
+        const totalDriveTime = estimateDriveTime(totalDistance);
+        const totalCost = totalDistance * 2.0;
+
+        setVehicleChain(prev => ({
+          ...prev,
+          logistics_summary: {
+            ...prev.logistics_summary,
+            total_distance_miles: totalDistance,
+            total_drive_time_min: totalDriveTime,
+            total_logistics_cost: totalCost,
+            average_hop_distance: totalDistance / (prevSlots.length - 1)
+          }
+        }));
+
+        setChainModified(true);
+      }
+
+      return prevSlots; // Return unchanged since we already updated above
+    });
+
+    console.log(`Selected ${partner.name} for slot ${slotIndex}, recalculated downstream distances`);
   };
 
   const deletePartnerSlot = (slotIndex) => {

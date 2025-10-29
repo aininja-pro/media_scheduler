@@ -1281,14 +1281,32 @@ async def suggest_vehicle_chain(
         # Get vehicle busy periods
         vehicle_busy_response = await get_vehicle_busy_periods(vin, start_date, chain_end_date, db)
         if vehicle_busy_response['busy_periods']:
+            # Check for ACTUAL conflicts (not same-day handoffs)
             conflicts = []
+            chain_start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+
             for period in vehicle_busy_response['busy_periods']:
+                period_start_dt = datetime.strptime(period['start_date'], '%Y-%m-%d')
+                period_end_dt = datetime.strptime(period['end_date'], '%Y-%m-%d')
+                chain_end_dt = datetime.strptime(chain_end_date, '%Y-%m-%d')
+
+                # Allow same-day handoff in BOTH directions:
+                # 1. Chain can start on day previous loan ends (incoming handoff)
+                if chain_start_dt >= period_end_dt:
+                    continue
+
+                # 2. Chain can end on day next loan starts (outgoing handoff)
+                if chain_end_dt <= period_start_dt:
+                    continue
+
+                # Actual conflict exists (overlaps)
                 conflicts.append(f"{period['partner_name']} ({period['start_date']} to {period['end_date']})")
 
-            raise HTTPException(
-                status_code=409,
-                detail=f"Vehicle {vin} is not available during chain period ({start_date} to {chain_end_date}). Conflicts: {', '.join(conflicts)}"
-            )
+            if conflicts:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Vehicle {vin} is not available during chain period ({start_date} to {chain_end_date}). Conflicts: {', '.join(conflicts)}"
+                )
 
         # 2. Get vehicle details
         vehicle_response = db.client.table('vehicles').select('*').eq('vin', vin).eq('office', office).execute()
@@ -1623,14 +1641,32 @@ async def get_partner_slot_options(
             chain_end_date = slot_dates[-1].end_date
             vehicle_busy_response = await get_vehicle_busy_periods(vin, start_date, chain_end_date, db)
             if vehicle_busy_response['busy_periods']:
+                # Check for ACTUAL conflicts (not same-day handoffs)
                 conflicts = []
+                chain_start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+
                 for period in vehicle_busy_response['busy_periods']:
+                    period_start_dt = datetime.strptime(period['start_date'], '%Y-%m-%d')
+                    period_end_dt = datetime.strptime(period['end_date'], '%Y-%m-%d')
+                    chain_end_dt = datetime.strptime(chain_end_date, '%Y-%m-%d')
+
+                    # Allow same-day handoff in BOTH directions:
+                    # 1. Chain can start on day previous loan ends (incoming handoff)
+                    if chain_start_dt >= period_end_dt:
+                        continue
+
+                    # 2. Chain can end on day next loan starts (outgoing handoff)
+                    if chain_end_dt <= period_start_dt:
+                        continue
+
+                    # Actual conflict exists (overlaps)
                     conflicts.append(f"{period['partner_name']} ({period['start_date']} to {period['end_date']})")
 
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Vehicle is not available during chain period ({start_date} to {chain_end_date}). Conflicts: {', '.join(conflicts)}"
-                )
+                if conflicts:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Vehicle is not available during chain period ({start_date} to {chain_end_date}). Conflicts: {', '.join(conflicts)}"
+                    )
 
         # Get office coordinates for slot 0 distance calculation
         office_lat = None

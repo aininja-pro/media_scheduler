@@ -1120,6 +1120,15 @@ function ChainBuilder({ sharedOffice }) {
       setManualPartnerSlots(slots);
       console.log('Converted to editable partner slots:', slots);
 
+      // Set timeline view to show the chain's start month
+      if (slots.length > 0 && slots[0].start_date) {
+        const chainStart = new Date(slots[0].start_date + 'T00:00:00');
+        const monthStart = new Date(chainStart.getFullYear(), chainStart.getMonth(), 1);
+        const monthEnd = new Date(chainStart.getFullYear(), chainStart.getMonth() + 1, 0);
+        setViewStartDate(monthStart);
+        setViewEndDate(monthEnd);
+      }
+
     } catch (err) {
       setError(err.message);
       setVehicleChain(null);
@@ -1191,6 +1200,15 @@ function ChainBuilder({ sharedOffice }) {
       const slots = calculateSlotDates(startDate, numVehicles, daysPerLoan);
       setManualPartnerSlots(slots);
       console.log(`Created ${numVehicles} empty partner slots with dates:`, slots);
+
+      // Set timeline view to show the chain's start month
+      if (slots.length > 0 && slots[0].start_date) {
+        const chainStart = new Date(slots[0].start_date + 'T00:00:00');
+        const monthStart = new Date(chainStart.getFullYear(), chainStart.getMonth(), 1);
+        const monthEnd = new Date(chainStart.getFullYear(), chainStart.getMonth() + 1, 0);
+        setViewStartDate(monthStart);
+        setViewEndDate(monthEnd);
+      }
 
     } catch (err) {
       setError(err.message);

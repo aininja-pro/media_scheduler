@@ -979,6 +979,8 @@ function ChainBuilder({ sharedOffice }) {
     setError('');
     setSaveMessage('');
     setVehicleChain(null);
+    setManualPartnerSlots([]); // Clear existing slots immediately
+    setChainModified(false);
 
     try {
       const params = new URLSearchParams({
@@ -2598,13 +2600,28 @@ function ChainBuilder({ sharedOffice }) {
           ) : null}
 
           {/* Vehicle Chain Mode Preview - Placeholder until Phase 6 Timeline */}
-          {chainMode === 'vehicle' && manualPartnerSlots.length === 0 && (
+          {chainMode === 'vehicle' && manualPartnerSlots.length === 0 && !isLoading && (
             <div className="bg-white rounded-lg shadow-sm border p-12">
               <div className="text-center">
                 <div className="text-yellow-600 text-4xl mb-4">🚧</div>
                 <p className="text-sm text-gray-700 font-medium">Vehicle Timeline Coming in Phase 6</p>
                 <p className="text-xs text-gray-500 mt-2">
                   Will show vehicle's calendar with partner bars (like partner chain shows vehicle bars)
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Loading Indicator - Vehicle Chain Mode */}
+          {chainMode === 'vehicle' && isLoading && (
+            <div className="bg-white rounded-lg shadow-sm border p-12">
+              <div className="text-center">
+                <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                <p className="text-sm text-gray-700 font-medium">
+                  {vehicleBuildMode === 'auto' ? 'Generating optimal partner chain...' : 'Creating partner slots...'}
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  {vehicleBuildMode === 'auto' ? 'Using OR-Tools to optimize distances and partner quality' : 'Calculating slot dates with weekend extensions'}
                 </p>
               </div>
             </div>

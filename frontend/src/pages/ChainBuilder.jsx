@@ -2786,12 +2786,18 @@ function ChainBuilder({ sharedOffice }) {
                                   : 'Choose partner...'}
                           </option>
                           {slot.eligible_partners && slot.eligible_partners.map(partner => {
-                            // Format: "Partner Name ⭐ 159 (3.2 mi) [A]" or "Partner Name ⚠️ Location Unknown [B]"
-                            const distanceText = partner.distance_from_previous !== null && partner.distance_from_previous !== undefined
-                              ? ` (${partner.distance_from_previous.toFixed(1)} mi)`
-                              : ' ⚠️ Location Unknown';
+                            // Format: "Partner Name ⭐ 159 (3.2 mi from office) [A]" for slot 0
+                            //         "Partner Name ⭐ 159 (3.2 mi) [A]" for slot 1+
+                            //         "Partner Name ⚠️ Location Unknown [B]" if no coords
+                            let distanceText = '';
+                            if (partner.distance_from_previous !== null && partner.distance_from_previous !== undefined) {
+                              const distLabel = index === 0 ? ' from office' : '';
+                              distanceText = ` (${partner.distance_from_previous.toFixed(1)} mi${distLabel})`;
+                            } else {
+                              distanceText = ' ⚠️ Location Unknown';
+                            }
 
-                            const label = `${partner.name} ⭐ ${partner.final_score}${index > 0 ? distanceText : ''} [${partner.tier || 'N/A'}]`;
+                            const label = `${partner.name} ⭐ ${partner.final_score}${distanceText} [${partner.tier || 'N/A'}]`;
 
                             return (
                               <option key={partner.person_id} value={partner.person_id}>
@@ -2833,10 +2839,12 @@ function ChainBuilder({ sharedOffice }) {
                           </p>
                         </div>
 
-                        {/* Distance from previous (if applicable) */}
-                        {index > 0 && slot.selected_partner.distance_from_previous !== null && slot.selected_partner.distance_from_previous !== undefined && (
+                        {/* Distance from office (slot 0) or previous partner (slot 1+) */}
+                        {slot.selected_partner.distance_from_previous !== null && slot.selected_partner.distance_from_previous !== undefined && (
                           <div className="pt-2 border-t border-gray-200">
-                            <p className="text-xs text-gray-500 font-medium">Distance from Previous</p>
+                            <p className="text-xs text-gray-500 font-medium">
+                              {index === 0 ? 'Distance from Office' : 'Distance from Previous'}
+                            </p>
                             <p className="text-sm font-bold text-blue-600">
                               {slot.selected_partner.distance_from_previous.toFixed(1)} mi
                             </p>

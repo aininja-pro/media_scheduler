@@ -1460,6 +1460,16 @@ async def get_partner_slot_options(
 
         logger.info(f"Slot {slot_index}: {target_slot.start_date} to {target_slot.end_date}")
 
+        # Get office coordinates for slot 0 distance calculation
+        office_lat = None
+        office_lng = None
+        if slot_index == 0:
+            office_response = db.client.table('offices').select('latitude, longitude').eq('name', office).execute()
+            if office_response.data and len(office_response.data) > 0:
+                office_lat = office_response.data[0].get('latitude')
+                office_lng = office_response.data[0].get('longitude')
+                logger.info(f"Office location: ({office_lat}, {office_lng})")
+
         # Load all data (same as suggest-vehicle-chain)
         partners_response = db.client.table('media_partners').select('*').eq('office', office).execute()
         partners_df = pd.DataFrame(partners_response.data) if partners_response.data else pd.DataFrame()
@@ -1570,24 +1580,37 @@ async def get_partner_slot_options(
             score_data = scores.get(person_id, {})
             base_score = score_data.get('base_score', 0)
 
-            # Calculate distance from previous partner (if slot > 0 and coords available)
+            # Calculate distance (from previous partner OR from office for slot 0)
             distance_from_previous = None
             distance_penalty = 0
             has_coordinates = pd.notna(partner.get('latitude')) and pd.notna(partner.get('longitude'))
 
-            if slot_index > 0 and previous_partner_id and previous_partner_lat and previous_partner_lng and has_coordinates:
-                # Calculate distance
+            if has_coordinates:
                 from ..chain_builder.geography import haversine_distance
-                distance_from_previous = haversine_distance(
-                    previous_partner_lat,
-                    previous_partner_lng,
-                    float(partner['latitude']),
-                    float(partner['longitude'])
-                )
-                distance_from_previous = round(distance_from_previous, 2)
 
-                # Apply distance penalty to score
-                distance_penalty = int(distance_from_previous * distance_weight * 10)
+                if slot_index == 0 and office_lat and office_lng:
+                    # Slot 0: Calculate distance from office
+                    distance_from_previous = haversine_distance(
+                        office_lat,
+                        office_lng,
+                        float(partner['latitude']),
+                        float(partner['longitude'])
+                    )
+                    distance_from_previous = round(distance_from_previous, 2)
+                    # Apply distance penalty for slot 0 too (office distance matters)
+                    distance_penalty = int(distance_from_previous * distance_weight * 10)
+
+                elif slot_index > 0 and previous_partner_id and previous_partner_lat and previous_partner_lng:
+                    # Slot 1+: Calculate distance from previous partner
+                    distance_from_previous = haversine_distance(
+                        previous_partner_lat,
+                        previous_partner_lng,
+                        float(partner['latitude']),
+                        float(partner['longitude'])
+                    )
+                    distance_from_previous = round(distance_from_previous, 2)
+                    # Apply distance penalty to score
+                    distance_penalty = int(distance_from_previous * distance_weight * 10)
 
             final_score = base_score - distance_penalty
 
@@ -1628,6 +1651,11 @@ async def get_partner_slot_options(
                 "actual_duration": target_slot.actual_duration,
                 "extended_for_weekend": target_slot.extended_for_weekend
             },
+            "office_location": {
+                "office_name": office,
+                "latitude": office_lat,
+                "longitude": office_lng
+            } if slot_index == 0 and office_lat and office_lng else None,
             "previous_partner": {
                 "person_id": previous_partner_id,
                 "latitude": previous_partner_lat,

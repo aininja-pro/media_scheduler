@@ -212,6 +212,39 @@ function ChainBuilder({ sharedOffice }) {
     if (savedStartDate) setStartDate(savedStartDate);
     if (savedNumVehicles) setNumVehicles(parseInt(savedNumVehicles));
     if (savedDaysPerLoan) setDaysPerLoan(parseInt(savedDaysPerLoan));
+
+    // Restore vehicle chain state from sessionStorage
+    const savedVehicleVin = sessionStorage.getItem('chainbuilder_vehicle_vin');
+    const savedVehicleMake = sessionStorage.getItem('chainbuilder_vehicle_make');
+    const savedVehicleModel = sessionStorage.getItem('chainbuilder_vehicle_model');
+    const savedVehicleYear = sessionStorage.getItem('chainbuilder_vehicle_year');
+    if (savedVehicleVin) {
+      setSelectedVehicle({
+        vin: savedVehicleVin,
+        make: savedVehicleMake || '',
+        model: savedVehicleModel || '',
+        year: savedVehicleYear || ''
+      });
+      setVehicleSearchQuery(`${savedVehicleMake || ''} ${savedVehicleModel || ''} ${savedVehicleYear || ''}`.trim());
+    }
+
+    const savedVehicleBuildMode = sessionStorage.getItem('chainbuilder_vehicle_build_mode');
+    if (savedVehicleBuildMode) setVehicleBuildMode(savedVehicleBuildMode);
+
+    const savedManualPartnerSlots = sessionStorage.getItem('chainbuilder_manual_partner_slots');
+    if (savedManualPartnerSlots) {
+      try {
+        const restored = JSON.parse(savedManualPartnerSlots);
+        console.log('Restoring', restored.length, 'partner slots');
+        const restoredWithDefaults = restored.map(slot => ({
+          ...slot,
+          eligible_partners: slot.eligible_partners || []
+        }));
+        setManualPartnerSlots(restoredWithDefaults);
+      } catch (e) {
+        console.error('Error restoring manual partner slots:', e);
+      }
+    }
   }, []);
 
   // Save chain mode to sessionStorage
@@ -229,6 +262,37 @@ function ChainBuilder({ sharedOffice }) {
       }
     }
   }, [selectedPartner, partners]);
+
+  // Save selected vehicle to sessionStorage
+  useEffect(() => {
+    if (selectedVehicle) {
+      sessionStorage.setItem('chainbuilder_vehicle_vin', selectedVehicle.vin);
+      sessionStorage.setItem('chainbuilder_vehicle_make', selectedVehicle.make || '');
+      sessionStorage.setItem('chainbuilder_vehicle_model', selectedVehicle.model || '');
+      sessionStorage.setItem('chainbuilder_vehicle_year', selectedVehicle.year || '');
+    }
+  }, [selectedVehicle]);
+
+  // Save vehicle build mode to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem('chainbuilder_vehicle_build_mode', vehicleBuildMode);
+  }, [vehicleBuildMode]);
+
+  // Save manual partner slots to sessionStorage
+  useEffect(() => {
+    if (manualPartnerSlots.length > 0) {
+      try {
+        // Don't save eligible_partners array (too large, reload on demand)
+        const sanitizedSlots = manualPartnerSlots.map(slot => ({
+          ...slot,
+          eligible_partners: [] // Clear to reduce storage size
+        }));
+        sessionStorage.setItem('chainbuilder_manual_partner_slots', JSON.stringify(sanitizedSlots));
+      } catch (err) {
+        console.error('Error saving manual partner slots to sessionStorage:', err);
+      }
+    }
+  }, [manualPartnerSlots]);
 
   // Load partner intelligence when partner is selected
   useEffect(() => {
@@ -2430,6 +2494,212 @@ function ChainBuilder({ sharedOffice }) {
                     ✓ Chain generated successfully! {vehicleChain.optimal_chain?.length} partners, {vehicleChain.logistics_summary?.total_distance_miles} miles
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Vehicle Chain Mode - Manual Partner Slot Cards */}
+          {chainMode === 'vehicle' && manualPartnerSlots.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-md font-semibold text-gray-900">
+                  {vehicleBuildMode === 'manual' ? 'Select Partners for Each Slot' : 'Chain Partners (Editable)'}
+                </h3>
+
+                {/* Save Chain Buttons - Phase 6.1 */}
+                <div className="flex gap-2">
+                  <button
+                    disabled={true}
+                    className="px-6 py-2 rounded-md text-sm font-medium bg-gray-200 text-gray-400 cursor-not-allowed"
+                    title="Save functionality coming in Phase 6.1"
+                  >
+                    Save Chain
+                  </button>
+                  <button
+                    disabled={true}
+                    className="px-6 py-2 rounded-md text-sm font-medium bg-gray-200 text-gray-400 cursor-not-allowed"
+                    title="Save functionality coming in Phase 6.1"
+                  >
+                    Save as Requested
+                  </button>
+                </div>
+              </div>
+
+              {/* Save Message */}
+              {saveMessage && (
+                <div className={`mb-4 p-3 rounded-md text-sm ${
+                  saveMessage.includes('✅')
+                    ? 'bg-green-50 border border-green-200 text-green-800'
+                    : 'bg-red-50 border border-red-200 text-red-700'
+                }`}>
+                  {saveMessage}
+                </div>
+              )}
+
+              {/* Manual Partner Slot Cards */}
+              <div className="grid grid-cols-5 gap-4">
+                {manualPartnerSlots.map((slot, index) => (
+                  <div
+                    key={slot.slot}
+                    className="border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all relative"
+                  >
+                    {/* Delete button - top right corner */}
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Remove Slot ${slot.slot} from chain?`)) {
+                          setManualPartnerSlots(prev => prev.filter((_, i) => i !== index));
+                        }
+                      }}
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full hover:bg-red-700 flex items-center justify-center text-sm font-bold shadow-lg z-10"
+                      title="Delete this slot"
+                    >
+                      ×
+                    </button>
+
+                    {/* Header: Slot + Available Count */}
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-bold text-gray-700">Slot {slot.slot}</span>
+                      {/* Show actual dropdown count if loaded, otherwise show estimated count */}
+                      {loadingPartnerSlotOptions[index] ? (
+                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                          Loading...
+                        </span>
+                      ) : slot.eligible_partners && slot.eligible_partners.length > 0 ? (
+                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                          {slot.eligible_partners.length} avail
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {/* Dates */}
+                    <div className="mb-3 pb-3 border-b border-gray-200">
+                      <p className="text-xs text-gray-500 font-medium">Dates</p>
+                      <p className="text-xs text-gray-900">
+                        {new Date(slot.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(slot.end_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </p>
+                    </div>
+
+                    {/* Partner Selection Dropdown */}
+                    {!slot.selected_partner ? (
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-xs font-medium text-gray-700">
+                            Select Partner:
+                          </label>
+                          {slot.eligible_partners && slot.eligible_partners.length > 0 && (
+                            <button
+                              onClick={() => loadPartnerSlotOptions(index)}
+                              disabled={loadingPartnerSlotOptions[index]}
+                              className="text-xs text-blue-600 hover:text-blue-800 underline"
+                            >
+                              {loadingPartnerSlotOptions[index] ? 'Loading...' : 'Reload'}
+                            </button>
+                          )}
+                        </div>
+                        <select
+                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-48 overflow-y-auto"
+                          size="1"
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              const partner = slot.eligible_partners.find(p => p.person_id.toString() === e.target.value);
+                              if (partner) {
+                                selectPartnerForSlot(index, partner);
+                              }
+                            }
+                          }}
+                          onFocus={() => {
+                            // Load options when dropdown is focused (lazy loading)
+                            if (!slot.eligible_partners || slot.eligible_partners.length === 0) {
+                              loadPartnerSlotOptions(index);
+                            }
+                          }}
+                          value=""
+                          disabled={index > 0 && !manualPartnerSlots[index - 1]?.selected_partner}
+                        >
+                          <option value="">
+                            {index > 0 && !manualPartnerSlots[index - 1]?.selected_partner
+                              ? 'Select previous slot first...'
+                              : loadingPartnerSlotOptions[index]
+                                ? 'Loading options...'
+                                : !slot.eligible_partners || slot.eligible_partners.length === 0
+                                  ? 'Click to load options...'
+                                  : 'Choose partner...'}
+                          </option>
+                          {slot.eligible_partners && slot.eligible_partners.map(partner => {
+                            // Format: "Partner Name ⭐ 159 (3.2 mi) [A]" or "Partner Name ⚠️ Location Unknown [B]"
+                            const distanceText = partner.distance_from_previous !== null && partner.distance_from_previous !== undefined
+                              ? ` (${partner.distance_from_previous.toFixed(1)} mi)`
+                              : ' ⚠️ Location Unknown';
+
+                            const label = `${partner.name} ⭐ ${partner.final_score}${index > 0 ? distanceText : ''} [${partner.tier || 'N/A'}]`;
+
+                            return (
+                              <option key={partner.person_id} value={partner.person_id}>
+                                {label}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        {(!slot.eligible_partners || slot.eligible_partners.length === 0) && !loadingPartnerSlotOptions[index] && (
+                          <p className="text-xs text-red-600 mt-1">No partners available</p>
+                        )}
+                      </div>
+                    ) : (
+                      /* Show selected partner */
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${
+                            slot.selected_partner.tier === 'A+' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
+                            slot.selected_partner.tier === 'A' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                            slot.selected_partner.tier === 'B' ? 'bg-green-100 text-green-800 border border-green-300' :
+                            'bg-gray-100 text-gray-800 border border-gray-300'
+                          }`}>
+                            {slot.selected_partner.tier || 'N/A'}
+                          </span>
+                          <button
+                            onClick={() => selectPartnerForSlot(index, null)}
+                            className="text-xs text-red-600 hover:text-red-800 underline"
+                          >
+                            Change
+                          </button>
+                        </div>
+
+                        <div>
+                          <h4 className="font-semibold text-gray-900 text-sm leading-tight">
+                            {slot.selected_partner.name}
+                          </h4>
+                          <p className="text-xs text-gray-600 leading-tight">
+                            {slot.selected_partner.address || 'Address not available'}
+                          </p>
+                        </div>
+
+                        {/* Distance from previous (if applicable) */}
+                        {index > 0 && slot.selected_partner.distance_from_previous !== null && slot.selected_partner.distance_from_previous !== undefined && (
+                          <div className="pt-2 border-t border-gray-200">
+                            <p className="text-xs text-gray-500 font-medium">Distance from Previous</p>
+                            <p className="text-sm font-bold text-blue-600">
+                              {slot.selected_partner.distance_from_previous.toFixed(1)} mi
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Score */}
+                        <div className="pt-2 border-t border-gray-200">
+                          <p className="text-xs text-gray-500 font-medium">Score</p>
+                          <p className="text-sm font-bold text-blue-600">{slot.selected_partner.final_score}</p>
+                        </div>
+
+                        {/* Engagement Level */}
+                        {slot.selected_partner.engagement_level && (
+                          <div className="pt-2 border-t border-gray-200">
+                            <p className="text-xs text-gray-500 font-medium">Engagement</p>
+                            <p className="text-xs text-gray-700 capitalize">{slot.selected_partner.engagement_level}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}

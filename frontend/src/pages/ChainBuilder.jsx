@@ -45,10 +45,16 @@ function ChainBuilder({ sharedOffice }) {
   const [swapAlternatives, setSwapAlternatives] = useState([]);
   const [loadingSwap, setLoadingSwap] = useState(false);
 
-  // Manual Build mode
+  // Manual Build mode (for partner chains)
   const [buildMode, setBuildMode] = useState('auto'); // 'auto' or 'manual'
   const [manualSlots, setManualSlots] = useState([]); // Array of {slot, start_date, end_date, selected_vehicle, eligible_vehicles}
   const [loadingSlotOptions, setLoadingSlotOptions] = useState({});
+
+  // Manual Build mode (for vehicle chains)
+  const [vehicleBuildMode, setVehicleBuildMode] = useState('auto'); // 'auto' or 'manual'
+  const [manualPartnerSlots, setManualPartnerSlots] = useState([]); // Array of {slot, start_date, end_date, selected_partner, eligible_partners}
+  const [loadingPartnerSlotOptions, setLoadingPartnerSlotOptions] = useState({});
+  const [vehicleChain, setVehicleChain] = useState(null); // Auto-generated vehicle chain
 
   // Budget calculation for chain
   const [chainBudget, setChainBudget] = useState(null);
@@ -1221,11 +1227,12 @@ function ChainBuilder({ sharedOffice }) {
               <p className="text-xs text-gray-500 mt-1">Must be a weekday (Mon-Fri), today or future</p>
             </div>
 
-            {/* Number of Vehicles */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Number of Vehicles
-              </label>
+            {/* Number of Vehicles (Partner Chain Mode) */}
+            {chainMode === 'partner' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Number of Vehicles
+                </label>
               <div className="flex items-center gap-3">
                 <input
                   type="range"
@@ -1241,7 +1248,32 @@ function ChainBuilder({ sharedOffice }) {
                 <span>1</span>
                 <span>10</span>
               </div>
-            </div>
+              </div>
+            )}
+
+            {/* Number of Partners (Vehicle Chain Mode) */}
+            {chainMode === 'vehicle' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Number of Partners
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={numVehicles}
+                    onChange={(e) => setNumVehicles(parseInt(e.target.value))}
+                    className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  />
+                  <span className="text-lg font-semibold text-gray-900 w-8 text-center">{numVehicles}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>1</span>
+                  <span>10</span>
+                </div>
+              </div>
+            )}
 
             {/* Days Per Loan */}
             <div>
@@ -1259,8 +1291,8 @@ function ChainBuilder({ sharedOffice }) {
               <p className="text-xs text-gray-500 mt-1">Typical: 7 days (1 week)</p>
             </div>
 
-            {/* Make Filter - Show when partner is selected */}
-            {partnerIntelligence && partnerIntelligence.approved_makes && partnerIntelligence.approved_makes.length > 0 && (
+            {/* Make Filter - Show when partner is selected (Partner Chain Mode Only) */}
+            {chainMode === 'partner' && partnerIntelligence && partnerIntelligence.approved_makes && partnerIntelligence.approved_makes.length > 0 && (
               <div className="border-t pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-sm font-medium text-gray-700">
@@ -1316,50 +1348,93 @@ function ChainBuilder({ sharedOffice }) {
               </div>
             )}
 
-            {/* Mode Toggle */}
-            <div className="border-t pt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Build Mode
-              </label>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <button
-                  onClick={() => setBuildMode('auto')}
-                  className={`py-2 px-3 rounded-md text-xs font-medium transition-colors border ${
-                    buildMode === 'auto'
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  Auto-Generate
-                </button>
-                <button
-                  onClick={() => setBuildMode('manual')}
-                  className={`py-2 px-3 rounded-md text-xs font-medium transition-colors border ${
-                    buildMode === 'manual'
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  Manual Build
-                </button>
+            {/* Mode Toggle - Partner Chain */}
+            {chainMode === 'partner' && (
+              <div className="border-t pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Build Mode
+                </label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <button
+                    onClick={() => setBuildMode('auto')}
+                    className={`py-2 px-3 rounded-md text-xs font-medium transition-colors border ${
+                      buildMode === 'auto'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Auto-Generate
+                  </button>
+                  <button
+                    onClick={() => setBuildMode('manual')}
+                    className={`py-2 px-3 rounded-md text-xs font-medium transition-colors border ${
+                      buildMode === 'manual'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Manual Build
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Generate Button */}
-            <button
-              onClick={buildMode === 'auto' ? generateChain : generateManualSlots}
-              disabled={isLoading || !selectedPartner || !startDate}
-              className={`w-full py-3 rounded-md text-sm font-medium transition-colors ${
-                isLoading || !selectedPartner || !startDate
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              {isLoading
-                ? (buildMode === 'auto' ? 'Generating Chain...' : 'Creating Slots...')
-                : (buildMode === 'auto' ? 'Generate Chain' : 'Create Empty Slots')
-              }
-            </button>
+            {/* Mode Toggle - Vehicle Chain */}
+            {chainMode === 'vehicle' && (
+              <div className="border-t pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Build Mode
+                </label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <button
+                    onClick={() => setVehicleBuildMode('auto')}
+                    className={`py-2 px-3 rounded-md text-xs font-medium transition-colors border ${
+                      vehicleBuildMode === 'auto'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Auto-Generate
+                  </button>
+                  <button
+                    onClick={() => setVehicleBuildMode('manual')}
+                    className={`py-2 px-3 rounded-md text-xs font-medium transition-colors border ${
+                      vehicleBuildMode === 'manual'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Manual Build
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Generate Button - Partner Chain */}
+            {chainMode === 'partner' && (
+              <button
+                onClick={buildMode === 'auto' ? generateChain : generateManualSlots}
+                disabled={isLoading || !selectedPartner || !startDate}
+                className={`w-full py-3 rounded-md text-sm font-medium transition-colors ${
+                  isLoading || !selectedPartner || !startDate
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {isLoading
+                  ? (buildMode === 'auto' ? 'Generating Chain...' : 'Creating Slots...')
+                  : (buildMode === 'auto' ? 'Generate Chain' : 'Create Empty Slots')
+                }
+              </button>
+            )}
+
+            {/* Generate Button - Vehicle Chain */}
+            {chainMode === 'vehicle' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
+                Vehicle chain generation coming soon...
+                <br />Build mode: {vehicleBuildMode}
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-md p-3 text-sm text-red-700">

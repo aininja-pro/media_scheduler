@@ -1617,10 +1617,7 @@ async def get_partner_slot_options(
         # Combine: coords first, then no coords
         sorted_partners = partner_options_with_coords + partner_options_without_coords
 
-        # Limit to top 50
-        top_partners = sorted_partners[:50]
-
-        logger.info(f"Returning {len(top_partners)} partner options for slot {slot_index}")
+        logger.info(f"Returning {len(sorted_partners)} partner options for slot {slot_index} (no limit applied)")
 
         return {
             "status": "success",
@@ -1636,8 +1633,8 @@ async def get_partner_slot_options(
                 "latitude": previous_partner_lat,
                 "longitude": previous_partner_lng
             } if previous_partner_id else None,
-            "eligible_partners": top_partners,
-            "total_eligible": len(partner_options),
+            "eligible_partners": sorted_partners,
+            "total_eligible": len(sorted_partners),
             "with_coordinates": len(partner_options_with_coords),
             "without_coordinates": len(partner_options_without_coords),
             "excluded_count": len(exclude_partner_ids.split(',')) if exclude_partner_ids else 0,

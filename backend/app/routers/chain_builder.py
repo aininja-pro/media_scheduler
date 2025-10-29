@@ -1341,3 +1341,219 @@ async def suggest_vehicle_chain(
     except Exception as e:
         logger.error(f"Error suggesting vehicle chain: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to suggest vehicle chain: {str(e)}")
+
+
+@router.get("/get-partner-slot-options")
+async def get_partner_slot_options(
+    vin: str = Query(..., description="Vehicle VIN"),
+    office: str = Query(..., description="Office name"),
+    start_date: str = Query(..., description="Chain start date (YYYY-MM-DD)"),
+    num_partners: int = Query(4, description="Total number of partners in chain"),
+    days_per_loan: int = Query(8, description="Days per loan"),
+    slot_index: int = Query(..., description="Slot index (0-based)"),
+    exclude_partner_ids: str = Query("", description="Comma-separated partner IDs already selected"),
+    previous_partner_id: Optional[int] = Query(None, description="Partner in previous slot (for distance calc)"),
+    previous_partner_lat: Optional[float] = Query(None, description="Previous partner latitude"),
+    previous_partner_lng: Optional[float] = Query(None, description="Previous partner longitude"),
+    distance_weight: float = Query(0.7, description="Weight for distance penalty"),
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Returns eligible partners for a specific slot in manual build mode.
+
+    Sorted by distance-adjusted score (if previous partner provided).
+    Includes partners without coordinates at bottom with warning.
+
+    Args:
+        vin: Vehicle VIN
+        office: Office name
+        start_date: Chain start date
+        num_partners: Total partners in chain
+        days_per_loan: Days per loan
+        slot_index: Which slot to get options for (0-based)
+        exclude_partner_ids: Already-selected partner IDs (comma-separated)
+        previous_partner_id: Partner from previous slot (for distance calc)
+        previous_partner_lat: Latitude of previous partner
+        previous_partner_lng: Longitude of previous partner
+        distance_weight: How much to penalize distance (0.0-1.0)
+
+    Returns:
+        Dict with eligible_partners list sorted by distance-adjusted score
+    """
+    try:
+        logger.info(f"Getting partner options for slot {slot_index}, VIN {vin}")
+
+        # Validate slot_index
+        if slot_index < 0 or slot_index >= num_partners:
+            raise HTTPException(
+                status_code=400,
+                detail=f"slot_index must be 0 to {num_partners - 1}, got {slot_index}"
+            )
+
+        # Get vehicle details
+        vehicle_response = db.client.table('vehicles').select('*').eq('vin', vin).eq('office', office).execute()
+        if not vehicle_response.data:
+            raise HTTPException(status_code=404, detail=f"Vehicle {vin} not found in {office}")
+
+        vehicle = vehicle_response.data[0]
+        vehicle_make = vehicle['make']
+
+        # Calculate slot dates
+        from ..solver.vehicle_chain_solver import calculate_slot_dates
+        slot_dates = calculate_slot_dates(start_date, num_partners, days_per_loan)
+        target_slot = slot_dates[slot_index]
+
+        logger.info(f"Slot {slot_index}: {target_slot.start_date} to {target_slot.end_date}")
+
+        # Load all data (same as suggest-vehicle-chain)
+        partners_response = db.client.table('media_partners').select('*').eq('office', office).execute()
+        partners_df = pd.DataFrame(partners_response.data) if partners_response.data else pd.DataFrame()
+
+        if partners_df.empty:
+            raise HTTPException(status_code=404, detail=f"No partners found for office {office}")
+
+        # Load approved_makes with pagination
+        approved_makes = []
+        offset = 0
+        while True:
+            response = db.client.table('approved_makes').select('*').range(offset, offset + 999).execute()
+            if not response.data:
+                break
+            approved_makes.extend(response.data)
+            offset += 1000
+            if len(response.data) < 1000:
+                break
+
+        approved_makes_df = pd.DataFrame(approved_makes) if approved_makes else pd.DataFrame()
+
+        # Load loan history with pagination
+        loan_history = []
+        offset = 0
+        while True:
+            response = db.client.table('loan_history').select('*').range(offset, offset + 999).execute()
+            if not response.data:
+                break
+            loan_history.extend(response.data)
+            offset += 1000
+            if len(response.data) < 1000:
+                break
+
+        loan_history_df = pd.DataFrame(loan_history) if loan_history else pd.DataFrame()
+
+        # Get eligible partners
+        exclusion_result = get_partners_not_reviewed(
+            vin=vin,
+            office=office,
+            loan_history_df=loan_history_df,
+            partners_df=partners_df,
+            approved_makes_df=approved_makes_df,
+            vehicle_make=vehicle_make
+        )
+
+        eligible_partner_ids = exclusion_result['eligible_partners']
+
+        # Exclude already-selected partners
+        if exclude_partner_ids:
+            excluded_set = set(int(pid) for pid in exclude_partner_ids.split(',') if pid.strip())
+            eligible_partner_ids = [pid for pid in eligible_partner_ids if pid not in excluded_set]
+            logger.info(f"Excluded {len(excluded_set)} already-selected partners")
+
+        logger.info(f"Eligible partners for slot {slot_index}: {len(eligible_partner_ids)}")
+
+        # Score partners
+        scores = score_partners_base(
+            partners_df=partners_df,
+            vehicle_make=vehicle_make,
+            approved_makes_df=approved_makes_df,
+            loan_history_df=loan_history_df
+        )
+
+        # Build partner list with scoring
+        partners_df['person_id'] = partners_df['person_id'].astype(int)
+        eligible_partners_df = partners_df[partners_df['person_id'].isin([int(pid) for pid in eligible_partner_ids])]
+
+        partner_options = []
+
+        for _, partner in eligible_partners_df.iterrows():
+            person_id = int(partner['person_id'])
+            score_data = scores.get(person_id, {})
+            base_score = score_data.get('base_score', 0)
+
+            # Calculate distance from previous partner (if slot > 0 and coords available)
+            distance_from_previous = None
+            distance_penalty = 0
+            has_coordinates = pd.notna(partner.get('latitude')) and pd.notna(partner.get('longitude'))
+
+            if slot_index > 0 and previous_partner_id and previous_partner_lat and previous_partner_lng and has_coordinates:
+                # Calculate distance
+                from ..chain_builder.geography import haversine_distance
+                distance_from_previous = haversine_distance(
+                    previous_partner_lat,
+                    previous_partner_lng,
+                    float(partner['latitude']),
+                    float(partner['longitude'])
+                )
+                distance_from_previous = round(distance_from_previous, 2)
+
+                # Apply distance penalty to score
+                distance_penalty = int(distance_from_previous * distance_weight * 10)
+
+            final_score = base_score - distance_penalty
+
+            partner_options.append({
+                'person_id': person_id,
+                'name': partner.get('name', f'Partner {person_id}'),
+                'address': partner.get('address', 'N/A'),
+                'latitude': partner.get('latitude'),
+                'longitude': partner.get('longitude'),
+                'has_coordinates': has_coordinates,
+                'distance_from_previous': distance_from_previous,
+                'base_score': base_score,
+                'distance_penalty': distance_penalty,
+                'final_score': final_score,
+                'tier': score_data.get('tier_rank', 'N/A'),
+                'engagement_level': score_data.get('engagement_level', 'neutral'),
+                'publication_rate': score_data.get('publication_rate', 0.0)
+            })
+
+        # Sort by final_score DESC, then put partners without coordinates at bottom
+        partner_options_with_coords = [p for p in partner_options if p['has_coordinates']]
+        partner_options_without_coords = [p for p in partner_options if not p['has_coordinates']]
+
+        partner_options_with_coords.sort(key=lambda x: x['final_score'], reverse=True)
+        partner_options_without_coords.sort(key=lambda x: x['base_score'], reverse=True)
+
+        # Combine: coords first, then no coords
+        sorted_partners = partner_options_with_coords + partner_options_without_coords
+
+        # Limit to top 50
+        top_partners = sorted_partners[:50]
+
+        logger.info(f"Returning {len(top_partners)} partner options for slot {slot_index}")
+
+        return {
+            "status": "success",
+            "slot": {
+                "index": slot_index,
+                "start_date": target_slot.start_date,
+                "end_date": target_slot.end_date,
+                "actual_duration": target_slot.actual_duration,
+                "extended_for_weekend": target_slot.extended_for_weekend
+            },
+            "previous_partner": {
+                "person_id": previous_partner_id,
+                "latitude": previous_partner_lat,
+                "longitude": previous_partner_lng
+            } if previous_partner_id else None,
+            "eligible_partners": top_partners,
+            "total_eligible": len(partner_options),
+            "with_coordinates": len(partner_options_with_coords),
+            "without_coordinates": len(partner_options_without_coords),
+            "excluded_count": len(exclude_partner_ids.split(',')) if exclude_partner_ids else 0
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting partner slot options: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get partner slot options: {str(e)}")

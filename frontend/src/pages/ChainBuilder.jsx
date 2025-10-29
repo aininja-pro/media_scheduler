@@ -1247,6 +1247,9 @@ function ChainBuilder({ sharedOffice }) {
         const prevSlot = updated[i - 1];
         const currSlot = updated[i];
 
+        // Clear eligible_partners so dropdown reloads with NEW distances from NEW previous partner
+        updated[i].eligible_partners = [];
+
         if (currSlot.selected_partner && prevSlot.selected_partner) {
           if (prevSlot.selected_partner.latitude && prevSlot.selected_partner.longitude &&
               currSlot.selected_partner.latitude && currSlot.selected_partner.longitude) {

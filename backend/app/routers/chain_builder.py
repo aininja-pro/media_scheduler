@@ -15,14 +15,25 @@ import pandas as pd
 
 from ..services.database import get_database, DatabaseService
 from ..chain_builder.exclusions import get_vehicles_not_reviewed, get_model_cooldown_status
+from ..chain_builder.vehicle_exclusions import get_partners_not_reviewed
 from ..utils.media_costs import get_cost_for_assignment
 from ..chain_builder.availability import (
     build_chain_availability_grid,
     get_available_vehicles_for_slot,
-    check_slot_availability
+    check_slot_availability,
+    build_partner_availability_grid,
+    check_partner_slot_availability
 )
 from ..chain_builder.smart_scheduling import adjust_chain_for_existing_commitments
+from ..chain_builder.geography import (
+    score_partners_base,
+    calculate_distance_matrix
+)
 from ..solver.scoring import compute_candidate_scores
+from ..solver.vehicle_chain_solver import (
+    solve_vehicle_chain,
+    Partner
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chain-builder", tags=["chain-builder"])
@@ -1098,3 +1109,234 @@ async def get_vehicle_busy_periods(
     except Exception as e:
         logger.error(f"Error getting vehicle busy periods: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get vehicle busy periods: {str(e)}")
+
+
+@router.post("/suggest-vehicle-chain")
+async def suggest_vehicle_chain(
+    vin: str,
+    office: str,
+    start_date: str,
+    num_partners: int = 4,
+    days_per_loan: int = 8,
+    distance_weight: float = 0.7,
+    max_distance_per_hop: float = 50.0,
+    distance_cost_per_mile: float = 2.0,
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Auto-generate optimal partner chain for a vehicle using OR-Tools.
+
+    Uses CP-SAT solver to find partner sequence that minimizes travel distance
+    while maximizing partner quality (engagement, publication, tier).
+
+    Args:
+        vin: Vehicle VIN
+        office: Office name
+        start_date: Chain start date (YYYY-MM-DD, must be weekday)
+        num_partners: Number of partners in chain (default 4)
+        days_per_loan: Days per loan (default 8)
+        distance_weight: Weight for distance optimization 0.0-1.0 (default 0.7)
+        max_distance_per_hop: Hard limit on hop distance in miles (default 50)
+        distance_cost_per_mile: Logistics cost per mile (default $2)
+
+    Returns:
+        Dict with optimal_chain, optimization_stats, logistics_summary
+    """
+    try:
+        logger.info(f"Suggesting vehicle chain for VIN {vin}, office {office}, starting {start_date}")
+
+        # 1. Validate start_date is weekday
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        if start_dt.weekday() >= 5:  # Saturday = 5, Sunday = 6
+            raise HTTPException(
+                status_code=400,
+                detail=f"Start date must be a weekday (Mon-Fri). {start_date} is a {start_dt.strftime('%A')}"
+            )
+
+        # 2. Get vehicle details
+        vehicle_response = db.client.table('vehicles').select('*').eq('vin', vin).eq('office', office).execute()
+        if not vehicle_response.data:
+            raise HTTPException(status_code=404, detail=f"Vehicle {vin} not found in {office}")
+
+        vehicle = vehicle_response.data[0]
+        vehicle_make = vehicle['make']
+        vehicle_model = vehicle.get('model', '')
+
+        logger.info(f"Vehicle: {vehicle_make} {vehicle_model}")
+
+        # 3. Load all necessary data with pagination
+
+        # Partners
+        partners_response = db.client.table('media_partners').select('*').eq('office', office).execute()
+        partners_df = pd.DataFrame(partners_response.data) if partners_response.data else pd.DataFrame()
+
+        if partners_df.empty:
+            raise HTTPException(status_code=404, detail=f"No partners found for office {office}")
+
+        # Approved makes (with pagination)
+        approved_makes = []
+        offset = 0
+        while True:
+            response = db.client.table('approved_makes').select('*').range(offset, offset + 999).execute()
+            if not response.data:
+                break
+            approved_makes.extend(response.data)
+            offset += 1000
+            if len(response.data) < 1000:
+                break
+
+        approved_makes_df = pd.DataFrame(approved_makes) if approved_makes else pd.DataFrame()
+
+        # Loan history (with pagination)
+        loan_history = []
+        offset = 0
+        while True:
+            response = db.client.table('loan_history').select('*').range(offset, offset + 999).execute()
+            if not response.data:
+                break
+            loan_history.extend(response.data)
+            offset += 1000
+            if len(response.data) < 1000:
+                break
+
+        loan_history_df = pd.DataFrame(loan_history) if loan_history else pd.DataFrame()
+
+        # Current activity
+        current_activity_response = db.client.table('current_activity').select('*').execute()
+        current_activity_df = pd.DataFrame(current_activity_response.data) if current_activity_response.data else pd.DataFrame()
+
+        # Scheduled assignments
+        scheduled_response = db.client.table('scheduled_assignments').select('*').execute()
+        scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+
+        logger.info(f"Loaded: {len(partners_df)} partners, {len(approved_makes_df)} approved_makes, {len(loan_history_df)} loan history")
+
+        # 4. Get eligible partners (not reviewed, approved for make)
+        exclusion_result = get_partners_not_reviewed(
+            vin=vin,
+            office=office,
+            loan_history_df=loan_history_df,
+            partners_df=partners_df,
+            approved_makes_df=approved_makes_df,
+            vehicle_make=vehicle_make
+        )
+
+        eligible_partner_ids = exclusion_result['eligible_partners']
+
+        if not eligible_partner_ids:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No eligible partners found. Excluded: {len(exclusion_result['excluded_partners'])}, Ineligible for {vehicle_make}: {len(exclusion_result['ineligible_make'])}"
+            )
+
+        logger.info(f"Eligible partners: {len(eligible_partner_ids)}, Excluded: {len(exclusion_result['excluded_partners'])}, Ineligible: {len(exclusion_result['ineligible_make'])}")
+
+        # 5. Score partners
+        scores = score_partners_base(
+            partners_df=partners_df,
+            vehicle_make=vehicle_make,
+            approved_makes_df=approved_makes_df,
+            loan_history_df=loan_history_df
+        )
+
+        # 6. Calculate distance matrix for eligible partners
+        # IMPORTANT: Convert person_id types to match
+        partners_df['person_id'] = partners_df['person_id'].astype(int)
+        eligible_partner_ids_int = [int(pid) for pid in eligible_partner_ids]
+        eligible_partners_df = partners_df[partners_df['person_id'].isin(eligible_partner_ids_int)]
+
+        distance_matrix = calculate_distance_matrix(eligible_partners_df)
+
+        logger.info(f"Calculated {len(distance_matrix)} pairwise distances")
+
+        # 7. Build Partner objects for solver
+        candidates = []
+        for _, partner in eligible_partners_df.iterrows():
+            person_id = int(partner['person_id'])
+            score_data = scores.get(person_id, {})
+
+            candidates.append(Partner(
+                person_id=person_id,
+                name=partner.get('name', f'Partner {person_id}'),
+                latitude=partner.get('latitude'),
+                longitude=partner.get('longitude'),
+                base_score=score_data.get('base_score', 0),
+                engagement_level=score_data.get('engagement_level', 'neutral'),
+                publication_rate=score_data.get('publication_rate', 0.0),
+                tier_rank=score_data.get('tier_rank', 'N/A'),
+                available=True
+            ))
+
+        logger.info(f"Prepared {len(candidates)} candidate partners for solver")
+
+        # 8. Solve with OR-Tools
+        result = solve_vehicle_chain(
+            vin=vin,
+            vehicle_make=vehicle_make,
+            office=office,
+            start_date=start_date,
+            num_partners=num_partners,
+            days_per_loan=days_per_loan,
+            candidates=candidates,
+            distance_matrix=distance_matrix,
+            distance_weight=distance_weight,
+            max_distance_per_hop=max_distance_per_hop,
+            distance_cost_per_mile=distance_cost_per_mile,
+            solver_timeout_seconds=30.0
+        )
+
+        # 9. Return result
+        if result.status == 'success':
+            return {
+                "status": "success",
+                "vehicle_info": {
+                    "vin": vin,
+                    "make": vehicle_make,
+                    "model": vehicle_model,
+                    "office": office
+                },
+                "chain_params": {
+                    "start_date": start_date,
+                    "num_partners": num_partners,
+                    "days_per_loan": days_per_loan,
+                    "total_span_days": (datetime.strptime(result.chain[-1]['end_date'], '%Y-%m-%d') - start_dt).days if result.chain else 0
+                },
+                "optimal_chain": result.chain,
+                "optimization_stats": result.optimization_stats,
+                "logistics_summary": result.logistics_summary,
+                "constraints_applied": {
+                    "total_partners": len(partners_df),
+                    "eligible_partners": len(eligible_partner_ids),
+                    "excluded_reviewed": len(exclusion_result['excluded_partners']),
+                    "ineligible_make": len(exclusion_result['ineligible_make']),
+                    "candidates_with_coords": result.optimization_stats.get('candidates_considered', 0),
+                    "distance_weight": distance_weight,
+                    "max_distance_per_hop": max_distance_per_hop
+                },
+                "message": f"Found optimal {num_partners}-partner chain for {vehicle_make} {vehicle_model}"
+            }
+        else:
+            # Infeasible or timeout
+            return {
+                "status": result.status,
+                "vehicle_info": {
+                    "vin": vin,
+                    "make": vehicle_make,
+                    "model": vehicle_model,
+                    "office": office
+                },
+                "chain_params": {
+                    "start_date": start_date,
+                    "num_partners": num_partners,
+                    "days_per_loan": days_per_loan
+                },
+                "optimal_chain": [],
+                "diagnostics": result.diagnostics,
+                "message": f"Could not find feasible chain: {result.diagnostics.get('reason', 'Unknown')}"
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error suggesting vehicle chain: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to suggest vehicle chain: {str(e)}")

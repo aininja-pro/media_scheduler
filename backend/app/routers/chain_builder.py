@@ -989,3 +989,112 @@ async def search_vehicles(
     except Exception as e:
         logger.error(f"Error searching vehicles: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to search vehicles: {str(e)}")
+
+
+@router.get("/vehicle-busy-periods")
+async def get_vehicle_busy_periods(
+    vin: str = Query(..., description="Vehicle VIN"),
+    start_date: str = Query(..., description="Start date for search window (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date for search window (YYYY-MM-DD)"),
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Get vehicle's current and scheduled rental periods.
+
+    Used to find gaps in vehicle's calendar for chain scheduling.
+    Returns all active loans and scheduled assignments within the date range.
+
+    Args:
+        vin: Vehicle VIN to check
+        start_date: Start of date range to check
+        end_date: End of date range to check
+
+    Returns:
+        Dict with 'vin' and 'busy_periods' list containing rental periods
+    """
+    try:
+        logger.info(f"Getting busy periods for vehicle {vin} from {start_date} to {end_date}")
+
+        # Parse dates
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+
+        busy_periods = []
+
+        # 1. Get current active loans for this vehicle
+        # Note: current_activity doesn't have VIN column, need to get all and filter
+        current_activity_response = db.client.table('current_activity').select('*').execute()
+        current_activity_df = pd.DataFrame(current_activity_response.data) if current_activity_response.data else pd.DataFrame()
+
+        # Filter by VIN if dataframe has vehicle_vin column (check what column name exists)
+        if not current_activity_df.empty:
+            # Try different possible column names for VIN
+            vin_col = None
+            for col in ['vehicle_vin', 'vin', 'VIN']:
+                if col in current_activity_df.columns:
+                    vin_col = col
+                    break
+
+            if vin_col:
+                vehicle_activity = current_activity_df[current_activity_df[vin_col] == vin]
+            else:
+                # No VIN column found, can't filter by vehicle
+                logger.warning(f"No VIN column found in current_activity table. Columns: {current_activity_df.columns.tolist()}")
+                vehicle_activity = pd.DataFrame()
+        else:
+            vehicle_activity = pd.DataFrame()
+
+        for _, activity in vehicle_activity.iterrows():
+            # Parse dates from activity
+            activity_start = datetime.strptime(activity['start_date'], '%Y-%m-%d') if activity.get('start_date') else None
+            activity_end = datetime.strptime(activity['end_date'], '%Y-%m-%d') if activity.get('end_date') else None
+
+            # Check if overlaps with our search window
+            if activity_start and activity_end:
+                if activity_start <= end_dt and activity_end >= start_dt:
+                    busy_periods.append({
+                        'start_date': activity['start_date'],
+                        'end_date': activity['end_date'],
+                        'partner_name': activity.get('partner_name', 'Unknown'),
+                        'person_id': activity.get('person_id'),
+                        'status': 'active'
+                    })
+
+        # 2. Get scheduled assignments for this vehicle
+        scheduled_response = db.client.table('scheduled_assignments').select('*').eq('vin', vin).execute()
+        scheduled_assignments = scheduled_response.data if scheduled_response.data else []
+
+        for assignment in scheduled_assignments:
+            # Parse dates from assignment
+            assignment_start = datetime.strptime(assignment['start_day'], '%Y-%m-%d') if assignment.get('start_day') else None
+            assignment_end = datetime.strptime(assignment['end_day'], '%Y-%m-%d') if assignment.get('end_day') else None
+
+            # Check if overlaps with our search window
+            if assignment_start and assignment_end:
+                if assignment_start <= end_dt and assignment_end >= start_dt:
+                    busy_periods.append({
+                        'start_date': assignment['start_day'],
+                        'end_date': assignment['end_day'],
+                        'partner_name': assignment.get('partner_name', 'Unknown'),
+                        'person_id': assignment.get('person_id'),
+                        'status': assignment.get('status', 'scheduled')  # 'manual' or 'requested'
+                    })
+
+        # Sort by start_date
+        busy_periods.sort(key=lambda x: x['start_date'])
+
+        logger.info(f"Found {len(busy_periods)} busy periods for vehicle {vin}")
+
+        return {
+            "vin": vin,
+            "busy_periods": busy_periods,
+            "search_window": {
+                "start_date": start_date,
+                "end_date": end_date
+            },
+            "total_periods": len(busy_periods)
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting vehicle busy periods: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get vehicle busy periods: {str(e)}")

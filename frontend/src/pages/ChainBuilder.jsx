@@ -112,22 +112,44 @@ function ChainBuilder({ sharedOffice }) {
     loadPartners();
   }, [selectedOffice]);
 
-  // Load vehicles when office changes (mock data for now, real API in Chunk 2.1)
+  // Load vehicles when office changes or search query updates (debounced)
   useEffect(() => {
-    if (!selectedOffice) return;
+    if (!selectedOffice || chainMode !== 'vehicle') return;
 
-    // Mock vehicle data for UI development
-    const mockVehicles = [
-      { vin: '1HGBH41JXMN109186', make: 'Honda', model: 'Accord', year: '2023', trim: 'EX-L', tier: 'A+' },
-      { vin: '5YJSA1E26HF123456', make: 'Tesla', model: 'Model S', year: '2024', trim: 'Long Range', tier: 'A+' },
-      { vin: '4T1BF1FK5CU123789', make: 'Toyota', model: 'Camry', year: '2023', trim: 'XLE', tier: 'A' },
-      { vin: '1N4AL3AP8GC456123', make: 'Nissan', model: 'Altima', year: '2022', trim: 'SV', tier: 'B' },
-      { vin: '3FA6P0HD9HR789456', make: 'Ford', model: 'Fusion', year: '2021', trim: 'SE', tier: 'C' }
-    ];
+    // Only search if we have a search query (at least 1 character)
+    if (!vehicleSearchQuery || vehicleSearchQuery.length === 0) {
+      setVehicles([]);
+      return;
+    }
 
-    setVehicles(mockVehicles);
-    console.log(`Loaded ${mockVehicles.length} mock vehicles for ${selectedOffice}`);
-  }, [selectedOffice]);
+    const loadVehicles = async () => {
+      try {
+        const response = await fetch(
+          `http://localhost:8081/api/chain-builder/search-vehicles?office=${encodeURIComponent(selectedOffice)}&search_term=${encodeURIComponent(vehicleSearchQuery)}&limit=50`
+        );
+
+        if (!response.ok) {
+          console.error('Failed to load vehicles');
+          setVehicles([]);
+          return;
+        }
+
+        const data = await response.json();
+        setVehicles(data.vehicles || []);
+        console.log(`Loaded ${data.vehicles?.length || 0} vehicles for search "${vehicleSearchQuery}" in ${selectedOffice}`);
+      } catch (err) {
+        console.error('Failed to load vehicles:', err);
+        setVehicles([]);
+      }
+    };
+
+    // Debounce the search - wait 300ms after user stops typing
+    const timeoutId = setTimeout(() => {
+      loadVehicles();
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [selectedOffice, vehicleSearchQuery, chainMode]);
 
   // Get current Monday as default
   const getCurrentMonday = () => {

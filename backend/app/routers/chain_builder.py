@@ -899,3 +899,82 @@ async def calculate_chain_budget(
     except Exception as e:
         logger.error(f"Error calculating chain budget: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/search-vehicles")
+async def search_vehicles(
+    office: str = Query(..., description="Office name"),
+    search_term: str = Query("", description="Search by VIN, make, or model"),
+    limit: int = Query(50, description="Maximum number of results", ge=1, le=100),
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Search vehicles by VIN, make, or model within an office.
+
+    Returns list of vehicles for autocomplete dropdown in vehicle chain mode.
+
+    Args:
+        office: Office to filter vehicles by
+        search_term: Partial VIN, make, or model to search
+        limit: Maximum number of results to return (default 50)
+
+    Returns:
+        Dict with 'vehicles' list containing matching vehicles
+    """
+    try:
+        logger.info(f"Searching vehicles in {office} with term: '{search_term}'")
+
+        # Load vehicles from database for this office
+        vehicles_df = db.get_vehicles_by_office(office)
+
+        if vehicles_df.empty:
+            logger.warning(f"No vehicles found for office: {office}")
+            return {"vehicles": []}
+
+        # Filter by search term if provided
+        if search_term:
+            search_lower = search_term.lower()
+            mask = (
+                vehicles_df['vin'].str.lower().str.contains(search_lower, na=False) |
+                vehicles_df['make'].str.lower().str.contains(search_lower, na=False) |
+                vehicles_df['model'].str.lower().str.contains(search_lower, na=False)
+            )
+            filtered_df = vehicles_df[mask]
+        else:
+            filtered_df = vehicles_df
+
+        # Sort by make, then model, then year (descending)
+        filtered_df = filtered_df.sort_values(
+            by=['make', 'model', 'year'],
+            ascending=[True, True, False]
+        )
+
+        # Limit results
+        result_df = filtered_df.head(limit)
+
+        # Convert to list of dicts
+        vehicles_list = []
+        for _, row in result_df.iterrows():
+            vehicles_list.append({
+                'vin': row['vin'],
+                'make': row['make'],
+                'model': row['model'],
+                'year': str(row['year']) if pd.notna(row['year']) else '',
+                'trim': row.get('trim', '') if pd.notna(row.get('trim', '')) else '',
+                'office': row['office'],
+                'in_service_date': row['in_service_date'].isoformat() if pd.notna(row.get('in_service_date')) else None,
+                'tier': row.get('tier', '') if pd.notna(row.get('tier', '')) else ''
+            })
+
+        logger.info(f"Found {len(vehicles_list)} vehicles matching '{search_term}' in {office}")
+
+        return {
+            "vehicles": vehicles_list,
+            "total": len(vehicles_list),
+            "search_term": search_term,
+            "office": office
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching vehicles: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to search vehicles: {str(e)}")

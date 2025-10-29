@@ -1440,6 +1440,15 @@ async def get_partner_slot_options(
 
         loan_history_df = pd.DataFrame(loan_history) if loan_history else pd.DataFrame()
 
+        # Load current activity and scheduled assignments for availability checking
+        logger.info("Loading current activity for partner availability check")
+        current_activity_response = db.client.table('current_activity').select('*').execute()
+        current_activity_df = pd.DataFrame(current_activity_response.data) if current_activity_response.data else pd.DataFrame()
+
+        logger.info("Loading scheduled assignments for partner availability check")
+        scheduled_response = db.client.table('scheduled_assignments').select('*').execute()
+        scheduled_assignments_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+
         # Get eligible partners
         exclusion_result = get_partners_not_reviewed(
             vin=vin,
@@ -1458,7 +1467,34 @@ async def get_partner_slot_options(
             eligible_partner_ids = [pid for pid in eligible_partner_ids if pid not in excluded_set]
             logger.info(f"Excluded {len(excluded_set)} already-selected partners")
 
-        logger.info(f"Eligible partners for slot {slot_index}: {len(eligible_partner_ids)}")
+        # CRITICAL: Filter out busy partners (those with active loans or scheduled assignments during this slot)
+        # Build partner availability grid for the entire slot period
+        partner_availability_grid = build_partner_availability_grid(
+            partners_df=partners_df,
+            current_activity_df=current_activity_df,
+            scheduled_assignments_df=scheduled_assignments_df,
+            start_date=target_slot.start_date,
+            end_date=target_slot.end_date,
+            office=office
+        )
+
+        available_partner_ids = []
+        unavailable_count = 0
+        for partner_id in eligible_partner_ids:
+            availability_check = check_partner_slot_availability(
+                person_id=partner_id,
+                slot_start=target_slot.start_date,
+                slot_end=target_slot.end_date,
+                availability_df=partner_availability_grid
+            )
+            if availability_check['available']:
+                available_partner_ids.append(partner_id)
+            else:
+                unavailable_count += 1
+                logger.debug(f"Partner {partner_id} unavailable: {availability_check.get('reason', 'unknown')}")
+
+        logger.info(f"Availability check: {len(available_partner_ids)} available, {unavailable_count} unavailable")
+        eligible_partner_ids = available_partner_ids
 
         # Score partners
         scores = score_partners_base(
@@ -1549,7 +1585,8 @@ async def get_partner_slot_options(
             "total_eligible": len(partner_options),
             "with_coordinates": len(partner_options_with_coords),
             "without_coordinates": len(partner_options_without_coords),
-            "excluded_count": len(exclude_partner_ids.split(',')) if exclude_partner_ids else 0
+            "excluded_count": len(exclude_partner_ids.split(',')) if exclude_partner_ids else 0,
+            "unavailable_count": unavailable_count
         }
 
     except HTTPException:

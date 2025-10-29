@@ -1304,6 +1304,7 @@ async def suggest_vehicle_chain(
                 "optimal_chain": result.chain,
                 "optimization_stats": result.optimization_stats,
                 "logistics_summary": result.logistics_summary,
+                "diagnostics": result.diagnostics,
                 "constraints_applied": {
                     "total_partners": len(partners_df),
                     "eligible_partners": len(eligible_partner_ids),

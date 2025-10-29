@@ -2739,11 +2739,11 @@ function ChainBuilder({ sharedOffice }) {
                           defaultValue=""
                         >
                           <option value="">Choose partner...</option>
-                          {slotOptions.map(p => {
+                          {(slotOptions || []).map(p => {
                             const distanceText = p.distance_from_previous !== null && p.distance_from_previous !== undefined
-                              ? ` (${p.distance_from_previous.toFixed(1)} mi)`
+                              ? ` (${(p.distance_from_previous || 0).toFixed(1)} mi)`
                               : ' ⚠️ Location Unknown';
-                            const label = `${p.name} ⭐ ${p.final_score}${index > 0 ? distanceText : ''} [${p.tier || 'N/A'}]`;
+                            const label = `${p.name || 'Unknown'} ⭐ ${p.final_score || 0}${index > 0 ? distanceText : ''} [${p.tier || 'N/A'}]`;
                             return (
                               <option key={p.person_id} value={p.person_id}>
                                 {label}
@@ -2771,11 +2771,11 @@ function ChainBuilder({ sharedOffice }) {
                         </div>
 
                         {/* Distance from previous */}
-                        {index > 0 && partner.handoff && partner.handoff.distance_miles !== null && (
+                        {index > 0 && partner.handoff && partner.handoff.distance_miles !== null && partner.handoff.distance_miles !== undefined && (
                           <div className="pt-2 border-t border-gray-200">
                             <p className="text-xs text-gray-500 font-medium">Distance from Previous</p>
                             <p className="text-sm font-bold text-blue-600">
-                              {partner.handoff.distance_miles.toFixed(1)} mi
+                              {(partner.handoff.distance_miles || 0).toFixed(1)} mi
                             </p>
                           </div>
                         )}
@@ -2809,19 +2809,27 @@ function ChainBuilder({ sharedOffice }) {
                   <div className="grid grid-cols-4 gap-4 text-xs">
                     <div>
                       <p className="text-blue-600 font-medium">Total Distance</p>
-                      <p className="text-blue-900 font-bold text-lg">{vehicleChain.logistics_summary.total_distance_miles.toFixed(1)} mi</p>
+                      <p className="text-blue-900 font-bold text-lg">
+                        {(vehicleChain.logistics_summary.total_distance_miles || 0).toFixed(1)} mi
+                      </p>
                     </div>
                     <div>
                       <p className="text-blue-600 font-medium">Drive Time</p>
-                      <p className="text-blue-900 font-bold text-lg">{vehicleChain.logistics_summary.total_drive_time_min} min</p>
+                      <p className="text-blue-900 font-bold text-lg">
+                        {vehicleChain.logistics_summary.total_drive_time_min || 0} min
+                      </p>
                     </div>
                     <div>
                       <p className="text-blue-600 font-medium">Logistics Cost</p>
-                      <p className="text-blue-900 font-bold text-lg">${vehicleChain.logistics_summary.total_logistics_cost.toFixed(2)}</p>
+                      <p className="text-blue-900 font-bold text-lg">
+                        ${(vehicleChain.logistics_summary.total_logistics_cost || 0).toFixed(2)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-blue-600 font-medium">Avg per Hop</p>
-                      <p className="text-blue-900 font-bold text-lg">{vehicleChain.logistics_summary.average_hop_distance.toFixed(1)} mi</p>
+                      <p className="text-blue-900 font-bold text-lg">
+                        {(vehicleChain.logistics_summary.average_hop_distance || 0).toFixed(1)} mi
+                      </p>
                     </div>
                   </div>
                 </div>

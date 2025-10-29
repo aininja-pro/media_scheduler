@@ -36,6 +36,10 @@ function ChainBuilder({ sharedOffice }) {
   const [partnerIntelligence, setPartnerIntelligence] = useState(null);
   const [loadingIntelligence, setLoadingIntelligence] = useState(false);
 
+  // Vehicle intelligence (for vehicle chain mode)
+  const [vehicleIntelligence, setVehicleIntelligence] = useState(null);
+  const [loadingVehicleIntelligence, setLoadingVehicleIntelligence] = useState(false);
+
   // Make filtering
   const [selectedMakes, setSelectedMakes] = useState([]);
 
@@ -340,6 +344,50 @@ function ChainBuilder({ sharedOffice }) {
 
     loadPartnerIntelligence();
   }, [selectedPartner, selectedOffice]);
+
+  // Load vehicle busy periods when vehicle is selected (vehicle chain mode)
+  useEffect(() => {
+    if (!selectedVehicle || !selectedOffice || chainMode !== 'vehicle') {
+      setVehicleIntelligence(null);
+      return;
+    }
+
+    const loadVehicleBusyPeriods = async () => {
+      setLoadingVehicleIntelligence(true);
+      try {
+        // Calculate date range (6 months back, 6 months forward)
+        const now = new Date();
+        const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+        const sixMonthsAhead = new Date(now.getFullYear(), now.getMonth() + 6, 0);
+
+        const startDate = sixMonthsAgo.toISOString().split('T')[0];
+        const endDate = sixMonthsAhead.toISOString().split('T')[0];
+
+        const response = await fetch(
+          `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          setVehicleIntelligence(data);
+
+          // Initialize timeline view to current month when vehicle loads
+          if (!viewStartDate) {
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+            setViewStartDate(monthStart);
+            setViewEndDate(monthEnd);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading vehicle busy periods:', err);
+      } finally {
+        setLoadingVehicleIntelligence(false);
+      }
+    };
+
+    loadVehicleBusyPeriods();
+  }, [selectedVehicle, selectedOffice, chainMode]);
 
   // Refresh partner intelligence when tab becomes visible (detect visibility change)
   useEffect(() => {
@@ -2804,15 +2852,247 @@ function ChainBuilder({ sharedOffice }) {
             </div>
           ) : null}
 
-          {/* Vehicle Chain Mode Preview - Placeholder until Phase 6 Timeline */}
-          {chainMode === 'vehicle' && manualPartnerSlots.length === 0 && !isLoading && (
-            <div className="bg-white rounded-lg shadow-sm border p-12">
-              <div className="text-center">
-                <div className="text-yellow-600 text-4xl mb-4">🚧</div>
-                <p className="text-sm text-gray-700 font-medium">Vehicle Timeline Coming in Phase 6</p>
-                <p className="text-xs text-gray-500 mt-2">
-                  Will show vehicle's calendar with partner bars (like partner chain shows vehicle bars)
-                </p>
+          {/* Vehicle Chain Mode - Timeline Calendar (EXACT copy of partner timeline but with partner names on bars) */}
+          {chainMode === 'vehicle' && selectedVehicle && (
+            <div className="bg-white rounded-lg shadow-sm border p-6">
+              <div className="mb-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-md font-semibold text-gray-900">Vehicle Calendar Timeline</h3>
+
+                  {/* Month Navigation Arrows */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={slideBackward}
+                      className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50 text-xs"
+                      title="Previous month"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <span className="text-sm font-medium text-gray-700 px-3 py-1">
+                      {viewStartDate?.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </span>
+                    <button
+                      onClick={slideForward}
+                      className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50 text-xs"
+                      title="Next month"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-2 rounded-lg overflow-x-auto">
+                {(() => {
+                  if (!viewStartDate || !viewEndDate) return null;
+
+                  // Generate days in current month view
+                  const days = [];
+                  const current = new Date(viewStartDate);
+                  const end = new Date(viewEndDate);
+
+                  while (current <= end) {
+                    days.push(new Date(current));
+                    current.setDate(current.getDate() + 1);
+                  }
+
+                  return (
+                    <>
+                      {/* Header Row - Day headers */}
+                      <div className="flex border-b bg-gray-50">
+                        <div className="w-48 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700">
+                          {selectedVehicle.make} {selectedVehicle.model}
+                        </div>
+                        <div className="flex-1 flex">
+                          {days.map((date, idx) => {
+                            const dayOfWeek = date.getDay();
+                            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                            const monthDay = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+                            return (
+                              <div
+                                key={idx}
+                                className={`flex-1 text-center text-xs py-2 border-r ${
+                                  isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-gray-600'
+                                }`}
+                              >
+                                <div className="leading-tight font-semibold">
+                                  {monthDay}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Timeline Row with bars */}
+                      <div className="relative flex" style={{ minHeight: '200px' }}>
+                        <div className="w-48 flex-shrink-0 border-r bg-gray-50"></div>
+
+                        <div className="flex-1 relative">
+                          {/* Day grid background with weekend highlighting */}
+                          <div className="absolute inset-0 flex">
+                            {days.map((date, i) => {
+                              const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                              return (
+                                <div
+                                  key={i}
+                                  className={`flex-1 border-r border-gray-300 ${
+                                    isWeekend ? 'bg-blue-50' : ''
+                                  }`}
+                                ></div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Existing activities (busy periods) - BLUE for active, GREEN/MAGENTA for scheduled */}
+                          {vehicleIntelligence && vehicleIntelligence.busy_periods && (() => {
+                            return vehicleIntelligence.busy_periods.map((period, idx) => {
+                              const [sYear, sMonth, sDay] = period.start_date.split('-').map(Number);
+                              const [eYear, eMonth, eDay] = period.end_date.split('-').map(Number);
+                              const pStart = new Date(sYear, sMonth - 1, sDay);
+                              const pEnd = new Date(eYear, eMonth - 1, eDay);
+
+                              // Only show if overlaps with current view
+                              const viewStart = new Date(viewStartDate);
+                              const viewEnd = new Date(viewEndDate);
+
+                              if (pEnd < viewStart || pStart > viewEnd) {
+                                return null;
+                              }
+
+                              // Calculate bar position
+                              const rangeStart = new Date(viewStartDate);
+                              const startDate = pStart < rangeStart ? rangeStart : pStart;
+                              const endDate = pEnd > viewEnd ? viewEnd : pEnd;
+
+                              const totalDays = days.length;
+                              const startDayOffset = Math.floor((startDate - rangeStart) / (1000 * 60 * 60 * 24));
+                              const endDayOffset = Math.floor((endDate - rangeStart) / (1000 * 60 * 60 * 24));
+
+                              const left = ((startDayOffset + 0.5) / totalDays) * 100;
+                              const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
+
+                              // Color by status: BLUE for active, MAGENTA for requested, GREEN for manual
+                              const barColor = period.status === 'active'
+                                ? 'bg-gradient-to-br from-blue-500 to-blue-600 border-blue-700'
+                                : period.status === 'requested'
+                                  ? 'bg-gradient-to-br from-pink-500 to-pink-600 border-pink-700'
+                                  : 'bg-gradient-to-br from-green-400 to-green-500 border-green-600';
+
+                              return (
+                                <div
+                                  key={`busy-${idx}`}
+                                  className={`absolute ${barColor} border-2 rounded-lg shadow-md text-white text-xs font-semibold overflow-hidden px-2 flex items-center`}
+                                  style={{
+                                    left: `${left}%`,
+                                    width: `${width}%`,
+                                    minWidth: '60px',
+                                    top: '8px',
+                                    height: '20px',
+                                    zIndex: 5
+                                  }}
+                                  title={`${period.status === 'active' ? 'ACTIVE' : 'SCHEDULED'}: ${period.partner_name}\n${period.start_date} - ${period.end_date}`}
+                                >
+                                  <span className="truncate text-[10px]">
+                                    {period.status === 'active' ? '🔵 ' : '🤖 '}
+                                    {period.partner_name}
+                                  </span>
+                                </div>
+                              );
+                            });
+                          })()}
+
+                          {/* Proposed chain slots (gray bars) */}
+                          {manualPartnerSlots.map((slot, idx) => {
+                            if (!slot.start_date || !slot.end_date) return null;
+
+                            const [sYear, sMonth, sDay] = slot.start_date.split('-').map(Number);
+                            const [eYear, eMonth, eDay] = slot.end_date.split('-').map(Number);
+                            const pStart = new Date(sYear, sMonth - 1, sDay);
+                            const pEnd = new Date(eYear, eMonth - 1, eDay);
+
+                            // Only show if slot overlaps with current view
+                            const viewStart = new Date(viewStartDate);
+                            const viewEnd = new Date(viewEndDate);
+
+                            if (pEnd < viewStart || pStart > viewEnd) {
+                              return null;
+                            }
+
+                            // Calculate bar position
+                            const rangeStart = new Date(viewStartDate);
+                            const startDate = pStart < rangeStart ? rangeStart : pStart;
+                            const endDate = pEnd > viewEnd ? viewEnd : pEnd;
+
+                            const totalDays = days.length;
+                            const startDayOffset = Math.floor((startDate - rangeStart) / (1000 * 60 * 60 * 24));
+                            const endDayOffset = Math.floor((endDate - rangeStart) / (1000 * 60 * 60 * 24));
+
+                            const left = ((startDayOffset + 0.5) / totalDays) * 100;
+                            const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
+
+                            // Stair-step pattern
+                            const positionInGroup = idx % 3;
+                            const top = 40 + (positionInGroup * 28);
+
+                            // Color: Gray for empty, Green for filled
+                            const barColor = slot.selected_partner
+                              ? 'bg-gradient-to-br from-green-400 to-green-500 border-green-600'
+                              : 'bg-gradient-to-br from-gray-300 to-gray-400 border-gray-500';
+
+                            const label = slot.selected_partner
+                              ? slot.selected_partner.name
+                              : `Slot ${slot.slot} - Select Partner`;
+
+                            return (
+                              <div
+                                key={slot.slot}
+                                className={`absolute ${barColor} border-2 rounded-lg shadow-lg hover:shadow-xl transition-all px-2 flex items-center text-white text-xs font-semibold overflow-hidden`}
+                                style={{
+                                  left: `${left}%`,
+                                  width: `${width}%`,
+                                  minWidth: '80px',
+                                  top: `${top}px`,
+                                  height: '24px'
+                                }}
+                                title={slot.selected_partner
+                                  ? `Slot ${slot.slot}: ${slot.selected_partner.name}\n${slot.start_date} - ${slot.end_date}\nScore: ${slot.selected_partner.final_score}`
+                                  : `Slot ${slot.slot}: Empty\n${slot.start_date} - ${slot.end_date}\nClick dropdown below to select partner`
+                                }
+                              >
+                                <span className="truncate text-[11px]">
+                                  {label}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div className="mt-3 text-xs text-gray-500 flex items-center gap-2">
+                {vehicleBuildMode === 'manual' ? (
+                  <>
+                    <span className="inline-block w-3 h-3 bg-gray-400 border-2 border-gray-500 rounded"></span>
+                    <span>Gray = Empty slots (select partner)</span>
+                    <span className="inline-block w-3 h-3 bg-green-400 border-2 border-green-600 rounded ml-3"></span>
+                    <span>Green = Partner selected</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="inline-block w-3 h-3 bg-green-400 border-2 border-green-600 rounded"></span>
+                    <span>Green bars = Proposed chain recommendations</span>
+                  </>
+                )}
+                <span className="ml-4">Use arrows to navigate months</span>
               </div>
             </div>
           )}

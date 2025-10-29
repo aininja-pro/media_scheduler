@@ -891,6 +891,222 @@ function ChainBuilder({ sharedOffice }) {
     }
   }, [manualSlots, buildMode, startDate, numVehicles, daysPerLoan]);
 
+  // ============================================================
+  // VEHICLE CHAIN FUNCTIONS
+  // ============================================================
+
+  const generateVehicleChain = async () => {
+    if (!selectedVehicle) {
+      setError('Please select a vehicle');
+      return;
+    }
+
+    if (!startDate) {
+      setError('Please select a start date');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    setSaveMessage('');
+    setVehicleChain(null);
+
+    try {
+      const params = new URLSearchParams({
+        vin: selectedVehicle.vin,
+        office: selectedOffice,
+        start_date: startDate,
+        num_partners: numVehicles,  // Reusing numVehicles slider for num_partners
+        days_per_loan: daysPerLoan,
+        distance_weight: 0.7,
+        max_distance_per_hop: 50.0
+      });
+
+      const response = await fetch(`http://localhost:8081/api/chain-builder/suggest-vehicle-chain?${params}`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Failed to generate vehicle chain');
+      }
+
+      setVehicleChain(data);
+      console.log('Vehicle chain generated:', data);
+
+      // Convert to manual slots format for editing
+      const slots = data.optimal_chain.map((partner) => ({
+        slot: partner.slot,
+        start_date: partner.start_date,
+        end_date: partner.end_date,
+        selected_partner: {
+          person_id: partner.person_id,
+          name: partner.name,
+          score: partner.score,
+          tier: partner.tier,
+          engagement_level: partner.engagement_level,
+          latitude: partner.latitude,
+          longitude: partner.longitude
+        },
+        handoff: partner.handoff,
+        eligible_partners: []  // Will load on dropdown open
+      }));
+
+      setManualPartnerSlots(slots);
+      console.log('Converted to editable partner slots:', slots);
+
+    } catch (err) {
+      setError(err.message);
+      setVehicleChain(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const generateManualPartnerSlots = async () => {
+    if (!selectedVehicle) {
+      setError('Please select a vehicle');
+      return;
+    }
+
+    if (!startDate) {
+      setError('Please select a start date');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    setSaveMessage('');
+    setVehicleChain(null);
+    setManualPartnerSlots([]);
+
+    try {
+      // Create empty slots with dates (using solver to calculate dates with weekend extension)
+      const slots = [];
+      for (let i = 0; i < numVehicles; i++) {
+        slots.push({
+          slot: i,
+          start_date: null,  // Will be calculated by backend
+          end_date: null,
+          selected_partner: null,
+          eligible_partners: []
+        });
+      }
+
+      setManualPartnerSlots(slots);
+      console.log(`Created ${numVehicles} empty partner slots`);
+
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadPartnerSlotOptions = async (slotIndex) => {
+    if (!selectedVehicle || !manualPartnerSlots[slotIndex]) {
+      return;
+    }
+
+    setLoadingPartnerSlotOptions(prev => ({ ...prev, [slotIndex]: true }));
+
+    try {
+      // Build exclude_partner_ids from already-selected partners
+      const excludePartnerIds = manualPartnerSlots
+        .filter((s, i) => i !== slotIndex && s.selected_partner)
+        .map(s => s.selected_partner.person_id)
+        .join(',');
+
+      // Get previous partner info for distance calculation
+      let previousPartnerId = null;
+      let previousPartnerLat = null;
+      let previousPartnerLng = null;
+
+      if (slotIndex > 0) {
+        const prevSlot = manualPartnerSlots[slotIndex - 1];
+        if (prevSlot && prevSlot.selected_partner) {
+          previousPartnerId = prevSlot.selected_partner.person_id;
+          previousPartnerLat = prevSlot.selected_partner.latitude;
+          previousPartnerLng = prevSlot.selected_partner.longitude;
+        }
+      }
+
+      const params = new URLSearchParams({
+        vin: selectedVehicle.vin,
+        office: selectedOffice,
+        start_date: startDate,
+        num_partners: numVehicles,
+        days_per_loan: daysPerLoan,
+        slot_index: slotIndex
+      });
+
+      if (excludePartnerIds) {
+        params.append('exclude_partner_ids', excludePartnerIds);
+      }
+
+      if (previousPartnerId) {
+        params.append('previous_partner_id', previousPartnerId);
+        params.append('previous_partner_lat', previousPartnerLat);
+        params.append('previous_partner_lng', previousPartnerLng);
+      }
+
+      const response = await fetch(`http://localhost:8081/api/chain-builder/get-partner-slot-options?${params}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to load partner options');
+      }
+
+      // Update this slot with eligible partners
+      setManualPartnerSlots(prev => {
+        const updated = [...prev];
+        updated[slotIndex] = {
+          ...updated[slotIndex],
+          start_date: data.slot.start_date,
+          end_date: data.slot.end_date,
+          eligible_partners: data.eligible_partners || []
+        };
+        return updated;
+      });
+
+      console.log(`Loaded ${data.eligible_partners?.length || 0} partner options for slot ${slotIndex}`);
+
+    } catch (err) {
+      console.error(`Failed to load partner options for slot ${slotIndex}:`, err);
+      setError(err.message);
+    } finally {
+      setLoadingPartnerSlotOptions(prev => ({ ...prev, [slotIndex]: false }));
+    }
+  };
+
+  const selectPartnerForSlot = (slotIndex, partner) => {
+    setManualPartnerSlots(prev => {
+      const updated = [...prev];
+      updated[slotIndex] = {
+        ...updated[slotIndex],
+        selected_partner: partner
+      };
+      return updated;
+    });
+
+    console.log(`Selected ${partner.name} for slot ${slotIndex}`);
+  };
+
+  const deletePartnerSlot = (slotIndex) => {
+    setManualPartnerSlots(prev => {
+      const updated = [...prev];
+      updated[slotIndex] = {
+        ...updated[slotIndex],
+        selected_partner: null
+      };
+      return updated;
+    });
+  };
+
+  // ============================================================
+  // END VEHICLE CHAIN FUNCTIONS
+  // ============================================================
+
   const calculateChainBudget = async () => {
     // Only calculate if we have slots with selected vehicles
     const filledSlots = manualSlots.filter(s => s.selected_vehicle);
@@ -1430,10 +1646,20 @@ function ChainBuilder({ sharedOffice }) {
 
             {/* Generate Button - Vehicle Chain */}
             {chainMode === 'vehicle' && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
-                Vehicle chain generation coming soon...
-                <br />Build mode: {vehicleBuildMode}
-              </div>
+              <button
+                onClick={vehicleBuildMode === 'auto' ? generateVehicleChain : generateManualPartnerSlots}
+                disabled={isLoading || !selectedVehicle || !startDate}
+                className={`w-full py-3 rounded-md text-sm font-medium transition-colors ${
+                  isLoading || !selectedVehicle || !startDate
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {isLoading
+                  ? (vehicleBuildMode === 'auto' ? 'Generating Chain...' : 'Creating Slots...')
+                  : (vehicleBuildMode === 'auto' ? 'Generate Chain' : 'Create Empty Slots')
+                }
+              </button>
             )}
 
             {error && (

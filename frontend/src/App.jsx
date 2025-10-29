@@ -268,16 +268,6 @@ function App() {
                 Upload Data
               </button>
               <button
-                onClick={() => setActiveTab('publication')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'publication'
-                    ? 'bg-white text-black'
-                    : 'bg-gray-600 text-white hover:bg-gray-500'
-                }`}
-              >
-                Publication Rates
-              </button>
-              <button
                 onClick={() => setActiveTab('optimizer')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   activeTab === 'optimizer'
@@ -296,16 +286,6 @@ function App() {
                 }`}
               >
                 Calendar
-              </button>
-              <button
-                onClick={() => setActiveTab('partners')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'partners'
-                    ? 'bg-white text-black'
-                    : 'bg-gray-600 text-white hover:bg-gray-500'
-                }`}
-              >
-                Media Partners
               </button>
               <button
                 onClick={() => setActiveTab('chain-builder')}

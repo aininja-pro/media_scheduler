@@ -349,12 +349,12 @@ function Calendar({ sharedOffice, isActive }) {
     setError('');
 
     try {
-      // Fetch 10-week buffer (2 weeks back, 8 weeks forward) for smooth scrolling
+      // Fetch 7-week buffer (2 weeks back, 5 weeks forward) for smooth scrolling
       const today = new Date();
       const fetchStart = new Date(today);
       fetchStart.setDate(today.getDate() - 14);
       const fetchEnd = new Date(today);
-      fetchEnd.setDate(today.getDate() + 56); // 8 weeks forward to cover longer chains
+      fetchEnd.setDate(today.getDate() + 35); // 5 weeks forward to cover 4-partner chains
 
       const startDate = fetchStart.toISOString().split('T')[0];
       const endDate = fetchEnd.toISOString().split('T')[0];

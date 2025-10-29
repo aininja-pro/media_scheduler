@@ -261,9 +261,16 @@ function ChainBuilder({ sharedOffice }) {
     sessionStorage.setItem('chainbuilder_chain_mode', chainMode);
   }, [chainMode]);
 
-  // Save selected partner to sessionStorage
+  // Clear chain when partner changes and save to sessionStorage
   useEffect(() => {
     if (selectedPartner) {
+      // Clear existing chain when partner changes
+      setManualSlots([]);
+      setChain(null);
+      setError('');
+      setSaveMessage('');
+
+      // Save to sessionStorage
       sessionStorage.setItem('chainbuilder_partner_id', selectedPartner);
       const partner = partners.find(p => p.person_id === selectedPartner);
       if (partner) {

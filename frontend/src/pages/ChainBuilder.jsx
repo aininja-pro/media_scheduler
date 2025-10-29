@@ -1038,6 +1038,7 @@ function ChainBuilder({ sharedOffice }) {
               partner.latitude,
               partner.longitude
             );
+            console.log(`Calculated distance for slot ${index} from previous: ${distanceFromPrev.toFixed(2)} mi`);
           }
         }
 

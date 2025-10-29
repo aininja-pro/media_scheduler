@@ -2572,7 +2572,11 @@ function ChainBuilder({ sharedOffice }) {
                     {manualSlots.map((slot, index) => (
                       <div
                         key={slot.slot}
-                        className="border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all relative"
+                        className={`border-2 rounded-lg p-4 hover:shadow-lg transition-all relative ${
+                          slot.selected_vehicle
+                            ? 'border-green-500 bg-green-50 shadow-md'
+                            : 'border-gray-300 bg-white'
+                        }`}
                       >
                         {/* Delete button - top right corner */}
                         <button

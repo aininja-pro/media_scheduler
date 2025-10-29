@@ -257,3 +257,134 @@ def validate_coordinates(partners_df: pd.DataFrame) -> Dict:
         'coverage_percent': round(has_both / total * 100, 1) if total > 0 else 0,
         'missing_partner_ids': missing_coords['person_id'].tolist() if not missing_coords.empty else []
     }
+
+
+def score_partners_base(
+    partners_df: pd.DataFrame,
+    vehicle_make: str,
+    approved_makes_df: pd.DataFrame,
+    loan_history_df: pd.DataFrame = None
+) -> Dict[int, Dict]:
+    """
+    Calculate base partner scores WITHOUT distance penalty.
+
+    Distance is handled separately by OR-Tools solver for optimal routing.
+
+    Base score components:
+    - Engagement level: Active=100, Neutral=50, Dormant=0
+    - Publication rate: Based on clips_received in loan history
+    - Tier preference: Partner's rank for this make (A+=100, A=75, B=50, C=25)
+
+    Args:
+        partners_df: Partners with person_id, name, engagement_level
+        vehicle_make: Vehicle make (e.g., 'Audi') for tier lookup
+        approved_makes_df: Approved makes with person_id, make, rank
+        loan_history_df: Optional - for publication rate calculation
+
+    Returns:
+        Dict mapping person_id to score info:
+        {
+            person_id: {
+                'base_score': int,
+                'engagement_score': int,
+                'publication_score': int,
+                'tier_score': int,
+                'tier_rank': str,
+                'engagement_level': str,
+                'publication_rate': float
+            }
+        }
+    """
+    logger.info(f"Scoring partners for make: {vehicle_make}")
+
+    scores = {}
+
+    # Convert approved_makes person_id to int (stored as string in DB)
+    approved_makes_copy = approved_makes_df.copy()
+    approved_makes_copy['person_id'] = pd.to_numeric(approved_makes_copy['person_id'], errors='coerce').astype('Int64')
+
+    # Get tier rankings for this make
+    make_ranks = approved_makes_copy[
+        approved_makes_copy['make'].str.lower() == vehicle_make.lower()
+    ]
+
+    # Create mapping: person_id -> rank
+    rank_map = {}
+    if not make_ranks.empty:
+        for _, row in make_ranks.iterrows():
+            pid = int(row['person_id'])
+            rank_map[pid] = row['rank']
+
+    logger.info(f"Found {len(rank_map)} partners with tier rankings for {vehicle_make}")
+
+    # Calculate publication rates if loan history provided
+    publication_rates = {}
+    if loan_history_df is not None and not loan_history_df.empty:
+        if 'person_id' in loan_history_df.columns and 'clips_received' in loan_history_df.columns:
+            # Group by partner
+            for person_id in loan_history_df['person_id'].unique():
+                partner_loans = loan_history_df[loan_history_df['person_id'] == person_id]
+                total_loans = len(partner_loans)
+
+                if total_loans > 0:
+                    # Count loans where clips_received = 1.0 (published)
+                    published = partner_loans['clips_received'].apply(
+                        lambda x: str(x) == '1.0' if pd.notna(x) else False
+                    ).sum()
+
+                    publication_rate = published / total_loans
+                    publication_rates[int(person_id)] = publication_rate
+
+    logger.info(f"Calculated publication rates for {len(publication_rates)} partners")
+
+    # Score each partner
+    for _, partner in partners_df.iterrows():
+        person_id = int(partner['person_id'])
+
+        # 1. Engagement score (0-100)
+        engagement_level = partner.get('engagement_level', 'neutral')
+        if pd.isna(engagement_level) or not engagement_level:
+            engagement_level = 'neutral'
+
+        engagement_level = str(engagement_level).lower()
+
+        if engagement_level == 'active':
+            engagement_score = 100
+        elif engagement_level == 'neutral':
+            engagement_score = 50
+        else:  # dormant or unknown
+            engagement_score = 0
+
+        # 2. Publication score (0-100)
+        # Use publication rate from loan history
+        pub_rate = publication_rates.get(person_id, 0.0)
+        publication_score = int(pub_rate * 100)  # 0-100 scale
+
+        # 3. Tier score (0-100)
+        rank = rank_map.get(person_id)
+        if rank == 'A+' or rank == 'A':
+            tier_score = 100
+        elif rank == 'B':
+            tier_score = 75
+        elif rank == 'C':
+            tier_score = 50
+        else:
+            # No rank for this make
+            tier_score = 0
+
+        # Base score is sum of all components
+        base_score = engagement_score + publication_score + tier_score
+
+        scores[person_id] = {
+            'base_score': base_score,
+            'engagement_score': engagement_score,
+            'publication_score': publication_score,
+            'tier_score': tier_score,
+            'tier_rank': rank if rank else 'N/A',
+            'engagement_level': engagement_level,
+            'publication_rate': round(pub_rate, 3)
+        }
+
+    logger.info(f"Scored {len(scores)} partners (base scores only, no distance penalty)")
+
+    return scores

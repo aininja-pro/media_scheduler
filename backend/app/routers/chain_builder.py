@@ -1120,6 +1120,10 @@ async def get_vehicle_busy_periods(
 
         busy_periods = []
 
+        # Load all partners for name lookups
+        partners_response = db.client.table('media_partners').select('person_id, name').execute()
+        partners_lookup = {int(p['person_id']): p['name'] for p in partners_response.data} if partners_response.data else {}
+
         # 1. Get current active loans for this vehicle
         # Note: current_activity doesn't have VIN column, need to get all and filter
         current_activity_response = db.client.table('current_activity').select('*').execute()
@@ -1151,17 +1155,45 @@ async def get_vehicle_busy_periods(
             # Check if overlaps with our search window
             if activity_start and activity_end:
                 if activity_start <= end_dt and activity_end >= start_dt:
+                    # Get partner name from person_id
+                    person_id = activity.get('person_id')
+                    partner_name = activity.get('partner_name')
+
+                    if not partner_name and person_id:
+                        # Look up from partners_lookup dictionary
+                        partner_name = partners_lookup.get(int(person_id))
+
+                    if not partner_name:
+                        # Fallback: use to_field from current_activity
+                        partner_name = activity.get('to_field', 'Unknown Partner')
+
                     busy_periods.append({
                         'start_date': activity['start_date'],
                         'end_date': activity['end_date'],
-                        'partner_name': activity.get('partner_name', 'Unknown'),
-                        'person_id': activity.get('person_id'),
+                        'partner_name': partner_name,
+                        'person_id': person_id,
                         'status': 'active'
                     })
 
         # 2. Get scheduled assignments for this vehicle
+        # First try exact match
         scheduled_response = db.client.table('scheduled_assignments').select('*').eq('vin', vin).execute()
         scheduled_assignments = scheduled_response.data if scheduled_response.data else []
+
+        logger.info(f"Found {len(scheduled_assignments)} scheduled assignments for VIN {vin} (exact match)")
+
+        # If no exact match, try case-insensitive or partial match
+        if not scheduled_assignments:
+            # Get all scheduled assignments and filter client-side
+            all_scheduled = db.client.table('scheduled_assignments').select('*').execute()
+            if all_scheduled.data:
+                scheduled_df = pd.DataFrame(all_scheduled.data)
+                if not scheduled_df.empty and 'vin' in scheduled_df.columns:
+                    # Case-insensitive match
+                    scheduled_df['vin_lower'] = scheduled_df['vin'].str.lower() if scheduled_df['vin'].dtype == 'object' else scheduled_df['vin']
+                    matching = scheduled_df[scheduled_df['vin_lower'] == vin.lower()]
+                    scheduled_assignments = matching.to_dict('records')
+                    logger.info(f"Found {len(scheduled_assignments)} assignments with case-insensitive match")
 
         for assignment in scheduled_assignments:
             # Parse dates from assignment
@@ -1585,6 +1617,20 @@ async def get_partner_slot_options(
         target_slot = slot_dates[slot_index]
 
         logger.info(f"Slot {slot_index}: {target_slot.start_date} to {target_slot.end_date}")
+
+        # CRITICAL: Check vehicle availability for this slot (first time slot 0 loads, check entire chain)
+        if slot_index == 0:
+            chain_end_date = slot_dates[-1].end_date
+            vehicle_busy_response = await get_vehicle_busy_periods(vin, start_date, chain_end_date, db)
+            if vehicle_busy_response['busy_periods']:
+                conflicts = []
+                for period in vehicle_busy_response['busy_periods']:
+                    conflicts.append(f"{period['partner_name']} ({period['start_date']} to {period['end_date']})")
+
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Vehicle is not available during chain period ({start_date} to {chain_end_date}). Conflicts: {', '.join(conflicts)}"
+                )
 
         # Get office coordinates for slot 0 distance calculation
         office_lat = None

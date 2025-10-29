@@ -19,24 +19,31 @@ def get_partners_not_reviewed(
     vin: str,
     office: str,
     loan_history_df: pd.DataFrame,
-    partners_df: pd.DataFrame
+    partners_df: pd.DataFrame,
+    approved_makes_df: pd.DataFrame = None,
+    vehicle_make: str = None
 ) -> Dict:
     """
-    Returns partners who have NOT previously reviewed this vehicle.
+    Returns partners who have NOT previously reviewed this vehicle AND are approved for this make.
 
     Permanent exclusion: If a partner has reviewed this vehicle in loan history,
     they are permanently excluded (not time-based like model cooldown).
+
+    Also filters by approved_makes: Only returns partners who are approved to review this vehicle's make.
 
     Args:
         vin: Target vehicle VIN
         office: Office to filter partners by
         loan_history_df: Historical loan data with columns: person_id, vin, start_date, end_date
         partners_df: Media partners with columns: person_id, name, office
+        approved_makes_df: Optional - Approved makes with columns: person_id, make, rank
+        vehicle_make: Optional - Vehicle make (e.g., 'Audi') for approved_makes filtering
 
     Returns:
         Dict with:
-        - eligible_partners: List of partner IDs who haven't reviewed this vehicle
-        - excluded_partners: List of partner IDs who have reviewed this vehicle
+        - eligible_partners: List of partner IDs who haven't reviewed this vehicle AND are approved for the make
+        - excluded_partners: List of partner IDs who have reviewed this vehicle (only from same office)
+        - ineligible_make: List of partner IDs not approved for this make
         - exclusion_details: Dict mapping partner_id to exclusion info
         - office_totals: Stats about office partners
     """
@@ -62,7 +69,7 @@ def get_partners_not_reviewed(
     all_partner_ids = set(office_partners['person_id'].astype(int).unique())
     logger.info(f"Found {len(all_partner_ids)} total partners in {office}")
 
-    # Find partners who have reviewed this specific vehicle
+    # Find partners who have reviewed this specific vehicle (ONLY from this office)
     reviewed_partners: Set[int] = set()
     exclusion_details = {}
 
@@ -74,10 +81,11 @@ def get_partners_not_reviewed(
             # Ensure person_id is integer
             vehicle_history['person_id'] = vehicle_history['person_id'].astype(int)
 
-            # Get unique partners who reviewed this vehicle
-            reviewed_partners = set(vehicle_history['person_id'].unique())
+            # Get unique partners who reviewed this vehicle (filter to only partners in this office)
+            all_reviewed = set(vehicle_history['person_id'].unique())
+            reviewed_partners = all_reviewed & all_partner_ids  # Only partners in this office
 
-            logger.info(f"Found {len(reviewed_partners)} partners who have reviewed vehicle {vin}")
+            logger.info(f"Found {len(reviewed_partners)} partners from {office} who have reviewed vehicle {vin}")
 
             # Build exclusion details
             for partner_id in reviewed_partners:
@@ -105,18 +113,50 @@ def get_partners_not_reviewed(
         logger.info("No loan history available or no VIN column in loan history")
 
     # Calculate eligible partners (never reviewed this vehicle)
-    eligible_partners = list(all_partner_ids - reviewed_partners)
+    eligible_before_make_filter = all_partner_ids - reviewed_partners
 
-    logger.info(f"Exclusions: {len(eligible_partners)} eligible, {len(reviewed_partners)} excluded")
+    # Filter by approved makes if provided
+    ineligible_make = []
+    if approved_makes_df is not None and not approved_makes_df.empty and vehicle_make:
+        # IMPORTANT: approved_makes.person_id is stored as STRING in database, convert to int
+        approved_makes_copy = approved_makes_df.copy()
+        approved_makes_copy['person_id'] = pd.to_numeric(approved_makes_copy['person_id'], errors='coerce').astype('Int64')
+
+        # Get partners approved for this make
+        approved_for_make = approved_makes_copy[
+            approved_makes_copy['make'].str.lower() == vehicle_make.lower()
+        ]
+
+        if not approved_for_make.empty:
+            approved_partner_ids = set(approved_for_make['person_id'].dropna().astype(int).unique())
+
+            # Filter eligible to only those approved for this make
+            ineligible_make = list(eligible_before_make_filter - approved_partner_ids)
+            eligible_partners = list(eligible_before_make_filter & approved_partner_ids)
+
+            logger.info(f"Make filtering ({vehicle_make}): {len(eligible_partners)} approved, {len(ineligible_make)} not approved")
+        else:
+            # No one approved for this make
+            logger.warning(f"No partners approved for make: {vehicle_make}")
+            ineligible_make = list(eligible_before_make_filter)
+            eligible_partners = []
+    else:
+        # No make filtering
+        eligible_partners = list(eligible_before_make_filter)
+        logger.info(f"No make filtering applied")
+
+    logger.info(f"Final: {len(eligible_partners)} eligible, {len(reviewed_partners)} excluded, {len(ineligible_make)} ineligible for make")
 
     return {
         'eligible_partners': sorted(eligible_partners),
         'excluded_partners': sorted(list(reviewed_partners)),
+        'ineligible_make': sorted(ineligible_make),
         'exclusion_details': exclusion_details,
         'office_totals': {
             'total_partners': len(all_partner_ids),
             'eligible': len(eligible_partners),
-            'excluded': len(reviewed_partners)
+            'excluded': len(reviewed_partners),
+            'ineligible_make': len(ineligible_make)
         }
     }
 

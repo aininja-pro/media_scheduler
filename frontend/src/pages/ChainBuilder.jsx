@@ -26,6 +26,12 @@ function ChainBuilder({ sharedOffice }) {
   const [partnerSearchQuery, setPartnerSearchQuery] = useState('');
   const [showPartnerDropdown, setShowPartnerDropdown] = useState(false);
 
+  // Vehicle search (for vehicle chain mode)
+  const [vehicles, setVehicles] = useState([]);
+  const [vehicleSearchQuery, setVehicleSearchQuery] = useState('');
+  const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+
   // Partner intelligence (current/scheduled activities)
   const [partnerIntelligence, setPartnerIntelligence] = useState(null);
   const [loadingIntelligence, setLoadingIntelligence] = useState(false);
@@ -104,6 +110,23 @@ function ChainBuilder({ sharedOffice }) {
     };
 
     loadPartners();
+  }, [selectedOffice]);
+
+  // Load vehicles when office changes (mock data for now, real API in Chunk 2.1)
+  useEffect(() => {
+    if (!selectedOffice) return;
+
+    // Mock vehicle data for UI development
+    const mockVehicles = [
+      { vin: '1HGBH41JXMN109186', make: 'Honda', model: 'Accord', year: '2023', trim: 'EX-L', tier: 'A+' },
+      { vin: '5YJSA1E26HF123456', make: 'Tesla', model: 'Model S', year: '2024', trim: 'Long Range', tier: 'A+' },
+      { vin: '4T1BF1FK5CU123789', make: 'Toyota', model: 'Camry', year: '2023', trim: 'XLE', tier: 'A' },
+      { vin: '1N4AL3AP8GC456123', make: 'Nissan', model: 'Altima', year: '2022', trim: 'SV', tier: 'B' },
+      { vin: '3FA6P0HD9HR789456', make: 'Ford', model: 'Fusion', year: '2021', trim: 'SE', tier: 'C' }
+    ];
+
+    setVehicles(mockVehicles);
+    console.log(`Loaded ${mockVehicles.length} mock vehicles for ${selectedOffice}`);
   }, [selectedOffice]);
 
   // Get current Monday as default
@@ -1096,15 +1119,78 @@ function ChainBuilder({ sharedOffice }) {
               </div>
             )}
 
-            {/* Vehicle Chain Mode - Vehicle Selector (Placeholder for Chunk 1.2) */}
+            {/* Vehicle Chain Mode - Vehicle Selector */}
             {chainMode === 'vehicle' && (
               <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Vehicle
                 </label>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
-                  Vehicle selector coming in next chunk...
-                </div>
+
+                {/* Vehicle Search Input */}
+                <input
+                  type="text"
+                  placeholder="Type VIN, make, or model..."
+                  value={vehicleSearchQuery}
+                  onChange={(e) => {
+                    setVehicleSearchQuery(e.target.value);
+                    setShowVehicleDropdown(true);
+                  }}
+                  onFocus={() => setShowVehicleDropdown(true)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+
+                {/* Vehicle Dropdown */}
+                {showVehicleDropdown && vehicleSearchQuery.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                    {vehicles
+                      .filter(vehicle =>
+                        vehicle.vin.toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
+                        vehicle.make.toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
+                        vehicle.model.toLowerCase().includes(vehicleSearchQuery.toLowerCase())
+                      )
+                      .slice(0, 20)
+                      .map(vehicle => (
+                        <button
+                          key={vehicle.vin}
+                          onClick={() => {
+                            setSelectedVehicle(vehicle);
+                            setVehicleSearchQuery(`${vehicle.make} ${vehicle.model} ${vehicle.year} (${vehicle.vin.slice(-6)})`);
+                            setShowVehicleDropdown(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors border-b last:border-b-0"
+                        >
+                          <div className="font-medium">{vehicle.make} {vehicle.model} {vehicle.year}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            VIN: {vehicle.vin} | Tier: {vehicle.tier}
+                          </div>
+                        </button>
+                      ))}
+                    {vehicles.filter(v =>
+                      v.vin.toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
+                      v.make.toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
+                      v.model.toLowerCase().includes(vehicleSearchQuery.toLowerCase())
+                    ).length === 0 && (
+                      <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                        No vehicles found
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Selected Vehicle Display */}
+                {selectedVehicle && !showVehicleDropdown && (
+                  <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs">
+                    <div className="font-medium text-gray-900">
+                      {selectedVehicle.make} {selectedVehicle.model} {selectedVehicle.year}
+                    </div>
+                    <div className="text-gray-600 mt-1">
+                      VIN: {selectedVehicle.vin}
+                    </div>
+                    <div className="text-gray-600">
+                      Trim: {selectedVehicle.trim} | Tier: {selectedVehicle.tier}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

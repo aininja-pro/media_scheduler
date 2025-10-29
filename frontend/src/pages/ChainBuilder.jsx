@@ -1429,6 +1429,68 @@ function ChainBuilder({ sharedOffice }) {
     console.log(`Swapped slot ${slotIndex} to ${newPartner.name}, recalculated ${updatedSlots.length - slotIndex - 1} downstream distances`);
   };
 
+  // Save vehicle chain function
+  const saveVehicleChain = async (saveStatus = 'manual') => {
+    if (!selectedVehicle || !manualPartnerSlots.length) {
+      setError('No chain to save');
+      return;
+    }
+
+    // Check all slots have partners
+    const allFilled = manualPartnerSlots.every(s => s.selected_partner);
+    if (!allFilled) {
+      setError('Please select partners for all slots before saving');
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage('');
+    setError('');
+
+    try {
+      const chainData = manualPartnerSlots.map(slot => ({
+        person_id: slot.selected_partner.person_id,
+        partner_name: slot.selected_partner.name,
+        start_date: slot.start_date,
+        end_date: slot.end_date,
+        score: slot.selected_partner.final_score || slot.selected_partner.base_score || 0
+      }));
+
+      const payload = {
+        vin: selectedVehicle.vin,
+        vehicle_make: selectedVehicle.make,
+        vehicle_model: selectedVehicle.model,
+        office: selectedOffice,
+        status: saveStatus,
+        chain: chainData
+      };
+
+      const response = await fetch('http://localhost:8081/api/chain-builder/save-vehicle-chain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to save vehicle chain');
+      }
+
+      setSaveMessage(`✅ ${data.message}`);
+      console.log('Vehicle chain saved:', data);
+
+      // Clear modified flag
+      setChainModified(false);
+
+    } catch (err) {
+      setError(err.message);
+      setSaveMessage(`❌ Error: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // ============================================================
   // END VEHICLE CHAIN FUNCTIONS
   // ============================================================
@@ -2785,21 +2847,31 @@ function ChainBuilder({ sharedOffice }) {
                   )}
                 </div>
 
-                {/* Save Chain Buttons - Phase 6.1 */}
+                {/* Save Chain Buttons */}
                 <div className="flex gap-2">
                   <button
-                    disabled={true}
-                    className="px-6 py-2 rounded-md text-sm font-medium bg-gray-200 text-gray-400 cursor-not-allowed"
-                    title="Save functionality coming in Phase 6.1"
+                    onClick={() => saveVehicleChain('manual')}
+                    disabled={isSaving || !manualPartnerSlots.every(s => s.selected_partner)}
+                    className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isSaving || !manualPartnerSlots.every(s => s.selected_partner)
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : 'bg-green-600 text-white hover:bg-green-700'
+                    }`}
+                    title={!manualPartnerSlots.every(s => s.selected_partner) ? 'Select partners for all slots first' : 'Save as recommendations (green bars in calendar)'}
                   >
-                    Save Chain
+                    {isSaving ? 'Saving...' : 'Save Chain'}
                   </button>
                   <button
-                    disabled={true}
-                    className="px-6 py-2 rounded-md text-sm font-medium bg-gray-200 text-gray-400 cursor-not-allowed"
-                    title="Save functionality coming in Phase 6.1"
+                    onClick={() => saveVehicleChain('requested')}
+                    disabled={isSaving || !manualPartnerSlots.every(s => s.selected_partner)}
+                    className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isSaving || !manualPartnerSlots.every(s => s.selected_partner)
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : 'bg-pink-600 text-white hover:bg-pink-700'
+                    }`}
+                    title={!manualPartnerSlots.every(s => s.selected_partner) ? 'Select partners for all slots first' : 'Save and send to FMS (magenta bars in calendar)'}
                   >
-                    Save as Requested
+                    {isSaving ? 'Saving...' : 'Save as Requested'}
                   </button>
                 </div>
               </div>

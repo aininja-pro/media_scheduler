@@ -811,6 +811,94 @@ async def save_chain(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/save-vehicle-chain")
+async def save_vehicle_chain(
+    request: Dict[str, Any],
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Save vehicle chain to scheduled_assignments table.
+
+    Same table as partner chains, but vehicle-centric perspective.
+
+    Request body:
+        {
+            "vin": str,
+            "vehicle_make": str,
+            "vehicle_model": str,
+            "office": str,
+            "status": str (optional, default='manual', can be 'manual' or 'requested'),
+            "chain": [
+                {
+                    "person_id": int,
+                    "partner_name": str,
+                    "start_date": str,
+                    "end_date": str,
+                    "score": int
+                }
+            ]
+        }
+
+    Returns success status and assignment IDs
+    """
+
+    try:
+        vin = request.get('vin')
+        vehicle_make = request.get('vehicle_make')
+        vehicle_model = request.get('vehicle_model', '')
+        office = request.get('office')
+        status = request.get('status', 'manual')  # Default to 'manual', can be 'requested'
+        chain_partners = request.get('chain', [])
+
+        if not vin or not office or not chain_partners:
+            raise HTTPException(status_code=400, detail="Missing required fields: vin, office, chain")
+
+        logger.info(f"Saving vehicle chain for VIN {vin}: {len(chain_partners)} partners")
+
+        # Insert each partner as a scheduled assignment
+        assignments_to_insert = []
+
+        for partner in chain_partners:
+            # Calculate week_start (Monday of the week this assignment starts)
+            start_date = datetime.strptime(partner['start_date'], '%Y-%m-%d')
+            monday = start_date - timedelta(days=start_date.weekday())
+            week_start = monday.strftime('%Y-%m-%d')
+
+            assignments_to_insert.append({
+                'vin': vin,
+                'person_id': int(partner['person_id']),
+                'start_day': partner['start_date'],
+                'end_day': partner['end_date'],
+                'make': vehicle_make,
+                'model': vehicle_model,
+                'office': office,
+                'partner_name': partner.get('partner_name', ''),
+                'score': partner.get('score', 0),
+                'week_start': week_start,  # Monday of the week
+                'status': status  # 'manual' (green) or 'requested' (magenta)
+            })
+
+        # Insert all assignments
+        if assignments_to_insert:
+            result = db.client.table('scheduled_assignments').insert(assignments_to_insert).execute()
+
+            return {
+                'success': True,
+                'message': f'Vehicle chain saved successfully! {len(assignments_to_insert)} partners added to calendar.',
+                'assignments_saved': len(assignments_to_insert),
+                'assignment_ids': [a.get('assignment_id') for a in result.data] if result.data else []
+            }
+        else:
+            return {
+                'success': False,
+                'message': 'No partners to save'
+            }
+
+    except Exception as e:
+        logger.error(f"Error saving vehicle chain: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/calculate-chain-budget")
 async def calculate_chain_budget(
     request: Dict[str, Any],

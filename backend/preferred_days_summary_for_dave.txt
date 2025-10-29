@@ -1,0 +1,43 @@
+================================================================================
+PREFERRED DAY ANALYSIS - EXECUTIVE SUMMARY
+================================================================================
+
+Analysis Date: 2025-10-01 22:47
+Total Loan Records Analyzed: 11,032
+Partner-Office Combinations with Preferred Days: 422
+Criteria: Minimum 5 loans, 40% confidence threshold
+Recency Weighting: Last 12 months weighted 2x
+
+KEY FINDINGS:
+--------------------------------------------------------------------------------
+• 422 partner-office pairs have clear preferred days
+• Average confidence: 74.3%
+• 200 patterns (47.4%) have ≥80% confidence
+
+DAY OF WEEK DISTRIBUTION:
+--------------------------------------------------------------------------------
+  Monday      : 112 partners ( 26.5%)
+  Wednesday   :  96 partners ( 22.7%)
+  Thursday    :  90 partners ( 21.3%)
+  Tuesday     :  83 partners ( 19.7%)
+  Friday      :  41 partners (  9.7%)
+
+  Most popular day: Monday (112 partners)
+
+CONFIDENCE DISTRIBUTION:
+--------------------------------------------------------------------------------
+  40-50%    :  57 partners ( 13.5%)
+  50-60%    :  52 partners ( 12.3%)
+  60-70%    :  40 partners (  9.5%)
+  70-80%    :  77 partners ( 18.2%)
+  80-90%    :  79 partners ( 18.7%)
+  90-100%   : 104 partners ( 24.6%)
+
+================================================================================
+RECOMMENDED NEXT STEPS:
+================================================================================
+1. Review patterns in 'preferred_days_recommendations.csv'
+2. Run update script to populate media_partners table
+3. Implement UI toggle for 'Prioritize Partner Normal Days'
+4. Test scheduling with toggle on/off
+5. Set up monthly/quarterly refresh of preferred days

@@ -222,7 +222,8 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             approved_makes_df=office_approved,
             week_start=request.week_start,
             office=request.office,
-            offices_df=offices_df  # Pass offices for distance calculation
+            offices_df=offices_df,  # Pass offices for distance calculation
+            min_available_days=8  # Match 8-day loan length (Mon-Mon)
         )
 
         # 4. Apply cooldown filter using Phase 7.3

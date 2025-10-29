@@ -925,7 +925,8 @@ async def search_vehicles(
         logger.info(f"Searching vehicles in {office} with term: '{search_term}'")
 
         # Load vehicles from database for this office
-        vehicles_df = db.get_vehicles_by_office(office)
+        vehicles_response = db.client.table('vehicles').select('*').eq('office', office).execute()
+        vehicles_df = pd.DataFrame(vehicles_response.data) if vehicles_response.data else pd.DataFrame()
 
         if vehicles_df.empty:
             logger.warning(f"No vehicles found for office: {office}")
@@ -955,6 +956,16 @@ async def search_vehicles(
         # Convert to list of dicts
         vehicles_list = []
         for _, row in result_df.iterrows():
+            # Handle in_service_date (might be string or date object)
+            in_service_date = row.get('in_service_date')
+            if pd.notna(in_service_date):
+                if hasattr(in_service_date, 'isoformat'):
+                    in_service_date_str = in_service_date.isoformat()
+                else:
+                    in_service_date_str = str(in_service_date)
+            else:
+                in_service_date_str = None
+
             vehicles_list.append({
                 'vin': row['vin'],
                 'make': row['make'],
@@ -962,7 +973,7 @@ async def search_vehicles(
                 'year': str(row['year']) if pd.notna(row['year']) else '',
                 'trim': row.get('trim', '') if pd.notna(row.get('trim', '')) else '',
                 'office': row['office'],
-                'in_service_date': row['in_service_date'].isoformat() if pd.notna(row.get('in_service_date')) else None,
+                'in_service_date': in_service_date_str,
                 'tier': row.get('tier', '') if pd.notna(row.get('tier', '')) else ''
             })
 

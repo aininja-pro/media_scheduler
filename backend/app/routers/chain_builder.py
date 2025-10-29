@@ -1241,6 +1241,23 @@ async def suggest_vehicle_chain(
                 detail=f"Start date must be a weekday (Mon-Fri). {start_date} is a {start_dt.strftime('%A')}"
             )
 
+        # 1b. CRITICAL: Check if vehicle is available during chain period
+        from ..solver.vehicle_chain_solver import calculate_slot_dates
+        slot_dates_check = calculate_slot_dates(start_date, num_partners, days_per_loan)
+        chain_end_date = slot_dates_check[-1].end_date
+
+        # Get vehicle busy periods
+        vehicle_busy_response = await get_vehicle_busy_periods(vin, start_date, chain_end_date, db)
+        if vehicle_busy_response['busy_periods']:
+            conflicts = []
+            for period in vehicle_busy_response['busy_periods']:
+                conflicts.append(f"{period['partner_name']} ({period['start_date']} to {period['end_date']})")
+
+            raise HTTPException(
+                status_code=409,
+                detail=f"Vehicle {vin} is not available during chain period ({start_date} to {chain_end_date}). Conflicts: {', '.join(conflicts)}"
+            )
+
         # 2. Get vehicle details
         vehicle_response = db.client.table('vehicles').select('*').eq('vin', vin).eq('office', office).execute()
         if not vehicle_response.data:

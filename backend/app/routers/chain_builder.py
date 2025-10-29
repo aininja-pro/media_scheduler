@@ -1231,6 +1231,61 @@ async def suggest_vehicle_chain(
 
         logger.info(f"Eligible partners: {len(eligible_partner_ids)}, Excluded: {len(exclusion_result['excluded_partners'])}, Ineligible: {len(exclusion_result['ineligible_make'])}")
 
+        # 4b. CRITICAL: Filter eligible partners by availability (same as manual mode)
+        # Calculate chain end date for availability checking
+        from ..solver.vehicle_chain_solver import calculate_slot_dates
+        slot_dates = calculate_slot_dates(start_date, num_partners, days_per_loan)
+        chain_start = slot_dates[0].start_date
+        chain_end = slot_dates[-1].end_date
+
+        logger.info(f"Building partner availability grid from {chain_start} to {chain_end}")
+
+        # Build partner availability grid for entire chain period
+        partner_availability_grid = build_partner_availability_grid(
+            partners_df=partners_df,
+            current_activity_df=current_activity_df,
+            scheduled_assignments_df=scheduled_df,
+            start_date=chain_start,
+            end_date=chain_end,
+            office=office
+        )
+
+        # Filter out partners who are busy during ANY slot in the chain
+        available_partner_ids = []
+        unavailable_partners = []
+        for partner_id in eligible_partner_ids:
+            # Check availability for each slot
+            all_slots_available = True
+            for slot in slot_dates:
+                availability_check = check_partner_slot_availability(
+                    person_id=partner_id,
+                    slot_start=slot.start_date,
+                    slot_end=slot.end_date,
+                    availability_df=partner_availability_grid
+                )
+                if not availability_check['available']:
+                    all_slots_available = False
+                    unavailable_partners.append({
+                        'person_id': partner_id,
+                        'conflict_slot': f"{slot.start_date} to {slot.end_date}",
+                        'reason': availability_check.get('reason', 'unknown')
+                    })
+                    break  # No need to check remaining slots
+
+            if all_slots_available:
+                available_partner_ids.append(partner_id)
+
+        logger.info(f"Availability filtering: {len(available_partner_ids)} available across all slots, {len(unavailable_partners)} have conflicts")
+
+        if not available_partner_ids:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No partners available for entire chain period ({chain_start} to {chain_end}). All {len(eligible_partner_ids)} eligible partners have scheduling conflicts."
+            )
+
+        # Update eligible list to only include available partners
+        eligible_partner_ids = available_partner_ids
+
         # 5. Score partners
         scores = score_partners_base(
             partners_df=partners_df,

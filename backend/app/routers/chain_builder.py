@@ -1340,7 +1340,27 @@ async def suggest_vehicle_chain(
             solver_timeout_seconds=30.0
         )
 
-        # 9. Return result
+        # 9. Add office distance to slot 0
+        if result.status == 'success' and result.chain:
+            # Get office coordinates
+            office_response = db.client.table('offices').select('latitude, longitude').eq('name', office).execute()
+            if office_response.data and len(office_response.data) > 0:
+                office_lat = office_response.data[0].get('latitude')
+                office_lng = office_response.data[0].get('longitude')
+
+                # Calculate distance from office to first partner
+                if office_lat and office_lng and result.chain[0].get('latitude') and result.chain[0].get('longitude'):
+                    from ..chain_builder.geography import haversine_distance
+                    office_distance = haversine_distance(
+                        office_lat,
+                        office_lng,
+                        result.chain[0]['latitude'],
+                        result.chain[0]['longitude']
+                    )
+                    result.chain[0]['office_distance'] = round(office_distance, 2)
+                    logger.info(f"Slot 0 office distance: {result.chain[0]['office_distance']} mi")
+
+        # 10. Return result
         if result.status == 'success':
             return {
                 "status": "success",

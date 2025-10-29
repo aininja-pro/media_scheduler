@@ -1020,7 +1020,7 @@ function ChainBuilder({ sharedOffice }) {
           engagement_level: partner.engagement_level,
           latitude: partner.latitude,
           longitude: partner.longitude,
-          distance_from_previous: index > 0 && partner.handoff ? partner.handoff.distance_miles : null
+          distance_from_previous: index === 0 ? partner.office_distance : (partner.handoff ? partner.handoff.distance_miles : null)
         },
         eligible_partners: []  // Will load on dropdown open
       }));
@@ -2839,11 +2839,11 @@ function ChainBuilder({ sharedOffice }) {
                           </p>
                         </div>
 
-                        {/* Distance from office (slot 0) or previous partner (slot 1+) */}
+                        {/* Distance from home office (slot 0) or previous partner (slot 1+) */}
                         {slot.selected_partner.distance_from_previous !== null && slot.selected_partner.distance_from_previous !== undefined && (
                           <div className="pt-2 border-t border-gray-200">
                             <p className="text-xs text-gray-500 font-medium">
-                              {index === 0 ? 'Distance from Office' : 'Distance from Previous'}
+                              {index === 0 ? 'Distance from Home Office' : 'Distance from Previous'}
                             </p>
                             <p className="text-sm font-bold text-blue-600">
                               {slot.selected_partner.distance_from_previous.toFixed(1)} mi

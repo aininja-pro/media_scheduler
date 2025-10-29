@@ -1054,20 +1054,51 @@ function ChainBuilder({ sharedOffice }) {
     setManualPartnerSlots([]);
 
     try {
-      // Create empty slots with dates (using solver to calculate dates with weekend extension)
-      const slots = [];
-      for (let i = 0; i < numVehicles; i++) {
-        slots.push({
-          slot: i,
-          start_date: null,  // Will be calculated by backend
-          end_date: null,
-          selected_partner: null,
-          eligible_partners: []
-        });
-      }
+      // Calculate slot dates with weekend extension (client-side)
+      const calculateSlotDates = (startDateStr, numSlots, daysPerLoan) => {
+        const slots = [];
+        let currentStart = new Date(startDateStr + 'T00:00:00');
 
+        for (let i = 0; i < numSlots; i++) {
+          // Calculate end date (start + days - 1)
+          let endDate = new Date(currentStart);
+          endDate.setDate(endDate.getDate() + daysPerLoan - 1);
+
+          // Weekend extension: If end date is Sat/Sun, extend to Monday
+          const dayOfWeek = endDate.getDay();
+          if (dayOfWeek === 6) { // Saturday
+            endDate.setDate(endDate.getDate() + 2); // → Monday
+          } else if (dayOfWeek === 0) { // Sunday
+            endDate.setDate(endDate.getDate() + 1); // → Monday
+          }
+
+          // Format dates as YYYY-MM-DD
+          const formatDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          };
+
+          slots.push({
+            slot: i,
+            start_date: formatDate(currentStart),
+            end_date: formatDate(endDate),
+            selected_partner: null,
+            eligible_partners: []
+          });
+
+          // Next slot starts the day after this one ends (same-day handoff)
+          currentStart = new Date(endDate);
+          currentStart.setDate(currentStart.getDate() + 1);
+        }
+
+        return slots;
+      };
+
+      const slots = calculateSlotDates(startDate, numVehicles, daysPerLoan);
       setManualPartnerSlots(slots);
-      console.log(`Created ${numVehicles} empty partner slots`);
+      console.log(`Created ${numVehicles} empty partner slots with dates:`, slots);
 
     } catch (err) {
       setError(err.message);

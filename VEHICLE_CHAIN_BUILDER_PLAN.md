@@ -917,7 +917,8 @@ async def get_partner_slot_options(
    - Haven't reviewed this vehicle
    - Available during slot dates
    - NOT in exclude_partner_ids list
-5. **If slot_index > 0:** Calculate distance from previous partner
+   - **INCLUDE partners without coordinates in manual mode** (with warning)
+5. **If slot_index > 0:** Calculate distance from previous partner (if coordinates exist)
 6. Score each partner:
    ```python
    base_score = engagement + publication + tier
@@ -1857,3 +1858,49 @@ For questions about this implementation plan:
 ---
 
 **END OF VEHICLE CHAIN BUILDER IMPLEMENTATION PLAN**
+
+---
+
+## Design Decisions & Updates
+
+### Partners Without Coordinates (Added 2025-10-29)
+
+**Issue:** 27 of 204 LA partners (13.2%) don't have lat/lng coordinates yet.
+
+**Solution:**
+
+**Auto-Generate Mode:**
+- ❌ **Exclude** partners without coordinates
+- Cannot calculate distance, so OR-Tools can't optimize
+- User won't see them in auto-generated chains
+
+**Manual Build Mode:**
+- ✅ **Include** partners without coordinates in dropdown
+- Show warning badge: `⚠️ Location Unknown`
+- Display as: `"Partner Name ⚠️ Location Unknown (distance N/A)"`
+- Sort to bottom of list (after all partners with known distances)
+- User can manually select if they know partner is nearby
+
+**Example Manual Mode Dropdown:**
+```
+Slot 1: Nov 11 - Nov 19
+[Select Partner ▼]
+  Fox 11 ⭐ 710 (2.9 mi) 🎯 [A]
+  KTLA News ⭐ 720 (3.2 mi) [A+]
+  CBS LA ⭐ 650 (4.1 mi) [B]
+  ABC7 ⭐ 820 (5.8 mi) [A]
+  ─────────────────────────────────────
+  Daily Breeze ⭐ 680 ⚠️ Location Unknown [B]
+  Valley News ⭐ 590 ⚠️ Location Unknown [C]
+```
+
+**Implementation in Chunk 5.1:**
+- Check if partner has coordinates: `if pd.notna(partner.latitude) and pd.notna(partner.longitude)`
+- If YES: Calculate distance, apply distance penalty
+- If NO: Set distance to `None`, show warning, sort to bottom
+
+**Benefits:**
+- Doesn't block manual workflow for known-nearby partners
+- Clear warning prevents accidental long-distance assignments
+- User maintains control while system provides guidance
+

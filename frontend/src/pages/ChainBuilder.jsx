@@ -1004,20 +1004,22 @@ function ChainBuilder({ sharedOffice }) {
       console.log('Vehicle chain generated:', data);
 
       // Convert to manual slots format for editing
-      const slots = data.optimal_chain.map((partner) => ({
+      const slots = data.optimal_chain.map((partner, index) => ({
         slot: partner.slot,
         start_date: partner.start_date,
         end_date: partner.end_date,
         selected_partner: {
           person_id: partner.person_id,
           name: partner.name,
-          score: partner.score,
+          address: partner.address,
+          base_score: partner.base_score,
+          final_score: partner.base_score, // Use base_score as final for display
           tier: partner.tier,
           engagement_level: partner.engagement_level,
           latitude: partner.latitude,
-          longitude: partner.longitude
+          longitude: partner.longitude,
+          distance_from_previous: index > 0 && partner.handoff ? partner.handoff.distance_miles : null
         },
-        handoff: partner.handoff,
         eligible_partners: []  // Will load on dropdown open
       }));
 
@@ -1172,71 +1174,14 @@ function ChainBuilder({ sharedOffice }) {
     });
   };
 
-  // Edit mode functions for auto-generated chains
+  // Edit/Change partner in slot (works for both auto-generated and manual chains)
   const handleEditSlot = async (slotIndex) => {
-    if (!selectedVehicle || !vehicleChain || !vehicleChain.optimal_chain) {
+    if (!selectedVehicle || !manualPartnerSlots[slotIndex]) {
       return;
     }
 
-    setLoadingPartnerSlotOptions(prev => ({ ...prev, [slotIndex]: true }));
-
-    try {
-      // Build exclude_partner_ids from other slots (not the one being edited)
-      const excludePartnerIds = vehicleChain.optimal_chain
-        .filter((_, i) => i !== slotIndex)
-        .map(p => p.person_id)
-        .join(',');
-
-      // Get previous partner info for distance calculation
-      let previousPartnerId = null;
-      let previousPartnerLat = null;
-      let previousPartnerLng = null;
-
-      if (slotIndex > 0) {
-        const prevPartner = vehicleChain.optimal_chain[slotIndex - 1];
-        previousPartnerId = prevPartner.person_id;
-        previousPartnerLat = prevPartner.latitude;
-        previousPartnerLng = prevPartner.longitude;
-      }
-
-      const params = new URLSearchParams({
-        vin: selectedVehicle.vin,
-        office: selectedOffice,
-        start_date: vehicleChain.optimal_chain[0].start_date,
-        num_partners: vehicleChain.optimal_chain.length,
-        days_per_loan: daysPerLoan,
-        slot_index: slotIndex
-      });
-
-      if (excludePartnerIds) {
-        params.append('exclude_partner_ids', excludePartnerIds);
-      }
-
-      if (previousPartnerId) {
-        params.append('previous_partner_id', previousPartnerId);
-        params.append('previous_partner_lat', previousPartnerLat);
-        params.append('previous_partner_lng', previousPartnerLng);
-      }
-
-      const response = await fetch(`http://localhost:8081/api/chain-builder/get-partner-slot-options?${params}`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || 'Failed to load partner options');
-      }
-
-      // Set slot options and enable editing mode
-      setSlotOptions(data.eligible_partners || []);
-      setEditingSlot(slotIndex);
-
-      console.log(`Loaded ${data.eligible_partners?.length || 0} partner options for editing slot ${slotIndex}`);
-
-    } catch (err) {
-      console.error(`Failed to load partner options for editing slot ${slotIndex}:`, err);
-      setError(err.message);
-    } finally {
-      setLoadingPartnerSlotOptions(prev => ({ ...prev, [slotIndex]: false }));
-    }
+    // Just call loadPartnerSlotOptions which does the same thing
+    await loadPartnerSlotOptions(slotIndex);
   };
 
   const handleSwapPartner = (slotIndex, newPartner) => {
@@ -1257,81 +1202,86 @@ function ChainBuilder({ sharedOffice }) {
       return Math.round(miles / 20 * 60); // 20 mph average, convert to minutes
     };
 
-    // Update chain with new partner
-    const updatedChain = [...vehicleChain.optimal_chain];
+    // Update manualPartnerSlots with new partner
+    const updatedSlots = [...manualPartnerSlots];
 
-    // Preserve the slot structure but swap the partner
-    updatedChain[slotIndex] = {
-      ...updatedChain[slotIndex],
-      person_id: newPartner.person_id,
-      name: newPartner.name,
-      address: newPartner.address,
-      latitude: newPartner.latitude,
-      longitude: newPartner.longitude,
-      base_score: newPartner.base_score,
-      tier: newPartner.tier,
-      engagement_level: newPartner.engagement_level
+    // Swap the partner in this slot
+    updatedSlots[slotIndex] = {
+      ...updatedSlots[slotIndex],
+      selected_partner: {
+        person_id: newPartner.person_id,
+        name: newPartner.name,
+        address: newPartner.address,
+        latitude: newPartner.latitude,
+        longitude: newPartner.longitude,
+        base_score: newPartner.base_score,
+        final_score: newPartner.final_score,
+        tier: newPartner.tier,
+        engagement_level: newPartner.engagement_level,
+        distance_from_previous: newPartner.distance_from_previous
+      }
     };
 
-    // Recalculate distances for this slot and all subsequent slots
-    for (let i = slotIndex; i < updatedChain.length; i++) {
-      if (i > 0) {
-        const prevPartner = updatedChain[i - 1];
-        const currPartner = updatedChain[i];
+    // Recalculate distances for all subsequent slots
+    for (let i = slotIndex + 1; i < updatedSlots.length; i++) {
+      const prevSlot = updatedSlots[i - 1];
+      const currSlot = updatedSlots[i];
 
-        if (prevPartner.latitude && prevPartner.longitude && currPartner.latitude && currPartner.longitude) {
+      if (prevSlot.selected_partner && currSlot.selected_partner) {
+        if (prevSlot.selected_partner.latitude && prevSlot.selected_partner.longitude &&
+            currSlot.selected_partner.latitude && currSlot.selected_partner.longitude) {
           const distance = calculateDistance(
-            prevPartner.latitude,
-            prevPartner.longitude,
-            currPartner.latitude,
-            currPartner.longitude
+            prevSlot.selected_partner.latitude,
+            prevSlot.selected_partner.longitude,
+            currSlot.selected_partner.latitude,
+            currSlot.selected_partner.longitude
           );
 
-          updatedChain[i].handoff = {
-            ...updatedChain[i].handoff,
-            distance_miles: distance,
-            estimated_drive_time_min: estimateDriveTime(distance),
-            logistics_cost: distance * 2.0,
-            from_partner: prevPartner.name,
-            to_partner: currPartner.name
+          // Update distance in selected_partner
+          updatedSlots[i].selected_partner = {
+            ...updatedSlots[i].selected_partner,
+            distance_from_previous: distance
           };
         }
       }
     }
 
-    // Recalculate logistics summary
-    let totalDistance = 0;
-    let totalDriveTime = 0;
-    let totalCost = 0;
+    // Update manual slots
+    setManualPartnerSlots(updatedSlots);
 
-    for (let i = 1; i < updatedChain.length; i++) {
-      if (updatedChain[i].handoff) {
-        totalDistance += updatedChain[i].handoff.distance_miles || 0;
-        totalDriveTime += updatedChain[i].handoff.estimated_drive_time_min || 0;
-        totalCost += updatedChain[i].handoff.logistics_cost || 0;
+    // Recalculate logistics summary if vehicleChain exists
+    if (vehicleChain) {
+      let totalDistance = 0;
+      let totalDriveTime = 0;
+      let totalCost = 0;
+
+      for (let i = 1; i < updatedSlots.length; i++) {
+        const slot = updatedSlots[i];
+        if (slot.selected_partner && slot.selected_partner.distance_from_previous) {
+          const dist = slot.selected_partner.distance_from_previous;
+          totalDistance += dist;
+          totalDriveTime += estimateDriveTime(dist);
+          totalCost += dist * 2.0;
+        }
       }
+
+      const updatedLogisticsSummary = {
+        ...vehicleChain.logistics_summary,
+        total_distance_miles: totalDistance,
+        total_drive_time_min: totalDriveTime,
+        total_logistics_cost: totalCost,
+        average_hop_distance: totalDistance / (updatedSlots.length - 1)
+      };
+
+      setVehicleChain({
+        ...vehicleChain,
+        logistics_summary: updatedLogisticsSummary
+      });
+
+      setChainModified(true);
     }
 
-    const updatedLogisticsSummary = {
-      ...vehicleChain.logistics_summary,
-      total_distance_miles: totalDistance,
-      total_drive_time_min: totalDriveTime,
-      total_logistics_cost: totalCost,
-      average_hop_distance: totalDistance / (updatedChain.length - 1)
-    };
-
-    // Update state
-    setVehicleChain({
-      ...vehicleChain,
-      optimal_chain: updatedChain,
-      logistics_summary: updatedLogisticsSummary
-    });
-
-    setChainModified(true);
-    setEditingSlot(null);
-    setSlotOptions([]);
-
-    console.log(`Swapped slot ${slotIndex} to ${newPartner.name}, recalculated ${updatedChain.length - slotIndex - 1} downstream distances`);
+    console.log(`Swapped slot ${slotIndex} to ${newPartner.name}, recalculated ${updatedSlots.length - slotIndex - 1} downstream distances`);
   };
 
   // ============================================================
@@ -2648,7 +2598,7 @@ function ChainBuilder({ sharedOffice }) {
           ) : null}
 
           {/* Vehicle Chain Mode Preview - Placeholder until Phase 6 Timeline */}
-          {chainMode === 'vehicle' && !vehicleChain && manualPartnerSlots.length === 0 && (
+          {chainMode === 'vehicle' && manualPartnerSlots.length === 0 && (
             <div className="bg-white rounded-lg shadow-sm border p-12">
               <div className="text-center">
                 <div className="text-yellow-600 text-4xl mb-4">🚧</div>
@@ -2657,183 +2607,6 @@ function ChainBuilder({ sharedOffice }) {
                   Will show vehicle's calendar with partner bars (like partner chain shows vehicle bars)
                 </p>
               </div>
-            </div>
-          )}
-
-          {/* Vehicle Chain Mode - Auto-Generated Chain (Editable) */}
-          {chainMode === 'vehicle' && vehicleChain && vehicleChain.optimal_chain && (
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-md font-semibold text-gray-900">
-                    Auto-Generated Chain {chainModified && <span className="text-xs text-orange-600 ml-2">(Modified)</span>}
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Click "Edit" to swap partners. Distances will recalculate automatically.
-                  </p>
-                </div>
-
-                {/* Save Chain Buttons - Phase 6.1 */}
-                <div className="flex gap-2">
-                  <button
-                    disabled={true}
-                    className="px-6 py-2 rounded-md text-sm font-medium bg-gray-200 text-gray-400 cursor-not-allowed"
-                    title="Save functionality coming in Phase 6.1"
-                  >
-                    Save Chain
-                  </button>
-                  <button
-                    disabled={true}
-                    className="px-6 py-2 rounded-md text-sm font-medium bg-gray-200 text-gray-400 cursor-not-allowed"
-                    title="Save functionality coming in Phase 6.1"
-                  >
-                    Save as Requested
-                  </button>
-                </div>
-              </div>
-
-              {/* Partner Cards Grid */}
-              <div className="grid grid-cols-5 gap-4">
-                {vehicleChain.optimal_chain.map((partner, index) => (
-                  <div
-                    key={partner.slot}
-                    className="border-2 border-green-500 rounded-lg p-4 hover:shadow-lg transition-all relative bg-green-50"
-                  >
-                    {/* Header: Slot + Tier */}
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-bold text-gray-700">Slot {partner.slot}</span>
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${
-                        partner.tier === 'A+' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
-                        partner.tier === 'A' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
-                        partner.tier === 'B' ? 'bg-green-100 text-green-800 border border-green-300' :
-                        'bg-gray-100 text-gray-800 border border-gray-300'
-                      }`}>
-                        {partner.tier || 'N/A'}
-                      </span>
-                    </div>
-
-                    {/* Dates */}
-                    <div className="mb-3 pb-3 border-b border-gray-200">
-                      <p className="text-xs text-gray-500 font-medium">Dates</p>
-                      <p className="text-xs text-gray-900">
-                        {new Date(partner.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(partner.end_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </p>
-                    </div>
-
-                    {/* Editing Mode - Show Dropdown */}
-                    {editingSlot === index ? (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Swap Partner:
-                        </label>
-                        <select
-                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              const newPartner = slotOptions.find(p => p.person_id.toString() === e.target.value);
-                              if (newPartner) {
-                                handleSwapPartner(index, newPartner);
-                              }
-                            }
-                          }}
-                          defaultValue=""
-                        >
-                          <option value="">Choose partner...</option>
-                          {(slotOptions || []).map(p => {
-                            const distanceText = p.distance_from_previous !== null && p.distance_from_previous !== undefined
-                              ? ` (${(p.distance_from_previous || 0).toFixed(1)} mi)`
-                              : ' ⚠️ Location Unknown';
-                            const label = `${p.name || 'Unknown'} ⭐ ${p.final_score || 0}${index > 0 ? distanceText : ''} [${p.tier || 'N/A'}]`;
-                            return (
-                              <option key={p.person_id} value={p.person_id}>
-                                {label}
-                              </option>
-                            );
-                          })}
-                        </select>
-                        <button
-                          onClick={() => setEditingSlot(null)}
-                          className="text-xs text-gray-600 hover:text-gray-800 underline"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      /* Display Mode - Show Partner Info */
-                      <div className="space-y-2">
-                        <div>
-                          <h4 className="font-semibold text-gray-900 text-sm leading-tight">
-                            {partner.name}
-                          </h4>
-                          <p className="text-xs text-gray-600 leading-tight">
-                            {partner.address || 'Address not available'}
-                          </p>
-                        </div>
-
-                        {/* Distance from previous */}
-                        {index > 0 && partner.handoff && partner.handoff.distance_miles !== null && partner.handoff.distance_miles !== undefined && (
-                          <div className="pt-2 border-t border-gray-200">
-                            <p className="text-xs text-gray-500 font-medium">Distance from Previous</p>
-                            <p className="text-sm font-bold text-blue-600">
-                              {(partner.handoff.distance_miles || 0).toFixed(1)} mi
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Score */}
-                        <div className="pt-2 border-t border-gray-200">
-                          <p className="text-xs text-gray-500 font-medium">Score</p>
-                          <p className="text-sm font-bold text-blue-600">{partner.base_score}</p>
-                        </div>
-
-                        {/* Edit Button */}
-                        <div className="pt-2 border-t border-gray-200">
-                          <button
-                            onClick={() => handleEditSlot(index)}
-                            disabled={loadingPartnerSlotOptions[index]}
-                            className="w-full px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:bg-gray-400"
-                          >
-                            {loadingPartnerSlotOptions[index] ? 'Loading...' : 'Edit'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Logistics Summary */}
-              {vehicleChain.logistics_summary && (
-                <div className="mt-6 bg-blue-50 rounded-lg p-4 border border-blue-200">
-                  <h4 className="text-sm font-semibold text-blue-900 mb-3">Chain Logistics</h4>
-                  <div className="grid grid-cols-4 gap-4 text-xs">
-                    <div>
-                      <p className="text-blue-600 font-medium">Total Distance</p>
-                      <p className="text-blue-900 font-bold text-lg">
-                        {(vehicleChain.logistics_summary.total_distance_miles || 0).toFixed(1)} mi
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-blue-600 font-medium">Drive Time</p>
-                      <p className="text-blue-900 font-bold text-lg">
-                        {vehicleChain.logistics_summary.total_drive_time_min || 0} min
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-blue-600 font-medium">Logistics Cost</p>
-                      <p className="text-blue-900 font-bold text-lg">
-                        ${(vehicleChain.logistics_summary.total_logistics_cost || 0).toFixed(2)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-blue-600 font-medium">Avg per Hop</p>
-                      <p className="text-blue-900 font-bold text-lg">
-                        {(vehicleChain.logistics_summary.average_hop_distance || 0).toFixed(1)} mi
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -3040,6 +2813,39 @@ function ChainBuilder({ sharedOffice }) {
                   </div>
                 ))}
               </div>
+
+              {/* Logistics Summary - Show when auto-generated chain exists */}
+              {vehicleChain && vehicleChain.logistics_summary && (
+                <div className="mt-6 bg-blue-50 rounded-lg p-4 border border-blue-200">
+                  <h4 className="text-sm font-semibold text-blue-900 mb-3">Chain Logistics</h4>
+                  <div className="grid grid-cols-4 gap-4 text-xs">
+                    <div>
+                      <p className="text-blue-600 font-medium">Total Distance</p>
+                      <p className="text-blue-900 font-bold text-lg">
+                        {(vehicleChain.logistics_summary.total_distance_miles || 0).toFixed(1)} mi
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-blue-600 font-medium">Drive Time</p>
+                      <p className="text-blue-900 font-bold text-lg">
+                        {vehicleChain.logistics_summary.total_drive_time_min || 0} min
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-blue-600 font-medium">Logistics Cost</p>
+                      <p className="text-blue-900 font-bold text-lg">
+                        ${(vehicleChain.logistics_summary.total_logistics_cost || 0).toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-blue-600 font-medium">Avg per Hop</p>
+                      <p className="text-blue-900 font-bold text-lg">
+                        {(vehicleChain.logistics_summary.average_hop_distance || 0).toFixed(1)} mi
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

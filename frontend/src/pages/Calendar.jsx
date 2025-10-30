@@ -1789,6 +1789,26 @@ function Calendar({ sharedOffice, isActive }) {
                           </div>
                         </div>
                       )}
+
+                      {/* Build Chain Button */}
+                      <div className="border-t pt-3 mt-3">
+                        <button
+                          onClick={() => {
+                            if (props.onBuildChainForVehicle) {
+                              props.onBuildChainForVehicle({
+                                vin: vehicleContext.vin,
+                                make: vehicleContext.make,
+                                model: vehicleContext.model,
+                                year: vehicleContext.year,
+                                office: vehicleContext.office
+                              });
+                            }
+                          }}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors text-sm"
+                        >
+                          ⛓️ Build Chain for This Vehicle
+                        </button>
+                      </div>
                     </div>
                   </div>
 

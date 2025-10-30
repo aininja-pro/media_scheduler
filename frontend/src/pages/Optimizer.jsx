@@ -284,9 +284,10 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   };
 
   const getWeekdayCapacity = () => {
-    if (!metrics?.capacity) return 0;
+    // Use dailyCapacities state (user-edited values) instead of backend metrics
+    // This reflects what will actually be sent to the optimizer
     return ['mon', 'tue', 'wed', 'thu', 'fri']
-      .reduce((sum, day) => sum + (metrics.capacity[day]?.slots || 0), 0);
+      .reduce((sum, day) => sum + (dailyCapacities[day] || 0), 0);
   };
 
   const formatBudgetValue = () => {

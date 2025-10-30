@@ -12,6 +12,7 @@ function App() {
   const [selectedWeek, setSelectedWeek] = useState('')
   const [activeTab, setActiveTab] = useState('upload')
   const [optimizerOffice, setOptimizerOffice] = useState('Los Angeles') // Shared office state
+  const [chainBuilderVehicle, setChainBuilderVehicle] = useState(null) // For Calendar→ChainBuilder navigation
   const [vehiclesUrl, setVehiclesUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/active_vehicles.rpt&init=csv')
   const [mediaPartnersUrl, setMediaPartnersUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/media_partners.rpt&init=csv')
   const [approvedRanksUrl, setApprovedRanksUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/approved_makes.rpt&init=csv')
@@ -588,6 +589,10 @@ function App() {
           <Calendar
             sharedOffice={optimizerOffice}
             isActive={activeTab === 'calendar'}
+            onBuildChainForVehicle={(vehicleData) => {
+              setChainBuilderVehicle(vehicleData);
+              setActiveTab('chain-builder');
+            }}
           />
         </div>
 
@@ -602,6 +607,8 @@ function App() {
         {activeTab === 'chain-builder' && (
           <ChainBuilder
             sharedOffice={optimizerOffice}
+            preloadedVehicle={chainBuilderVehicle}
+            onVehicleLoaded={() => setChainBuilderVehicle(null)}
           />
         )}
         </div>

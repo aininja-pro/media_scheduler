@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-function ChainBuilder({ sharedOffice }) {
+function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
   // Chain mode: 'partner' (existing) or 'vehicle' (new)
   const [chainMode, setChainMode] = useState('partner');
 
@@ -403,6 +403,18 @@ function ChainBuilder({ sharedOffice }) {
 
     loadVehicleBusyPeriods();
   }, [selectedVehicle, selectedOffice, chainMode]);
+
+  // Handle preloaded vehicle from Calendar navigation
+  useEffect(() => {
+    if (preloadedVehicle) {
+      setChainMode('vehicle');
+      setSelectedVehicle(preloadedVehicle);
+      setVehicleSearchQuery(`${preloadedVehicle.make} ${preloadedVehicle.model} ${preloadedVehicle.year}`.trim());
+      if (onVehicleLoaded) {
+        onVehicleLoaded(); // Clear the preloaded vehicle from parent
+      }
+    }
+  }, [preloadedVehicle]);
 
   // Refresh partner intelligence when tab becomes visible (detect visibility change)
   useEffect(() => {

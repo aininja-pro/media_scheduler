@@ -51,7 +51,7 @@ const ModelSelector = ({
         });
 
         const response = await fetch(
-          `/api/chain-builder/model-availability?${params}`
+          `http://localhost:8081/api/chain-builder/model-availability?${params}`
         );
 
         if (!response.ok) {

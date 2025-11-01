@@ -480,8 +480,39 @@ async def get_model_availability(
 
         available_vins = exclusion_result['available_vins']
 
-        # Filter to available vehicles
-        available_vehicles = vehicles_df[vehicles_df['vin'].isin(available_vins)]
+        # Load approved makes for this partner
+        logger.info("Loading approved makes for partner")
+        all_approved = []
+        limit = 1000
+        offset = 0
+        while True:
+            approved_response = db.client.table('approved_makes').select('person_id, make, rank').range(offset, offset + limit - 1).execute()
+            if not approved_response.data:
+                break
+            all_approved.extend(approved_response.data)
+            offset += limit
+            if len(approved_response.data) < limit:
+                break
+
+        approved_makes_df = pd.DataFrame(all_approved) if all_approved else pd.DataFrame()
+
+        # Convert person_id to int for comparison
+        if not approved_makes_df.empty:
+            approved_makes_df['person_id'] = approved_makes_df['person_id'].astype(int)
+
+        # Get makes this partner has approved
+        partner_approved = approved_makes_df[approved_makes_df['person_id'] == int(person_id)]
+        approved_makes_set = set(partner_approved['make'].unique()) if not partner_approved.empty else set()
+
+        logger.info(f"Partner has {len(approved_makes_set)} approved makes")
+
+        # Filter to available vehicles with approved makes
+        available_vehicles = vehicles_df[
+            (vehicles_df['vin'].isin(available_vins)) &
+            (vehicles_df['make'].isin(approved_makes_set))
+        ]
+
+        logger.info(f"After approved_makes filter: {len(available_vehicles)} vehicles available")
 
         # Build availability count by make/model
         availability_by_model = {}

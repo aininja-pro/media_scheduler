@@ -414,6 +414,95 @@ async def suggest_chain(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/model-availability")
+async def get_model_availability(
+    person_id: int = Query(..., description="Media partner ID"),
+    office: str = Query(..., description="Office name"),
+    start_date: str = Query(..., description="Chain start date (YYYY-MM-DD)"),
+    num_vehicles: int = Query(4, description="Number of vehicles in chain", ge=1, le=10),
+    days_per_loan: int = Query(8, description="Days per loan", ge=1, le=14),
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Get availability counts by make/model for ModelSelector UI.
+
+    Returns dictionary mapping make -> {model: count, total: count}
+    Used by frontend to display "Honda Accord (5 available)" in dropdown.
+
+    Args:
+        person_id: Target media partner ID
+        office: Office to pull vehicles from
+        start_date: When chain should start
+        num_vehicles: How many vehicles in the chain
+        days_per_loan: Loan duration in days
+
+    Returns:
+        Dictionary like:
+        {
+            "Honda": {"total": 12, "Accord": 5, "CR-V": 4, "Civic": 3},
+            "Toyota": {"total": 8, "Camry": 3, "RAV4": 5}
+        }
+    """
+
+    try:
+        logger.info(f"Loading model availability for partner {person_id}, office {office}")
+
+        # Load vehicles
+        vehicles_response = db.client.table('vehicles').select('*').eq('office', office).execute()
+        vehicles_df = pd.DataFrame(vehicles_response.data) if vehicles_response.data else pd.DataFrame()
+
+        if vehicles_df.empty:
+            return {}
+
+        # Load loan history for exclusions
+        all_loan_history = []
+        limit = 1000
+        offset = 0
+        while True:
+            loan_response = db.client.table('loan_history').select('*').range(offset, offset + limit - 1).execute()
+            if not loan_response.data:
+                break
+            all_loan_history.extend(loan_response.data)
+            offset += limit
+            if len(loan_response.data) < limit:
+                break
+
+        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
+
+        # Get vehicles partner has NOT reviewed
+        exclusion_result = get_vehicles_not_reviewed(
+            person_id=person_id,
+            office=office,
+            loan_history_df=loan_history_df,
+            vehicles_df=vehicles_df,
+            months_back=12
+        )
+
+        available_vins = exclusion_result['available_vins']
+
+        # Filter to available vehicles
+        available_vehicles = vehicles_df[vehicles_df['vin'].isin(available_vins)]
+
+        # Build availability count by make/model
+        availability_by_model = {}
+
+        for make in available_vehicles['make'].unique():
+            make_vehicles = available_vehicles[available_vehicles['make'] == make]
+            availability_by_model[make] = {"total": len(make_vehicles)}
+
+            for model in make_vehicles['model'].unique():
+                model_count = len(make_vehicles[make_vehicles['model'] == model])
+                availability_by_model[make][model] = model_count
+
+        logger.info(f"Found {len(availability_by_model)} makes with available vehicles")
+
+        return availability_by_model
+
+    except Exception as e:
+        logger.error(f"Error getting model availability: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/get-slot-options")
 async def get_slot_options(
     person_id: int = Query(..., description="Media partner ID"),

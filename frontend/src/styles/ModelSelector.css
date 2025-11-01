@@ -1,0 +1,308 @@
+/**
+ * ModelSelector Component Styles
+ *
+ * Checkbox tree UI for vehicle make/model selection
+ */
+
+.model-selector {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  background: #ffffff;
+  max-height: 500px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Search Box */
+.model-selector .search-box {
+  margin-bottom: 8px;
+}
+
+.model-selector .search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.model-selector .search-input:focus {
+  border-color: #4a90e2;
+  box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+}
+
+/* Selected Tags */
+.model-selector .selected-tags {
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.model-selector .tags-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.model-selector .tags-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: #333;
+}
+
+.model-selector .clear-all-button {
+  background: none;
+  border: none;
+  color: #e74c3c;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.model-selector .clear-all-button:hover {
+  background-color: #fee;
+}
+
+.model-selector .tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.model-selector .tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #4a90e2;
+  color: white;
+  padding: 4px 8px 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.model-selector .tag-remove {
+  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  color: white;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.model-selector .tag-remove:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Tree Container */
+.model-selector .tree-container {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 8px;
+  background: #fafafa;
+}
+
+/* Make Group */
+.model-selector .make-group {
+  margin-bottom: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: white;
+  overflow: hidden;
+}
+
+.model-selector .make-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #f8f8f8;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.model-selector .make-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex: 1;
+  font-size: 14px;
+}
+
+.model-selector .make-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.model-selector .make-name {
+  font-weight: 600;
+  color: #333;
+}
+
+.model-selector .make-count {
+  color: #666;
+  font-size: 13px;
+  font-weight: normal;
+}
+
+.model-selector .expand-button {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.model-selector .expand-button:hover {
+  background-color: #e0e0e0;
+}
+
+/* Models List */
+.model-selector .models-list {
+  padding: 8px 12px 8px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.model-selector .model-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  transition: background-color 0.15s;
+}
+
+.model-selector .model-label:hover {
+  background-color: #f0f0f0;
+}
+
+.model-selector .model-checkbox {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.model-selector .model-name {
+  color: #555;
+  flex: 1;
+}
+
+.model-selector .model-count {
+  color: #888;
+  font-size: 12px;
+}
+
+/* Empty State */
+.model-selector .empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+}
+
+.model-selector .empty-state p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Footer */
+.model-selector .selector-footer {
+  padding-top: 8px;
+  border-top: 1px solid #e0e0e0;
+  text-align: center;
+}
+
+.model-selector .selection-summary {
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
+}
+
+/* Loading State */
+.model-selector.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.model-selector .loading-spinner {
+  color: #4a90e2;
+  font-size: 14px;
+}
+
+/* Error State */
+.model-selector.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.model-selector .error-message {
+  color: #e74c3c;
+  font-size: 14px;
+  padding: 12px;
+  background: #fee;
+  border: 1px solid #fcc;
+  border-radius: 4px;
+}
+
+/* Scrollbar Styling */
+.model-selector .tree-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.model-selector .tree-container::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+
+.model-selector .tree-container::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 4px;
+}
+
+.model-selector .tree-container::-webkit-scrollbar-thumb:hover {
+  background: #aaa;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .model-selector {
+    max-height: 400px;
+  }
+
+  .model-selector .tag {
+    font-size: 11px;
+  }
+
+  .model-selector .make-name,
+  .model-selector .model-name {
+    font-size: 13px;
+  }
+}

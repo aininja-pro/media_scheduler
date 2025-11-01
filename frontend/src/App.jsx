@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import driveShopLogo from './assets/DriveShop_WebLogo.png'
 import PublicationRates from './pages/PublicationRates.jsx'
 import Optimizer from './pages/Optimizer.jsx'
@@ -28,7 +28,18 @@ function App() {
   const [isLoadingBudgets, setIsLoadingBudgets] = useState(false)
 
   const offices = ['SEA', 'PDX', 'LAX', 'SFO', 'PHX', 'DEN', 'LAS']
-  
+
+  // Listen for navigation from ChainBuilder to Calendar
+  useEffect(() => {
+    const handleNavigateToCalendar = (event) => {
+      setActiveTab('calendar');
+      // Could pass VIN to Calendar to highlight that vehicle
+    };
+
+    window.addEventListener('navigateToCalendar', handleNavigateToCalendar);
+    return () => window.removeEventListener('navigateToCalendar', handleNavigateToCalendar);
+  }, []);
+
   const handleVehiclesUpdate = async () => {
     setIsLoading(true)
     try {

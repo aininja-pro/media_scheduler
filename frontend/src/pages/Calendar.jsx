@@ -12,7 +12,7 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-function Calendar({ sharedOffice, isActive }) {
+function Calendar({ sharedOffice, isActive, onBuildChainForVehicle }) {
   // Use shared office from parent, default to 'Los Angeles' if not provided
   const [selectedOffice, setSelectedOffice] = useState(sharedOffice || 'Los Angeles');
 
@@ -1794,14 +1794,17 @@ function Calendar({ sharedOffice, isActive }) {
                       <div className="border-t pt-3 mt-3">
                         <button
                           onClick={() => {
-                            if (props.onBuildChainForVehicle) {
-                              props.onBuildChainForVehicle({
+                            console.log('Build Chain button clicked', vehicleContext);
+                            if (onBuildChainForVehicle) {
+                              onBuildChainForVehicle({
                                 vin: vehicleContext.vin,
                                 make: vehicleContext.make,
                                 model: vehicleContext.model,
                                 year: vehicleContext.year,
                                 office: vehicleContext.office
                               });
+                            } else {
+                              console.error('onBuildChainForVehicle callback not provided');
                             }
                           }}
                           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors text-sm"

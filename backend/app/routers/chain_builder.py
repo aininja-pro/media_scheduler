@@ -514,6 +514,51 @@ async def get_model_availability(
 
         logger.info(f"After approved_makes filter: {len(available_vehicles)} vehicles available")
 
+        # Load current activity and scheduled assignments for availability checking
+        logger.info("Loading current activity for availability grid")
+        activity_response = db.client.table('current_activity').select('*').execute()
+        activity_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
+
+        # Fix column name if needed
+        if not activity_df.empty and 'vehicle_vin' in activity_df.columns:
+            activity_df['vin'] = activity_df['vehicle_vin']
+
+        # Calculate estimated chain end date
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        estimated_chain_end = (start_dt + timedelta(days=num_vehicles * days_per_loan * 2)).strftime('%Y-%m-%d')
+
+        # Build availability grid to check actual date availability
+        availability_grid = build_chain_availability_grid(
+            vehicles_df=vehicles_df,
+            activity_df=activity_df,
+            start_date=start_date,
+            num_slots=num_vehicles,
+            days_per_slot=days_per_loan,
+            office=office,
+            end_date=estimated_chain_end
+        )
+
+        # Filter to vehicles that are available for at least ONE slot in the chain
+        date_available_vins = set()
+        if not availability_grid.empty:
+            # Check each vehicle against each potential slot
+            for vin in available_vehicles['vin']:
+                # If vehicle is available for any slot, include it
+                vehicle_availability = availability_grid[availability_grid['vin'] == vin]
+                if not vehicle_availability.empty:
+                    # Count available days
+                    available_days = vehicle_availability[vehicle_availability['available'] == True]
+                    if len(available_days) >= days_per_loan:
+                        date_available_vins.add(vin)
+        else:
+            # No availability grid - assume all available
+            date_available_vins = set(available_vehicles['vin'])
+
+        logger.info(f"After date availability check: {len(date_available_vins)} vehicles available")
+
+        # Filter to date-available vehicles
+        available_vehicles = available_vehicles[available_vehicles['vin'].isin(date_available_vins)]
+
         # Build availability count by make/model
         availability_by_model = {}
 

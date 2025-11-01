@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ModelSelector from '../components/ModelSelector';
 
 function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
   // Chain mode: 'partner' (existing) or 'vehicle' (new)
@@ -42,6 +43,10 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
 
   // Make filtering
   const [selectedMakes, setSelectedMakes] = useState([]);
+
+  // Model preferences for Partner Chain (NEW)
+  const [modelPreferences, setModelPreferences] = useState([]); // Array of {make, model}
+  const [preferenceMode, setPreferenceMode] = useState('prioritize'); // 'prioritize' | 'strict' | 'ignore'
 
   // Swap modal
   const [swapModalOpen, setSwapModalOpen] = useState(false);
@@ -801,12 +806,18 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
         office: selectedOffice,
         start_date: startDate,
         num_vehicles: numVehicles,
-        days_per_loan: daysPerLoan
+        days_per_loan: daysPerLoan,
+        preference_mode: preferenceMode
       });
 
-      // Add selected makes filter if any are selected
+      // Add selected makes filter if any are selected (DEPRECATED - keeping for backward compat)
       if (selectedMakes.length > 0) {
         params.append('preferred_makes', selectedMakes.join(','));
+      }
+
+      // Add model preferences (NEW - OR-Tools support)
+      if (modelPreferences.length > 0 && preferenceMode !== 'ignore') {
+        params.append('model_preferences', JSON.stringify(modelPreferences));
       }
 
       const response = await fetch(`http://localhost:8081/api/chain-builder/suggest-chain?${params}`);
@@ -2045,6 +2056,109 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
               </div>
             )}
 
+            {/* Model Preferences - Partner Chain (NEW) */}
+            {chainMode === 'partner' && selectedPartner && (
+              <div className="border-t pt-4">
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    🎯 Vehicle Preferences (Optional)
+                  </label>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Select specific models to prioritize or restrict in chain generation
+                  </p>
+                </div>
+
+                <ModelSelector
+                  office={selectedOffice}
+                  personId={selectedPartner}
+                  startDate={startDate}
+                  numVehicles={numVehicles}
+                  daysPerLoan={daysPerLoan}
+                  onSelectionChange={setModelPreferences}
+                  value={modelPreferences}
+                />
+
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Preference Mode
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className={`flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer text-xs ${
+                      preferenceMode === 'prioritize'
+                        ? 'bg-blue-50 border-blue-500 text-blue-700'
+                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="preferenceMode"
+                        value="prioritize"
+                        checked={preferenceMode === 'prioritize'}
+                        onChange={(e) => setPreferenceMode(e.target.value)}
+                        className="text-blue-600"
+                      />
+                      <div>
+                        <div className="font-medium">Prioritize</div>
+                        <div className="text-gray-500">Boost +800</div>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer text-xs ${
+                      preferenceMode === 'strict'
+                        ? 'bg-blue-50 border-blue-500 text-blue-700'
+                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="preferenceMode"
+                        value="strict"
+                        checked={preferenceMode === 'strict'}
+                        onChange={(e) => setPreferenceMode(e.target.value)}
+                        className="text-blue-600"
+                      />
+                      <div>
+                        <div className="font-medium">Strict</div>
+                        <div className="text-gray-500">Only these</div>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer text-xs ${
+                      preferenceMode === 'ignore'
+                        ? 'bg-blue-50 border-blue-500 text-blue-700'
+                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="preferenceMode"
+                        value="ignore"
+                        checked={preferenceMode === 'ignore'}
+                        onChange={(e) => setPreferenceMode(e.target.value)}
+                        className="text-blue-600"
+                      />
+                      <div>
+                        <div className="font-medium">Let AI Decide</div>
+                        <div className="text-gray-500">Ignore</div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="mt-2 text-xs text-gray-500">
+                    {preferenceMode === 'prioritize' && modelPreferences.length > 0 && (
+                      <span>✓ Selected models will receive +800 score boost</span>
+                    )}
+                    {preferenceMode === 'strict' && modelPreferences.length > 0 && (
+                      <span>⚠️ Chain will ONLY include selected models</span>
+                    )}
+                    {preferenceMode === 'ignore' && (
+                      <span>Preferences will be ignored (optimizer decides)</span>
+                    )}
+                    {modelPreferences.length === 0 && preferenceMode !== 'ignore' && (
+                      <span>No models selected - preferences will not apply</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Mode Toggle - Partner Chain */}
             {chainMode === 'partner' && (
               <div className="border-t pt-4">
@@ -2906,7 +3020,22 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
             <div className="bg-white rounded-lg shadow-sm border p-6">
               <div className="mb-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-md font-semibold text-gray-900">Vehicle Calendar Timeline</h3>
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-md font-semibold text-gray-900">Vehicle Calendar Timeline</h3>
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        window.dispatchEvent(new CustomEvent('navigateToCalendar', {
+                          detail: { vin: selectedVehicle.vin }
+                        }));
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                      title="Open in Calendar view"
+                    >
+                      📅 View Full Calendar
+                    </a>
+                  </div>
 
                   {/* Month Navigation Arrows */}
                   <div className="flex gap-2">

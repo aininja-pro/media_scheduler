@@ -827,11 +827,19 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
         throw new Error(data.detail || 'Failed to generate chain');
       }
 
-      setChain(data);
-      console.log('Chain generated:', data);
+      // Normalize response format for backward compatibility
+      // New API returns 'suggested_chain', old code expects 'chain'
+      const normalizedData = {
+        ...data,
+        chain: data.suggested_chain || data.chain || []
+      };
+
+      setChain(normalizedData);
+      console.log('Chain generated:', normalizedData);
 
       // Convert auto-generated chain to manual slots format for editing
-      const slots = data.chain.map((vehicle, index) => ({
+      const chainData = normalizedData.chain;
+      const slots = chainData.map((vehicle, index) => ({
         slot: vehicle.slot,
         start_date: vehicle.start_date,
         end_date: vehicle.end_date,

@@ -48,6 +48,9 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
   const [modelPreferences, setModelPreferences] = useState([]); // Array of {make, model}
   const [preferenceMode, setPreferenceMode] = useState('prioritize'); // 'prioritize' | 'strict' | 'ignore'
 
+  // Tier filter for Vehicle Chain (NEW)
+  const [selectedTiers, setSelectedTiers] = useState(['A+', 'A', 'B', 'C']); // Default: all tiers
+
   // Swap modal
   const [swapModalOpen, setSwapModalOpen] = useState(false);
   const [swapSlot, setSwapSlot] = useState(null);
@@ -1087,6 +1090,11 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
         max_distance_per_hop: 50.0
       });
 
+      // Add tier filter if any tiers are deselected
+      if (selectedTiers.length > 0 && selectedTiers.length < 4) {
+        params.append('partner_tier_filter', selectedTiers.join(','));
+      }
+
       const response = await fetch(`http://localhost:8081/api/chain-builder/suggest-vehicle-chain?${params}`, {
         method: 'POST'
       });
@@ -2006,6 +2014,64 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
               />
               <p className="text-xs text-gray-500 mt-1">Typical: 7 days (1 week)</p>
             </div>
+
+            {/* Tier Filter - Vehicle Chain Mode Only */}
+            {chainMode === 'vehicle' && selectedVehicle && (
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Partner Tier Filter
+                  </label>
+                  <button
+                    onClick={() => {
+                      const allTiers = ['A+', 'A', 'B', 'C'];
+                      setSelectedTiers(selectedTiers.length === allTiers.length ? [] : allTiers);
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    {selectedTiers.length === 4 ? 'Clear All' : 'Select All'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2">
+                  {['A+', 'A', 'B', 'C'].map((tier) => (
+                    <label
+                      key={tier}
+                      className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border cursor-pointer text-xs transition-colors ${
+                        selectedTiers.includes(tier)
+                          ? tier === 'A+'
+                            ? 'bg-purple-50 border-purple-500 text-purple-700'
+                            : tier === 'A'
+                            ? 'bg-blue-50 border-blue-500 text-blue-700'
+                            : tier === 'B'
+                            ? 'bg-green-50 border-green-500 text-green-700'
+                            : 'bg-gray-50 border-gray-500 text-gray-700'
+                          : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedTiers.includes(tier)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedTiers([...selectedTiers, tier]);
+                          } else {
+                            setSelectedTiers(selectedTiers.filter(t => t !== tier));
+                          }
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="font-semibold">{tier}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <p className="text-xs text-gray-500 mt-2">
+                  {selectedTiers.length} of 4 tiers selected
+                  {selectedTiers.length === 0 && <span className="text-red-600"> (at least 1 required)</span>}
+                </p>
+              </div>
+            )}
 
             {/* Make Filter - Show when partner is selected (Partner Chain Mode Only) */}
             {chainMode === 'partner' && partnerIntelligence && partnerIntelligence.approved_makes && partnerIntelligence.approved_makes.length > 0 && (

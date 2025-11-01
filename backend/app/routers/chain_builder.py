@@ -1354,6 +1354,7 @@ async def suggest_vehicle_chain(
     distance_weight: float = 0.7,
     max_distance_per_hop: float = 50.0,
     distance_cost_per_mile: float = 2.0,
+    partner_tier_filter: Optional[str] = None,
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """
@@ -1498,6 +1499,26 @@ async def suggest_vehicle_chain(
             )
 
         logger.info(f"Eligible partners: {len(eligible_partner_ids)}, Excluded: {len(exclusion_result['excluded_partners'])}, Ineligible: {len(exclusion_result['ineligible_make'])}")
+
+        # 4a. Filter by tier if specified
+        if partner_tier_filter:
+            allowed_tiers = [t.strip() for t in partner_tier_filter.split(',')]
+            logger.info(f"Applying tier filter: {allowed_tiers}")
+
+            # Filter approved_makes to only allowed tiers for this vehicle's make
+            if not approved_makes_df.empty:
+                approved_makes_df['person_id'] = pd.to_numeric(approved_makes_df['person_id'], errors='coerce').astype('Int64')
+
+                # Get partners who have the allowed tier for this vehicle's make
+                tier_filtered = approved_makes_df[
+                    (approved_makes_df['make'] == vehicle_make) &
+                    (approved_makes_df['rank'].isin(allowed_tiers))
+                ]
+                tier_approved_partner_ids = set(tier_filtered['person_id'].dropna().astype(int).tolist())
+
+                # Intersect with eligible partners
+                eligible_partner_ids = set(eligible_partner_ids) & tier_approved_partner_ids
+                logger.info(f"After tier filter ({allowed_tiers}): {len(eligible_partner_ids)} partners remaining")
 
         # 4b. CRITICAL: Filter eligible partners by availability (same as manual mode)
         # Calculate chain end date for availability checking

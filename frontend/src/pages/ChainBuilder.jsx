@@ -76,6 +76,9 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
   // Budget calculation for chain
   const [chainBudget, setChainBudget] = useState(null);
 
+  // Model Selector Modal state
+  const [showModelSelectorModal, setShowModelSelectorModal] = useState(false);
+
   // Update selectedOffice when sharedOffice prop changes
   useEffect(() => {
     if (sharedOffice) {
@@ -710,6 +713,7 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
     setSaveMessage('');
     setPartnerIntelligence(null);
     setSelectedMakes([]);
+    setModelPreferences([]);  // Clear model preferences too
     setStartDate(getCurrentMonday());
     setManualSlots([]);
     setBuildMode('auto');
@@ -1808,12 +1812,12 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
       </div>
 
       {/* Main Content */}
-      <div className="flex h-full">
-        {/* Left Panel - Chain Parameters */}
-        <div className="w-80 bg-white border-r p-6">
+      <div className="flex flex-col lg:flex-row h-full">
+        {/* Left Panel - Chain Parameters - WIDER for 2-column layout, stack on mobile */}
+        <div className="w-full lg:w-[520px] bg-white border-b lg:border-b-0 lg:border-r p-6 overflow-y-auto">
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Chain Parameters</h2>
 
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Partner Chain Mode - Partner Selector */}
             {chainMode === 'partner' && (
               <div className="relative">
@@ -1849,6 +1853,8 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
                           setSelectedPartner(partner.person_id);
                           setPartnerSearchQuery(partner.name);
                           setShowPartnerDropdown(false);
+                          // Clear model preferences when switching partners
+                          setModelPreferences([]);
                         }}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors border-b last:border-b-0"
                       >
@@ -1936,46 +1942,65 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
               </div>
             )}
 
-            {/* Start Date */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Start Date
-              </label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">Must be a weekday (Mon-Fri), today or future</p>
+            {/* Two-Column Grid for Core Parameters - responsive */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Start Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Weekday (Mon-Fri)</p>
+              </div>
+
+              {/* Days Per Loan */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Days Per Loan
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="14"
+                  value={daysPerLoan}
+                  onChange={(e) => setDaysPerLoan(parseInt(e.target.value) || 7)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Typical: 7 days</p>
+              </div>
             </div>
 
-            {/* Number of Vehicles (Partner Chain Mode) */}
+            {/* Number of Vehicles (Partner Chain Mode) - Full Width */}
             {chainMode === 'partner' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Number of Vehicles
                 </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={numVehicles}
-                  onChange={(e) => setNumVehicles(parseInt(e.target.value))}
-                  className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                />
-                <span className="text-lg font-semibold text-gray-900 w-8 text-center">{numVehicles}</span>
-              </div>
-              <div className="flex justify-between text-xs text-gray-400 mt-1">
-                <span>1</span>
-                <span>10</span>
-              </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={numVehicles}
+                    onChange={(e) => setNumVehicles(parseInt(e.target.value))}
+                    className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  />
+                  <span className="text-lg font-semibold text-gray-900 w-8 text-center">{numVehicles}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>1</span>
+                  <span>10</span>
+                </div>
               </div>
             )}
 
-            {/* Number of Partners (Vehicle Chain Mode) */}
+            {/* Number of Partners (Vehicle Chain Mode) - Full Width */}
             {chainMode === 'vehicle' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1999,22 +2024,6 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
               </div>
             )}
 
-            {/* Days Per Loan */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Days Per Loan
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="14"
-                value={daysPerLoan}
-                onChange={(e) => setDaysPerLoan(parseInt(e.target.value) || 7)}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">Typical: 7 days (1 week)</p>
-            </div>
-
             {/* Tier Filter - Vehicle Chain Mode Only */}
             {chainMode === 'vehicle' && selectedVehicle && (
               <div className="border-t pt-4">
@@ -2033,7 +2042,7 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {['A+', 'A', 'B', 'C'].map((tier) => (
                     <label
                       key={tier}
@@ -2073,12 +2082,12 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
               </div>
             )}
 
-            {/* Make Filter - Show when partner is selected (Partner Chain Mode Only) */}
+            {/* Make Filter - Compact horizontal layout */}
             {chainMode === 'partner' && partnerIntelligence && partnerIntelligence.approved_makes && partnerIntelligence.approved_makes.length > 0 && (
               <div className="border-t pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    Filter by Make
+                    Filter by Make ({selectedMakes.length}/{partnerIntelligence.approved_makes.length})
                   </label>
                   <button
                     onClick={() => {
@@ -2087,17 +2096,21 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
                     }}
                     className="text-xs text-blue-600 hover:text-blue-800"
                   >
-                    {selectedMakes.length === partnerIntelligence.approved_makes.length ? 'Clear All' : 'Select All'}
+                    {selectedMakes.length === partnerIntelligence.approved_makes.length ? 'Clear' : 'All'}
                   </button>
                 </div>
 
-                <div className="max-h-48 overflow-y-auto border border-gray-200 rounded p-2 space-y-1">
+                <div className="flex flex-wrap gap-2">
                   {partnerIntelligence.approved_makes
                     .sort((a, b) => a.make.localeCompare(b.make))
                     .map((item) => (
                       <label
                         key={item.make}
-                        className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer"
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border cursor-pointer text-xs transition-colors ${
+                          selectedMakes.includes(item.make)
+                            ? 'bg-blue-50 border-blue-300 text-blue-700'
+                            : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                        }`}
                       >
                         <input
                           type="checkbox"
@@ -2109,24 +2122,20 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
                               setSelectedMakes(selectedMakes.filter(m => m !== item.make));
                             }
                           }}
-                          className="rounded border-gray-300"
+                          className="sr-only"
                         />
-                        <span className="text-xs flex-1">{item.make}</span>
-                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                          item.rank === 'A+' ? 'bg-purple-100 text-purple-800' :
-                          item.rank === 'A' ? 'bg-blue-100 text-blue-800' :
-                          item.rank === 'B' ? 'bg-green-100 text-green-800' :
-                          'bg-gray-100 text-gray-800'
+                        <span>{item.make}</span>
+                        <span className={`font-medium ${
+                          item.rank === 'A+' ? 'text-purple-600' :
+                          item.rank === 'A' ? 'text-blue-600' :
+                          item.rank === 'B' ? 'text-green-600' :
+                          'text-gray-600'
                         }`}>
                           {item.rank}
                         </span>
                       </label>
                     ))}
                 </div>
-
-                <p className="text-xs text-gray-500 mt-2">
-                  {selectedMakes.length} of {partnerIntelligence.approved_makes.length} makes selected
-                </p>
               </div>
             )}
 
@@ -2137,20 +2146,34 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     🎯 Vehicle Preferences (Optional)
                   </label>
-                  <p className="text-xs text-gray-500 mb-3">
-                    Select specific models to prioritize or restrict in chain generation
-                  </p>
-                </div>
+                  <button
+                    onClick={() => setShowModelSelectorModal(true)}
+                    className="w-full py-2 px-4 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {modelPreferences.length > 0
+                      ? `✓ ${modelPreferences.length} models selected - Click to edit`
+                      : '+ Select specific models to prioritize or restrict'}
+                  </button>
 
-                <ModelSelector
-                  office={selectedOffice}
-                  personId={selectedPartner}
-                  startDate={startDate}
-                  numVehicles={numVehicles}
-                  daysPerLoan={daysPerLoan}
-                  onSelectionChange={setModelPreferences}
-                  value={modelPreferences}
-                />
+                  {/* Show selected models as tags */}
+                  {modelPreferences.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {modelPreferences.slice(0, 5).map((pref, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800"
+                        >
+                          {pref.make} {pref.model}
+                        </span>
+                      ))}
+                      {modelPreferences.length > 5 && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600">
+                          +{modelPreferences.length - 5} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 <div className="mt-3">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -3633,8 +3656,8 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
           )}
         </div>
 
-        {/* Right Panel - Info */}
-        <div className="w-80 bg-white border-l p-6 overflow-y-auto">
+        {/* Right Panel - Info - Hidden on mobile, visible on desktop */}
+        <div className="hidden lg:block w-80 bg-white border-l p-6 overflow-y-auto">
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Chain Info</h2>
 
           <div className="space-y-4 text-sm">
@@ -3766,6 +3789,75 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
           </div>
         </div>
       </div>
+
+      {/* Model Selector Modal */}
+      {showModelSelectorModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          {/* Background overlay with rgba for transparency */}
+          <div
+            className="fixed inset-0 transition-opacity"
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+            onClick={() => setShowModelSelectorModal(false)}
+          ></div>
+
+          {/* Modal container */}
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20">
+            {/* Modal panel - positioned above overlay with z-index */}
+            <div className="relative z-50 bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all max-w-4xl w-full mx-auto">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    Select Vehicle Preferences
+                  </h3>
+                  <button
+                    onClick={() => setShowModelSelectorModal(false)}
+                    className="text-gray-400 hover:text-gray-500"
+                  >
+                    <span className="text-2xl">&times;</span>
+                  </button>
+                </div>
+
+                <p className="text-sm text-gray-500 mb-4">
+                  Choose specific models to prioritize or restrict in your chain generation.
+                </p>
+
+                {/* ModelSelector Component */}
+                <div className="max-h-[60vh] overflow-y-auto">
+                  <ModelSelector
+                    office={selectedOffice}
+                    personId={selectedPartner}
+                    startDate={startDate}
+                    numVehicles={numVehicles}
+                    daysPerLoan={daysPerLoan}
+                    onSelectionChange={setModelPreferences}
+                    value={modelPreferences}
+                  />
+                </div>
+              </div>
+
+              <div className="bg-gray-50 px-4 py-3 flex flex-row-reverse gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowModelSelectorModal(false)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+                >
+                  Done ({modelPreferences.length} selected)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModelPreferences([]);
+                    setShowModelSelectorModal(false);
+                  }}
+                  className="px-4 py-2 bg-white text-gray-700 rounded-md border border-gray-300 hover:bg-gray-50 text-sm font-medium"
+                >
+                  Clear & Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

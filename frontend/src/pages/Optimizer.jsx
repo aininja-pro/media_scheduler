@@ -82,7 +82,8 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
     const savedMetrics = sessionStorage.getItem('optimizer_metrics');
     const savedRunResult = sessionStorage.getItem('optimizer_run_result');
 
-    if (savedOffice) setSelectedOffice(savedOffice);
+    // Only restore from sessionStorage if no sharedOffice prop is provided
+    if (savedOffice && !sharedOffice) setSelectedOffice(savedOffice);
     if (savedWeekStart) {
       setWeekStart(savedWeekStart);
     } else {

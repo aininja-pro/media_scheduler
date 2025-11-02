@@ -346,16 +346,12 @@ async def get_calendar_activity(
             end = pd.to_datetime(loan.get('end_day')).date()
 
             # Check if this planned activity conflicts with existing activities
-            has_conflict = False
-            current_date = start
-            while current_date <= end:
-                if (vin, current_date) in existing_activities:
-                    has_conflict = True
-                    break
-                current_date += timedelta(days=1)
+            # NOTE: We ALWAYS show planned assignments regardless of conflicts
+            # This allows users to see overlaps and manage them manually
+            # The Chain Builder handles conflict detection during generation
 
             # Only add if no conflict
-            if not has_conflict:
+            if True:  # Changed from conflict check - always show planned assignments
                 activities.append({
                     'assignment_id': loan.get('assignment_id'),  # CRITICAL for status changes and delete
                     'vin': loan.get('vin'),

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ModelSelector from '../components/ModelSelector';
+import { EventManager, EventTypes } from '../utils/eventManager';
 
 function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
   // Chain mode: 'partner' (existing) or 'vehicle' (new)
@@ -329,6 +330,52 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
     }
   }, [manualPartnerSlots]);
 
+  // Listen for Calendar updates
+  useEffect(() => {
+    const handleCalendarDataUpdate = (detail) => {
+      console.log('[ChainBuilder] Received calendar data update event:', detail);
+
+      // Reload partner intelligence if in partner mode and office matches
+      if (chainMode === 'partner' && detail.office === selectedOffice && selectedPartner) {
+        console.log('[ChainBuilder] Reloading partner intelligence...');
+        fetch(
+          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+        )
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              setPartnerIntelligence(data);
+            }
+          })
+          .catch(err => console.error('Failed to reload partner intelligence:', err));
+      }
+
+      // Reload vehicle intelligence if in vehicle mode and office matches
+      if (chainMode === 'vehicle' && detail.office === selectedOffice && selectedVehicle) {
+        console.log('[ChainBuilder] Reloading vehicle intelligence...');
+        const now = new Date();
+        const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+        const sixMonthsAhead = new Date(now.getFullYear(), now.getMonth() + 6, 0);
+        const startDate = sixMonthsAgo.toISOString().split('T')[0];
+        const endDate = sixMonthsAhead.toISOString().split('T')[0];
+
+        fetch(
+          `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+        )
+          .then(response => response.json())
+          .then(data => setVehicleIntelligence(data))
+          .catch(err => console.error('Failed to reload vehicle intelligence:', err));
+      }
+    };
+
+    const handler = EventManager.on(EventTypes.CALENDAR_DATA_UPDATED, handleCalendarDataUpdate);
+
+    // Cleanup on unmount
+    return () => {
+      EventManager.off(EventTypes.CALENDAR_DATA_UPDATED, handler);
+    };
+  }, [chainMode, selectedOffice, selectedPartner, selectedVehicle]);
+
   // Load partner intelligence when partner is selected
   useEffect(() => {
     if (!selectedPartner || !selectedOffice) {
@@ -529,7 +576,7 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
     }
   };
 
-  const deleteEntireChain = async () => {
+  const deleteManualChain = async () => {
     if (!partnerIntelligence || !partnerIntelligence.upcoming_assignments) {
       return;
     }
@@ -537,11 +584,11 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
     const chainAssignments = partnerIntelligence.upcoming_assignments.filter(a => a.status === 'manual');
 
     if (chainAssignments.length === 0) {
-      setSaveMessage('❌ No saved chain to delete');
+      setSaveMessage('❌ No manual chain to delete');
       return;
     }
 
-    if (!window.confirm(`Delete entire chain (${chainAssignments.length} vehicles) for ${partnerIntelligence.partner.name}?`)) {
+    if (!window.confirm(`Delete manual chain (${chainAssignments.length} vehicles) for ${partnerIntelligence.partner.name}?`)) {
       return;
     }
 
@@ -556,7 +603,7 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
         });
       }
 
-      setSaveMessage(`✅ Deleted ${chainAssignments.length} vehicles from chain`);
+      setSaveMessage(`✅ Deleted ${chainAssignments.length} manual assignment(s)`);
 
       // Reload partner intelligence to refresh calendar
       if (selectedPartner && selectedOffice) {
@@ -570,6 +617,194 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
           }
         }
       }
+
+      // Emit event so Calendar can reload
+      EventManager.emit(EventTypes.CALENDAR_DATA_UPDATED, {
+        office: selectedOffice,
+        partnerId: selectedPartner,
+        action: 'deleteChain',
+        status: 'manual',
+        count: chainAssignments.length
+      });
+    } catch (err) {
+      setSaveMessage(`❌ Error deleting chain: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteRequestedChain = async () => {
+    if (!partnerIntelligence || !partnerIntelligence.upcoming_assignments) {
+      return;
+    }
+
+    const chainAssignments = partnerIntelligence.upcoming_assignments.filter(a => a.status === 'requested');
+
+    if (chainAssignments.length === 0) {
+      setSaveMessage('❌ No requested chain to delete');
+      return;
+    }
+
+    if (!window.confirm(`Delete requested chain (${chainAssignments.length} vehicles) for ${partnerIntelligence.partner.name}?\n\nNote: This will remove assignments that were sent to FMS.`)) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage('');
+
+    try {
+      // Delete each assignment
+      for (const assignment of chainAssignments) {
+        await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`, {
+          method: 'DELETE'
+        });
+      }
+
+      setSaveMessage(`✅ Deleted ${chainAssignments.length} requested assignment(s)`);
+
+      // Reload partner intelligence to refresh calendar
+      if (selectedPartner && selectedOffice) {
+        const response = await fetch(
+          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setPartnerIntelligence(data);
+          }
+        }
+      }
+
+      // Emit event so Calendar can reload
+      EventManager.emit(EventTypes.CALENDAR_DATA_UPDATED, {
+        office: selectedOffice,
+        partnerId: selectedPartner,
+        action: 'deleteChain',
+        status: 'requested',
+        count: chainAssignments.length
+      });
+    } catch (err) {
+      setSaveMessage(`❌ Error deleting chain: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteManualVehicleChain = async () => {
+    if (!vehicleIntelligence || !vehicleIntelligence.busy_periods) {
+      return;
+    }
+
+    const chainAssignments = vehicleIntelligence.busy_periods.filter(a => a.status === 'manual');
+
+    if (chainAssignments.length === 0) {
+      setSaveMessage('❌ No manual chain to delete');
+      return;
+    }
+
+    if (!window.confirm(`Delete manual chain (${chainAssignments.length} partners) for ${selectedVehicle.make} ${selectedVehicle.model}?`)) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage('');
+
+    try {
+      // Delete each assignment
+      for (const assignment of chainAssignments) {
+        await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`, {
+          method: 'DELETE'
+        });
+      }
+
+      setSaveMessage(`✅ Deleted ${chainAssignments.length} manual assignment(s)`);
+
+      // Reload vehicle intelligence to refresh calendar
+      if (selectedVehicle) {
+        const now = new Date();
+        const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+        const sixMonthsAhead = new Date(now.getFullYear(), now.getMonth() + 6, 0);
+        const startDate = sixMonthsAgo.toISOString().split('T')[0];
+        const endDate = sixMonthsAhead.toISOString().split('T')[0];
+
+        const response = await fetch(
+          `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          setVehicleIntelligence(data);
+        }
+      }
+
+      // Emit event so Calendar can reload
+      EventManager.emit(EventTypes.CALENDAR_DATA_UPDATED, {
+        office: selectedOffice,
+        vin: selectedVehicle.vin,
+        action: 'deleteChain',
+        status: 'manual',
+        count: chainAssignments.length
+      });
+    } catch (err) {
+      setSaveMessage(`❌ Error deleting chain: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteRequestedVehicleChain = async () => {
+    if (!vehicleIntelligence || !vehicleIntelligence.busy_periods) {
+      return;
+    }
+
+    const chainAssignments = vehicleIntelligence.busy_periods.filter(a => a.status === 'requested');
+
+    if (chainAssignments.length === 0) {
+      setSaveMessage('❌ No requested chain to delete');
+      return;
+    }
+
+    if (!window.confirm(`Delete requested chain (${chainAssignments.length} partners) for ${selectedVehicle.make} ${selectedVehicle.model}?\n\nNote: This will remove assignments that were sent to FMS.`)) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage('');
+
+    try {
+      // Delete each assignment
+      for (const assignment of chainAssignments) {
+        await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`, {
+          method: 'DELETE'
+        });
+      }
+
+      setSaveMessage(`✅ Deleted ${chainAssignments.length} requested assignment(s)`);
+
+      // Reload vehicle intelligence to refresh calendar
+      if (selectedVehicle) {
+        const now = new Date();
+        const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+        const sixMonthsAhead = new Date(now.getFullYear(), now.getMonth() + 6, 0);
+        const startDate = sixMonthsAgo.toISOString().split('T')[0];
+        const endDate = sixMonthsAhead.toISOString().split('T')[0];
+
+        const response = await fetch(
+          `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          setVehicleIntelligence(data);
+        }
+      }
+
+      // Emit event so Calendar can reload
+      EventManager.emit(EventTypes.CALENDAR_DATA_UPDATED, {
+        office: selectedOffice,
+        vin: selectedVehicle.vin,
+        action: 'deleteChain',
+        status: 'requested',
+        count: chainAssignments.length
+      });
     } catch (err) {
       setSaveMessage(`❌ Error deleting chain: ${err.message}`);
     } finally {
@@ -1601,11 +1836,45 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
         throw new Error(data.detail || 'Failed to save vehicle chain');
       }
 
-      setSaveMessage(`✅ ${data.message}`);
+      setSaveMessage(`✅ ${data.message} Slots cleared for next build.`);
       console.log('Vehicle chain saved:', data);
 
       // Clear modified flag
       setChainModified(false);
+
+      // Clear the chain slots for next build
+      setManualPartnerSlots([]);
+      setVehicleChain(null);
+
+      // Reload vehicle intelligence to show the saved assignments
+      if (selectedVehicle) {
+        try {
+          const now = new Date();
+          const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+          const sixMonthsAhead = new Date(now.getFullYear(), now.getMonth() + 6, 0);
+          const startDate = sixMonthsAgo.toISOString().split('T')[0];
+          const endDate = sixMonthsAhead.toISOString().split('T')[0];
+
+          const resp = await fetch(
+            `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+          );
+
+          if (resp.ok) {
+            const reloadData = await resp.json();
+            setVehicleIntelligence(reloadData);
+          }
+        } catch (reloadErr) {
+          console.error('Failed to reload vehicle intelligence:', reloadErr);
+        }
+      }
+
+      // Emit event so Calendar component can reload
+      EventManager.emit(EventTypes.CHAIN_DATA_UPDATED, {
+        office: selectedOffice,
+        vin: selectedVehicle.vin,
+        status: saveStatus,
+        assignmentIds: data.assignment_ids
+      });
 
     } catch (err) {
       setError(err.message);
@@ -1683,18 +1952,31 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
         score: slot.selected_vehicle.score
       }));
 
+      const payload = {
+        person_id: selectedPartner,
+        partner_name: partner.name,
+        office: selectedOffice,
+        status: status,  // 'manual' or 'requested'
+        chain: chainData
+      };
+
+      console.log('Saving chain with payload:', payload);
+
+      let payloadString;
+      try {
+        payloadString = JSON.stringify(payload);
+      } catch (jsonError) {
+        console.error('JSON stringify error:', jsonError);
+        console.error('Problematic payload:', payload);
+        throw new Error(`Failed to serialize payload: ${jsonError.message}`);
+      }
+
       const response = await fetch('http://localhost:8081/api/chain-builder/save-chain', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          person_id: selectedPartner,
-          partner_name: partner.name,
-          office: selectedOffice,
-          status: status,  // 'manual' or 'requested'
-          chain: chainData
-        })
+        body: payloadString
       });
 
       const data = await response.json();
@@ -1703,7 +1985,7 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
         throw new Error(data.detail || 'Failed to save chain');
       }
 
-      setSaveMessage(`✅ ${data.message} View in Calendar tab.`);
+      setSaveMessage(`✅ ${data.message} Slots cleared for next build.`);
       console.log('Manual chain saved:', data);
 
       // Clear the proposed chain slots (green bars) since they're now saved
@@ -1722,6 +2004,14 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
           }
         }
       }
+
+      // Emit event so Calendar component can reload
+      EventManager.emit(EventTypes.CHAIN_DATA_UPDATED, {
+        office: selectedOffice,
+        partnerId: selectedPartner,
+        status: status,
+        assignmentIds: data.assignment_ids
+      });
     } catch (err) {
       setSaveMessage(`❌ Error: ${err.message}`);
     } finally {
@@ -2404,18 +2694,35 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
                   <h3 className="text-md font-semibold text-gray-900">Chain Timeline</h3>
 
                   <div className="flex items-center gap-3">
-                    {/* Delete Chain Button - show if partner has saved manual chains */}
+                    {/* Delete Manual Chain Button - show if partner has saved manual chains */}
                     {partnerIntelligence?.upcoming_assignments?.some(a => a.status === 'manual') && (
                       <button
-                        onClick={deleteEntireChain}
+                        onClick={deleteManualChain}
                         disabled={isSaving}
                         className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                           isSaving
                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-red-600 text-white hover:bg-red-700'
+                            : 'bg-green-700 text-white hover:bg-green-800'
                         }`}
+                        title="Delete manual (green) chain assignments"
                       >
-                        Delete Saved Chain
+                        Delete Manual Chain
+                      </button>
+                    )}
+
+                    {/* Delete Requested Chain Button - show if partner has saved requested chains */}
+                    {partnerIntelligence?.upcoming_assignments?.some(a => a.status === 'requested') && (
+                      <button
+                        onClick={deleteRequestedChain}
+                        disabled={isSaving}
+                        className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                          isSaving
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-pink-700 text-white hover:bg-pink-800'
+                        }`}
+                        title="Delete requested (magenta) chain assignments sent to FMS"
+                      >
+                        Delete Requested Chain
                       </button>
                     )}
 
@@ -2760,7 +3067,7 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
                     {/* Save Chain Buttons */}
                     <div className="flex gap-2">
                       <button
-                        onClick={saveManualChain}
+                        onClick={() => saveManualChain('manual')}
                         disabled={isSaving || manualSlots.some(s => !s.selected_vehicle)}
                         className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
                           isSaving || manualSlots.some(s => !s.selected_vehicle)
@@ -3134,29 +3441,63 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
                     </a>
                   </div>
 
-                  {/* Month Navigation Arrows */}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={slideBackward}
-                      className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50 text-xs"
-                      title="Previous month"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <span className="text-sm font-medium text-gray-700 px-3 py-1">
-                      {viewStartDate?.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                    </span>
-                    <button
-                      onClick={slideForward}
-                      className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50 text-xs"
-                      title="Next month"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
+                  <div className="flex items-center gap-3">
+                    {/* Delete Manual Chain Button - show if vehicle has saved manual chains */}
+                    {vehicleIntelligence?.busy_periods?.some(a => a.status === 'manual') && (
+                      <button
+                        onClick={deleteManualVehicleChain}
+                        disabled={isSaving}
+                        className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                          isSaving
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-green-700 text-white hover:bg-green-800'
+                        }`}
+                        title="Delete manual (green) chain assignments"
+                      >
+                        Delete Manual Chain
+                      </button>
+                    )}
+
+                    {/* Delete Requested Chain Button - show if vehicle has saved requested chains */}
+                    {vehicleIntelligence?.busy_periods?.some(a => a.status === 'requested') && (
+                      <button
+                        onClick={deleteRequestedVehicleChain}
+                        disabled={isSaving}
+                        className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                          isSaving
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-pink-700 text-white hover:bg-pink-800'
+                        }`}
+                        title="Delete requested (magenta) chain assignments sent to FMS"
+                      >
+                        Delete Requested Chain
+                      </button>
+                    )}
+
+                    {/* Month Navigation Arrows */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={slideBackward}
+                        className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50 text-xs"
+                        title="Previous month"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      <span className="text-sm font-medium text-gray-700 px-3 py-1">
+                        {viewStartDate?.toLocaleDateString('en-US', { month: 'numeric' })}
+                      </span>
+                      <button
+                        onClick={slideForward}
+                        className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50 text-xs"
+                        title="Next month"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

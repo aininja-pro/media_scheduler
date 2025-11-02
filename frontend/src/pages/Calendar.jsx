@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { EventManager, EventTypes } from '../utils/eventManager';
 
 // Haversine distance calculation (in miles)
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -101,6 +102,13 @@ function Calendar({ sharedOffice, isActive, onBuildChainForVehicle }) {
       if (data.success) {
         // Reload activities
         loadActivities();
+
+        // Emit event so Chain Builder can reload
+        EventManager.emit(EventTypes.CALENDAR_DATA_UPDATED, {
+          office: selectedOffice,
+          action: 'delete',
+          assignmentId
+        });
       } else {
         alert(`Failed to delete: ${data.message}`);
       }
@@ -342,6 +350,25 @@ function Calendar({ sharedOffice, isActive, onBuildChainForVehicle }) {
     }
   }, [selectedOffice, activities]);
 
+  // Listen for Chain Builder updates
+  useEffect(() => {
+    const handleChainDataUpdate = (detail) => {
+      console.log('[Calendar] Received chain data update event:', detail);
+      // Reload activities if the office matches
+      if (detail.office === selectedOffice) {
+        console.log('[Calendar] Office matches, reloading activities...');
+        loadActivities();
+      }
+    };
+
+    const handler = EventManager.on(EventTypes.CHAIN_DATA_UPDATED, handleChainDataUpdate);
+
+    // Cleanup on unmount
+    return () => {
+      EventManager.off(EventTypes.CHAIN_DATA_UPDATED, handler);
+    };
+  }, [selectedOffice]); // Re-subscribe when office changes
+
   const loadActivities = async () => {
     if (!selectedOffice || !viewStartDate || !viewEndDate) return;
 
@@ -349,12 +376,12 @@ function Calendar({ sharedOffice, isActive, onBuildChainForVehicle }) {
     setError('');
 
     try {
-      // Fetch 7-week buffer (2 weeks back, 5 weeks forward) for smooth scrolling
+      // Fetch 3-month buffer (6 weeks back, 12 weeks forward) to show all scheduled chains
       const today = new Date();
       const fetchStart = new Date(today);
-      fetchStart.setDate(today.getDate() - 14);
+      fetchStart.setDate(today.getDate() - 42); // 6 weeks back
       const fetchEnd = new Date(today);
-      fetchEnd.setDate(today.getDate() + 35); // 5 weeks forward to cover 4-partner chains
+      fetchEnd.setDate(today.getDate() + 84); // 12 weeks forward
 
       const startDate = fetchStart.toISOString().split('T')[0];
       const endDate = fetchEnd.toISOString().split('T')[0];

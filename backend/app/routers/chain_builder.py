@@ -1317,6 +1317,7 @@ async def get_vehicle_busy_periods(
             if assignment_start and assignment_end:
                 if assignment_start <= end_dt and assignment_end >= start_dt:
                     busy_periods.append({
+                        'assignment_id': assignment.get('assignment_id'),  # CRITICAL: needed for deletion
                         'start_date': assignment['start_day'],
                         'end_date': assignment['end_day'],
                         'partner_name': assignment.get('partner_name', 'Unknown'),

@@ -13,7 +13,7 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-function Calendar({ sharedOffice, isActive, onBuildChainForVehicle }) {
+function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehicle }) {
   // Use shared office from parent, default to 'Los Angeles' if not provided
   const [selectedOffice, setSelectedOffice] = useState(sharedOffice || 'Los Angeles');
 
@@ -23,6 +23,14 @@ function Calendar({ sharedOffice, isActive, onBuildChainForVehicle }) {
       setSelectedOffice(sharedOffice);
     }
   }, [sharedOffice]);
+
+  // Update parent when local office changes
+  const handleOfficeChange = (newOffice) => {
+    setSelectedOffice(newOffice);
+    if (onOfficeChange) {
+      onOfficeChange(newOffice);
+    }
+  };
   const [selectedMonth, setSelectedMonth] = useState('');
   const [viewStartDate, setViewStartDate] = useState(null); // Custom start date for sliding view
   const [viewEndDate, setViewEndDate] = useState(null); // Custom end date for sliding view
@@ -1184,7 +1192,7 @@ function Calendar({ sharedOffice, isActive, onBuildChainForVehicle }) {
             <label className="block text-xs font-medium text-gray-700 mb-1">Office</label>
             <select
               value={selectedOffice}
-              onChange={(e) => setSelectedOffice(e.target.value)}
+              onChange={(e) => handleOfficeChange(e.target.value)}
               className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
             >
               {offices.map(office => (

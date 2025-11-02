@@ -599,6 +599,7 @@ function App() {
         <div style={{ display: activeTab === 'calendar' ? 'block' : 'none' }}>
           <Calendar
             sharedOffice={optimizerOffice}
+            onOfficeChange={setOptimizerOffice}
             isActive={activeTab === 'calendar'}
             onBuildChainForVehicle={(vehicleData) => {
               setChainBuilderVehicle(vehicleData);
@@ -611,6 +612,7 @@ function App() {
         {activeTab === 'partners' && (
           <Partners
             office={optimizerOffice}
+            onOfficeChange={setOptimizerOffice}
           />
         )}
 
@@ -618,6 +620,7 @@ function App() {
         {activeTab === 'chain-builder' && (
           <ChainBuilder
             sharedOffice={optimizerOffice}
+            onOfficeChange={setOptimizerOffice}
             preloadedVehicle={chainBuilderVehicle}
             onVehicleLoaded={() => setChainBuilderVehicle(null)}
           />

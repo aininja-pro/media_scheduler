@@ -2,12 +2,20 @@ import React, { useState, useEffect } from 'react';
 import ModelSelector from '../components/ModelSelector';
 import { EventManager, EventTypes } from '../utils/eventManager';
 
-function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
+function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicleLoaded }) {
   // Chain mode: 'partner' (existing) or 'vehicle' (new)
   const [chainMode, setChainMode] = useState('partner');
 
   // Use shared office from parent, default to 'Los Angeles'
   const [selectedOffice, setSelectedOffice] = useState(sharedOffice || 'Los Angeles');
+
+  // Update parent when local office changes
+  const handleOfficeChange = (newOffice) => {
+    setSelectedOffice(newOffice);
+    if (onOfficeChange) {
+      onOfficeChange(newOffice);
+    }
+  };
   const [selectedPartner, setSelectedPartner] = useState('');
   const [startDate, setStartDate] = useState('');
   const [numVehicles, setNumVehicles] = useState(4);
@@ -2038,7 +2046,7 @@ function ChainBuilder({ sharedOffice, preloadedVehicle, onVehicleLoaded }) {
               <label className="text-sm text-gray-600">Office</label>
               <select
                 value={selectedOffice}
-                onChange={(e) => setSelectedOffice(e.target.value)}
+                onChange={(e) => handleOfficeChange(e.target.value)}
                 className="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {offices.map(office => (

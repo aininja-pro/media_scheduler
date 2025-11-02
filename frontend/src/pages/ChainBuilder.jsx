@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import ModelSelector from '../components/ModelSelector';
 import { EventManager, EventTypes } from '../utils/eventManager';
+import TimelineBar from '../components/TimelineBar';
+import AssignmentDetailsPanel from '../components/AssignmentDetailsPanel';
 
 function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicleLoaded }) {
   // Chain mode: 'partner' (existing) or 'vehicle' (new)
@@ -84,6 +86,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
   // Budget calculation for chain
   const [chainBudget, setChainBudget] = useState(null);
+
+  // Assignment details panel
+  const [selectedAssignment, setSelectedAssignment] = useState(null); // For details panel
 
   // Model Selector Modal state
   const [showModelSelectorModal, setShowModelSelectorModal] = useState(false);
@@ -817,6 +822,178 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       setSaveMessage(`❌ Error deleting chain: ${err.message}`);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Timeline bar action handlers
+  const handleTimelineBarClick = (assignment) => {
+    setSelectedAssignment(assignment);
+  };
+
+  const handleTimelineBarDelete = async (assignment) => {
+    if (!assignment.assignment_id) return;
+
+    if (!window.confirm(`Delete this ${assignment.status} assignment?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`,
+        { method: 'DELETE' }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSaveMessage(`✅ Assignment deleted successfully`);
+
+        // Reload intelligence based on mode
+        if (chainMode === 'partner' && selectedPartner && selectedOffice) {
+          const resp = await fetch(
+            `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+          );
+          if (resp.ok) {
+            const reloadData = await resp.json();
+            if (reloadData.success) {
+              setPartnerIntelligence(reloadData);
+            }
+          }
+        } else if (chainMode === 'vehicle' && selectedVehicle) {
+          const now = new Date();
+          const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+          const sixMonthsAhead = new Date(now.getFullYear(), now.getMonth() + 6, 0);
+          const startDate = sixMonthsAgo.toISOString().split('T')[0];
+          const endDate = sixMonthsAhead.toISOString().split('T')[0];
+
+          const resp = await fetch(
+            `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+          );
+          if (resp.ok) {
+            const reloadData = await resp.json();
+            setVehicleIntelligence(reloadData);
+          }
+        }
+
+        // Emit event for Calendar
+        EventManager.emit(EventTypes.CALENDAR_DATA_UPDATED, {
+          office: selectedOffice,
+          action: 'delete',
+          assignmentId: assignment.assignment_id
+        });
+      } else {
+        setSaveMessage(`❌ Failed to delete: ${data.message}`);
+      }
+    } catch (err) {
+      setSaveMessage(`❌ Error: ${err.message}`);
+    }
+  };
+
+  const handleTimelineBarRequest = async (assignment) => {
+    if (!assignment.assignment_id) return;
+
+    try {
+      const response = await fetch(
+        `http://localhost:8081/api/calendar/change-assignment-status/${assignment.assignment_id}?new_status=requested`,
+        { method: 'PATCH' }
+      );
+      const data = await response.json();
+
+      if (data.success) {
+        setSaveMessage(`✅ Changed to requested (sent to FMS)`);
+
+        // Reload intelligence
+        if (chainMode === 'partner' && selectedPartner && selectedOffice) {
+          const resp = await fetch(
+            `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+          );
+          if (resp.ok) {
+            const reloadData = await resp.json();
+            if (reloadData.success) {
+              setPartnerIntelligence(reloadData);
+            }
+          }
+        } else if (chainMode === 'vehicle' && selectedVehicle) {
+          const now = new Date();
+          const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+          const sixMonthsAhead = new Date(now.getFullYear(), now.getMonth() + 6, 0);
+          const startDate = sixMonthsAgo.toISOString().split('T')[0];
+          const endDate = sixMonthsAhead.toISOString().split('T')[0];
+
+          const resp = await fetch(
+            `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+          );
+          if (resp.ok) {
+            const reloadData = await resp.json();
+            setVehicleIntelligence(reloadData);
+          }
+        }
+
+        // Emit event for Calendar
+        EventManager.emit(EventTypes.CALENDAR_DATA_UPDATED, {
+          office: selectedOffice,
+          action: 'request',
+          assignmentId: assignment.assignment_id
+        });
+      } else {
+        setSaveMessage(`❌ Failed to request: ${data.message}`);
+      }
+    } catch (err) {
+      setSaveMessage(`❌ Error: ${err.message}`);
+    }
+  };
+
+  const handleTimelineBarUnrequest = async (assignment) => {
+    if (!assignment.assignment_id) return;
+
+    try {
+      const response = await fetch(
+        `http://localhost:8081/api/calendar/change-assignment-status/${assignment.assignment_id}?new_status=manual`,
+        { method: 'PATCH' }
+      );
+      const data = await response.json();
+
+      if (data.success) {
+        setSaveMessage(`✅ Changed back to manual`);
+
+        // Reload intelligence
+        if (chainMode === 'partner' && selectedPartner && selectedOffice) {
+          const resp = await fetch(
+            `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+          );
+          if (resp.ok) {
+            const reloadData = await resp.json();
+            if (reloadData.success) {
+              setPartnerIntelligence(reloadData);
+            }
+          }
+        } else if (chainMode === 'vehicle' && selectedVehicle) {
+          const now = new Date();
+          const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+          const sixMonthsAhead = new Date(now.getFullYear(), now.getMonth() + 6, 0);
+          const startDate = sixMonthsAgo.toISOString().split('T')[0];
+          const endDate = sixMonthsAhead.toISOString().split('T')[0];
+
+          const resp = await fetch(
+            `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+          );
+          if (resp.ok) {
+            const reloadData = await resp.json();
+            setVehicleIntelligence(reloadData);
+          }
+        }
+
+        // Emit event for Calendar
+        EventManager.emit(EventTypes.CALENDAR_DATA_UPDATED, {
+          office: selectedOffice,
+          action: 'unrequest',
+          assignmentId: assignment.assignment_id
+        });
+      } else {
+        setSaveMessage(`❌ Failed to unrequest: ${data.message}`);
+      }
+    } catch (err) {
+      setSaveMessage(`❌ Error: ${err.message}`);
     }
   };
 
@@ -2848,12 +3025,18 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                 const [eYear, eMonth, eDay] = assignment.end_day.split('-').map(Number);
                                 existingActivities.push({
                                   type: 'scheduled',
+                                  assignment_id: assignment.assignment_id,  // CRITICAL for interactive actions
                                   vin: assignment.vin,
                                   make: assignment.make,
                                   model: assignment.model,
                                   status: assignment.status,
+                                  tier: assignment.tier,
+                                  score: assignment.score,
                                   start: new Date(sYear, sMonth - 1, sDay),
-                                  end: new Date(eYear, eMonth - 1, eDay)
+                                  end: new Date(eYear, eMonth - 1, eDay),
+                                  start_day: assignment.start_day,
+                                  end_day: assignment.end_day,
+                                  office: assignment.office
                                 });
                               });
 
@@ -2881,17 +3064,10 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                 const left = ((startDayOffset + 0.5) / totalDays) * 100;
                                 const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
 
-                                // Color by type and status: BLUE for active, MAGENTA for requested, GREEN for planned/manual
-                                const barColor = activity.type === 'active'
-                                  ? 'bg-gradient-to-br from-blue-500 to-blue-600 border-blue-700'
-                                  : activity.status === 'requested'
-                                    ? 'bg-gradient-to-br from-pink-500 to-pink-600 border-pink-700'
-                                    : 'bg-gradient-to-br from-green-400 to-green-500 border-green-600';
-
                                 return (
-                                  <div
+                                  <TimelineBar
                                     key={`existing-${idx}`}
-                                    className={`absolute ${barColor} border-2 rounded-lg shadow-md text-white text-xs font-semibold overflow-hidden px-2 flex items-center`}
+                                    activity={activity}
                                     style={{
                                       left: `${left}%`,
                                       width: `${width}%`,
@@ -2900,13 +3076,13 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                       height: '20px',
                                       zIndex: 5
                                     }}
-                                    title={`${activity.type === 'active' ? 'ACTIVE' : 'SCHEDULED'}: ${activity.make} ${activity.model}\n${activity.start.toLocaleDateString()} - ${activity.end.toLocaleDateString()}`}
-                                  >
-                                    <span className="truncate text-[10px]">
-                                      {activity.type === 'active' ? '🔵 ' : '🤖 '}
-                                      {activity.make} {activity.model}
-                                    </span>
-                                  </div>
+                                    onDelete={handleTimelineBarDelete}
+                                    onRequest={handleTimelineBarRequest}
+                                    onUnrequest={handleTimelineBarUnrequest}
+                                    onClick={handleTimelineBarClick}
+                                    interactive={true}
+                                    showActions={true}
+                                  />
                                 );
                               });
                             })()}
@@ -3601,17 +3777,20 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                               const left = ((startDayOffset + 0.5) / totalDays) * 100;
                               const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
 
-                              // Color by status: BLUE for active, MAGENTA for requested, GREEN for manual
-                              const barColor = period.status === 'active'
-                                ? 'bg-gradient-to-br from-blue-500 to-blue-600 border-blue-700'
-                                : period.status === 'requested'
-                                  ? 'bg-gradient-to-br from-pink-500 to-pink-600 border-pink-700'
-                                  : 'bg-gradient-to-br from-green-400 to-green-500 border-green-600';
+                              // Create activity object for TimelineBar
+                              const activity = {
+                                ...period,
+                                type: period.status === 'active' ? 'active' : 'scheduled',
+                                start: pStart,
+                                end: pEnd,
+                                start_day: period.start_date,
+                                end_day: period.end_date
+                              };
 
                               return (
-                                <div
+                                <TimelineBar
                                   key={`busy-${idx}`}
-                                  className={`absolute ${barColor} border-2 rounded-lg shadow-md text-white text-xs font-semibold overflow-hidden px-2 flex items-center`}
+                                  activity={activity}
                                   style={{
                                     left: `${left}%`,
                                     width: `${width}%`,
@@ -3620,13 +3799,13 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                     height: '20px',
                                     zIndex: 5
                                   }}
-                                  title={`${period.status === 'active' ? 'ACTIVE' : 'SCHEDULED'}: ${period.partner_name}\n${period.start_date} - ${period.end_date}`}
-                                >
-                                  <span className="truncate text-[10px]">
-                                    {period.status === 'active' ? '🔵 ' : '🤖 '}
-                                    {period.partner_name}
-                                  </span>
-                                </div>
+                                  onDelete={handleTimelineBarDelete}
+                                  onRequest={handleTimelineBarRequest}
+                                  onUnrequest={handleTimelineBarUnrequest}
+                                  onClick={handleTimelineBarClick}
+                                  interactive={true}
+                                  showActions={true}
+                                />
                               );
                             });
                           })()}
@@ -4206,6 +4385,17 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
             </div>
           </div>
         </div>
+      )}
+
+      {/* Assignment Details Panel */}
+      {selectedAssignment && (
+        <AssignmentDetailsPanel
+          assignment={selectedAssignment}
+          onClose={() => setSelectedAssignment(null)}
+          onDelete={handleTimelineBarDelete}
+          onRequest={handleTimelineBarRequest}
+          onUnrequest={handleTimelineBarUnrequest}
+        />
       )}
     </div>
   );

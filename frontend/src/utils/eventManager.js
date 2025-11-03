@@ -60,5 +60,8 @@ export const EventManager = {
  */
 export const EventTypes = {
   CHAIN_DATA_UPDATED: 'chainDataUpdated',
-  CALENDAR_DATA_UPDATED: 'calendarDataUpdated'
+  CALENDAR_DATA_UPDATED: 'calendarDataUpdated',
+  APPLY_VEHICLE_HISTORY_FILTER: 'APPLY_VEHICLE_HISTORY_FILTER', // Filter partner list by vehicle review history
+  APPLY_PARTNER_HISTORY_FILTER: 'APPLY_PARTNER_HISTORY_FILTER', // Filter vehicle list by partner review history
+  CLEAR_HISTORY_FILTERS: 'CLEAR_HISTORY_FILTERS' // Clear all review history filters
 };

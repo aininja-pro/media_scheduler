@@ -2017,3 +2017,291 @@ async def get_partner_slot_options(
     except Exception as e:
         logger.error(f"Error getting partner slot options: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get partner slot options: {str(e)}")
+
+
+@router.get("/vehicle-review-history/{vin}")
+async def get_vehicle_review_history(
+    vin: str,
+    office: str = Query(..., description="Office name"),
+    months_back: int = Query(6, description="How many months back to query (default 6)", ge=1, le=24),
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Get review history for a specific vehicle.
+
+    Returns list of partners who have reviewed this vehicle in the past,
+    with publication status, clips count, and review dates.
+
+    Used by Chain Builder AssignmentDetailsPanel to show "Partners who reviewed this vehicle".
+
+    Args:
+        vin: Vehicle VIN
+        office: Office name
+        months_back: How many months back to query (default 6)
+
+    Returns:
+        Dict with:
+        - vin: Vehicle VIN
+        - reviews: List of past reviews with partner info
+        - total_historical_reviews: Total count beyond time window
+    """
+    try:
+        logger.info(f"Getting review history for vehicle {vin}, office {office}, last {months_back} months")
+
+        # Calculate cutoff date
+        cutoff_date = (datetime.now() - timedelta(days=months_back * 30)).strftime('%Y-%m-%d')
+
+        # Load loan history with pagination, filtered by VIN
+        # Note: loan_history doesn't support direct VIN filtering in Supabase,
+        # so we need to load all and filter client-side
+        all_loan_history = []
+        limit = 1000
+        offset = 0
+        while True:
+            loan_response = db.client.table('loan_history').select('*').range(offset, offset + limit - 1).execute()
+            if not loan_response.data:
+                break
+            all_loan_history.extend(loan_response.data)
+            offset += limit
+            if len(loan_response.data) < limit:
+                break
+
+        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
+
+        if loan_history_df.empty:
+            return {
+                "vin": vin,
+                "office": office,
+                "reviews": [],
+                "total_historical_reviews": 0,
+                "cutoff_date": cutoff_date
+            }
+
+        # Filter by VIN
+        vehicle_loans = loan_history_df[loan_history_df['vin'] == vin]
+
+        if vehicle_loans.empty:
+            return {
+                "vin": vin,
+                "office": office,
+                "reviews": [],
+                "total_historical_reviews": 0,
+                "cutoff_date": cutoff_date
+            }
+
+        # Get total count before date filtering
+        total_historical_reviews = len(vehicle_loans)
+
+        # Filter by date (last N months) - make a copy to avoid SettingWithCopyWarning
+        vehicle_loans = vehicle_loans.copy()
+        vehicle_loans['start_date'] = pd.to_datetime(vehicle_loans['start_date'])
+        recent_loans = vehicle_loans[vehicle_loans['start_date'] >= cutoff_date]
+
+        # Load media partners for name lookup
+        partners_response = db.client.table('media_partners').select('person_id, name').execute()
+        partners_lookup = {int(p['person_id']): p['name'] for p in partners_response.data} if partners_response.data else {}
+
+        # Build reviews list
+        reviews = []
+        for _, loan in recent_loans.iterrows():
+            # Convert person_id - handle float to int conversion
+            person_id_val = loan.get('person_id')
+            if pd.notna(person_id_val):
+                person_id = int(float(person_id_val))
+            else:
+                person_id = None
+            partner_name = partners_lookup.get(person_id, f'Partner {person_id}' if person_id else 'Unknown')
+
+            # Convert dates to string - handle both Timestamp and string types
+            start_date = loan.get('start_date')
+            if pd.notna(start_date):
+                start_date_str = start_date.strftime('%Y-%m-%d') if hasattr(start_date, 'strftime') else str(start_date)
+            else:
+                start_date_str = None
+
+            end_date = loan.get('end_date')
+            if pd.notna(end_date):
+                # Convert end_date to datetime if it's a string
+                if isinstance(end_date, str):
+                    end_date = pd.to_datetime(end_date)
+                end_date_str = end_date.strftime('%Y-%m-%d') if hasattr(end_date, 'strftime') else str(end_date)
+            else:
+                end_date_str = None
+
+            # Convert clips counts - handle float to int conversion
+            clips_count_val = loan.get('clips_count', 0)
+            clips_count = int(float(clips_count_val)) if pd.notna(clips_count_val) else 0
+
+            clips_received_val = loan.get('clips_received', 0)
+            clips_received = int(float(clips_received_val)) if pd.notna(clips_received_val) else 0
+
+            reviews.append({
+                'person_id': person_id,
+                'partner_name': partner_name,
+                'start_date': start_date_str,
+                'end_date': end_date_str,
+                'published': bool(loan.get('published', False)),
+                'clips_count': clips_count,
+                'clips_received': clips_received
+            })
+
+        # Sort by date (most recent first)
+        reviews.sort(key=lambda x: x['start_date'] if x['start_date'] else '', reverse=True)
+
+        logger.info(f"Found {len(reviews)} reviews for vehicle {vin} in last {months_back} months (total historical: {total_historical_reviews})")
+
+        return {
+            "vin": vin,
+            "office": office,
+            "reviews": reviews,
+            "total_historical_reviews": total_historical_reviews,
+            "cutoff_date": cutoff_date,
+            "months_back": months_back
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting vehicle review history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get vehicle review history: {str(e)}")
+
+
+@router.get("/partner-review-history/{person_id}")
+async def get_partner_review_history(
+    person_id: int,
+    office: str = Query(..., description="Office name"),
+    months_back: int = Query(6, description="How many months back to query (default 6)", ge=1, le=24),
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Get review history for a specific media partner.
+
+    Returns list of vehicles (VINs) that this partner has reviewed in the past,
+    with publication status, clips count, and review dates.
+
+    Used by Chain Builder AssignmentDetailsPanel to show "Vehicles reviewed by this partner".
+
+    Args:
+        person_id: Media partner ID
+        office: Office name
+        months_back: How many months back to query (default 6)
+
+    Returns:
+        Dict with:
+        - person_id: Partner ID
+        - partner_name: Partner name
+        - reviews: List of past reviews with vehicle info
+        - total_historical_reviews: Total count beyond time window
+    """
+    try:
+        logger.info(f"Getting review history for partner {person_id}, office {office}, last {months_back} months")
+
+        # Calculate cutoff date
+        cutoff_date = (datetime.now() - timedelta(days=months_back * 30)).strftime('%Y-%m-%d')
+
+        # Load loan history with pagination
+        all_loan_history = []
+        limit = 1000
+        offset = 0
+        while True:
+            loan_response = db.client.table('loan_history').select('*').range(offset, offset + limit - 1).execute()
+            if not loan_response.data:
+                break
+            all_loan_history.extend(loan_response.data)
+            offset += limit
+            if len(loan_response.data) < limit:
+                break
+
+        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
+
+        if loan_history_df.empty:
+            return {
+                "person_id": person_id,
+                "partner_name": f"Partner {person_id}",
+                "office": office,
+                "reviews": [],
+                "total_historical_reviews": 0,
+                "cutoff_date": cutoff_date
+            }
+
+        # Filter by person_id
+        if 'person_id' in loan_history_df.columns:
+            loan_history_df['person_id'] = loan_history_df['person_id'].astype(int)
+
+        partner_loans = loan_history_df[loan_history_df['person_id'] == int(person_id)]
+
+        # Get partner name
+        partners_response = db.client.table('media_partners').select('person_id, name').eq('person_id', person_id).execute()
+        partner_name = partners_response.data[0]['name'] if partners_response.data else f"Partner {person_id}"
+
+        if partner_loans.empty:
+            return {
+                "person_id": person_id,
+                "partner_name": partner_name,
+                "office": office,
+                "reviews": [],
+                "total_historical_reviews": 0,
+                "cutoff_date": cutoff_date
+            }
+
+        # Get total count before date filtering
+        total_historical_reviews = len(partner_loans)
+
+        # Filter by date (last N months) - make a copy to avoid SettingWithCopyWarning
+        partner_loans = partner_loans.copy()
+        partner_loans['start_date'] = pd.to_datetime(partner_loans['start_date'])
+        recent_loans = partner_loans[partner_loans['start_date'] >= cutoff_date]
+
+        # Build reviews list
+        reviews = []
+        for _, loan in recent_loans.iterrows():
+            # Convert dates to string - handle both Timestamp and string types
+            start_date = loan.get('start_date')
+            if pd.notna(start_date):
+                start_date_str = start_date.strftime('%Y-%m-%d') if hasattr(start_date, 'strftime') else str(start_date)
+            else:
+                start_date_str = None
+
+            end_date = loan.get('end_date')
+            if pd.notna(end_date):
+                # Convert end_date to datetime if it's a string
+                if isinstance(end_date, str):
+                    end_date = pd.to_datetime(end_date)
+                end_date_str = end_date.strftime('%Y-%m-%d') if hasattr(end_date, 'strftime') else str(end_date)
+            else:
+                end_date_str = None
+
+            # Convert clips counts - handle float to int conversion
+            clips_count_val = loan.get('clips_count', 0)
+            clips_count = int(float(clips_count_val)) if pd.notna(clips_count_val) else 0
+
+            clips_received_val = loan.get('clips_received', 0)
+            clips_received = int(float(clips_received_val)) if pd.notna(clips_received_val) else 0
+
+            reviews.append({
+                'vin': loan.get('vin', 'Unknown'),
+                'make': loan.get('make', 'Unknown'),
+                'model': loan.get('model', ''),
+                'start_date': start_date_str,
+                'end_date': end_date_str,
+                'published': bool(loan.get('published', False)),
+                'clips_count': clips_count,
+                'clips_received': clips_received
+            })
+
+        # Sort by date (most recent first)
+        reviews.sort(key=lambda x: x['start_date'] if x['start_date'] else '', reverse=True)
+
+        logger.info(f"Found {len(reviews)} reviews by partner {person_id} in last {months_back} months (total historical: {total_historical_reviews})")
+
+        return {
+            "person_id": person_id,
+            "partner_name": partner_name,
+            "office": office,
+            "reviews": reviews,
+            "total_historical_reviews": total_historical_reviews,
+            "cutoff_date": cutoff_date,
+            "months_back": months_back
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting partner review history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get partner review history: {str(e)}")

@@ -93,6 +93,10 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   // Model Selector Modal state
   const [showModelSelectorModal, setShowModelSelectorModal] = useState(false);
 
+  // Review history filters
+  const [vehicleHistoryFilter, setVehicleHistoryFilter] = useState(null); // { vin, reviewHistory }
+  const [partnerHistoryFilter, setPartnerHistoryFilter] = useState(null); // { person_id, reviewHistory }
+
   // Update selectedOffice when sharedOffice prop changes
   useEffect(() => {
     if (sharedOffice) {
@@ -175,8 +179,19 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         }
 
         const data = await response.json();
-        setVehicles(data.vehicles || []);
-        console.log(`Loaded ${data.vehicles?.length || 0} vehicles for search "${vehicleSearchQuery}" in ${selectedOffice}`);
+        let vehiclesList = data.vehicles || [];
+
+        // Apply partner history filter if active
+        if (partnerHistoryFilter && partnerHistoryFilter.reviewHistory) {
+          const reviewedVINs = new Set(
+            partnerHistoryFilter.reviewHistory.reviews.map(r => r.vin)
+          );
+          vehiclesList = vehiclesList.filter(v => reviewedVINs.has(v.vin));
+          console.log(`Filtered to ${vehiclesList.length} vehicles reviewed by partner ${partnerHistoryFilter.person_id}`);
+        }
+
+        setVehicles(vehiclesList);
+        console.log(`Loaded ${vehiclesList.length} vehicles for search "${vehicleSearchQuery}" in ${selectedOffice}`);
       } catch (err) {
         console.error('Failed to load vehicles:', err);
         setVehicles([]);
@@ -189,7 +204,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [selectedOffice, vehicleSearchQuery, chainMode]);
+  }, [selectedOffice, vehicleSearchQuery, chainMode, partnerHistoryFilter]);
 
   // Get current Monday as default
   const getCurrentMonday = () => {
@@ -388,6 +403,39 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       EventManager.off(EventTypes.CALENDAR_DATA_UPDATED, handler);
     };
   }, [chainMode, selectedOffice, selectedPartner, selectedVehicle]);
+
+  // Listen for review history filter events from AssignmentDetailsPanel
+  useEffect(() => {
+    const handleVehicleFilter = (event) => {
+      const { vin, reviewHistory } = event.detail;
+      console.log('[ChainBuilder] Applying vehicle history filter:', vin, reviewHistory);
+      setVehicleHistoryFilter({ vin, reviewHistory });
+    };
+
+    const handlePartnerFilter = (event) => {
+      const { person_id, reviewHistory } = event.detail;
+      console.log('[ChainBuilder] Applying partner history filter:', person_id, reviewHistory);
+      setPartnerHistoryFilter({ person_id, reviewHistory });
+    };
+
+    const handleClearFilters = () => {
+      console.log('[ChainBuilder] Clearing all history filters');
+      setVehicleHistoryFilter(null);
+      setPartnerHistoryFilter(null);
+    };
+
+    // Add event listeners using native addEventListener
+    window.addEventListener(EventTypes.APPLY_VEHICLE_HISTORY_FILTER, handleVehicleFilter);
+    window.addEventListener(EventTypes.APPLY_PARTNER_HISTORY_FILTER, handlePartnerFilter);
+    window.addEventListener(EventTypes.CLEAR_HISTORY_FILTERS, handleClearFilters);
+
+    // Cleanup on unmount
+    return () => {
+      window.removeEventListener(EventTypes.APPLY_VEHICLE_HISTORY_FILTER, handleVehicleFilter);
+      window.removeEventListener(EventTypes.APPLY_PARTNER_HISTORY_FILTER, handlePartnerFilter);
+      window.removeEventListener(EventTypes.CLEAR_HISTORY_FILTERS, handleClearFilters);
+    };
+  }, []);
 
   // Load partner intelligence when partner is selected
   useEffect(() => {
@@ -2317,9 +2365,20 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
               {showPartnerDropdown && partnerSearchQuery.length > 0 && (
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
                   {partners
-                    .filter(partner =>
-                      partner.name.toLowerCase().includes(partnerSearchQuery.toLowerCase())
-                    )
+                    .filter(partner => {
+                      // Search query filter
+                      const matchesSearch = partner.name.toLowerCase().includes(partnerSearchQuery.toLowerCase());
+
+                      // Review history filter (if active)
+                      if (vehicleHistoryFilter && vehicleHistoryFilter.reviewHistory) {
+                        const reviewedPartnerIds = new Set(
+                          vehicleHistoryFilter.reviewHistory.reviews.map(r => r.person_id)
+                        );
+                        return matchesSearch && reviewedPartnerIds.has(partner.person_id);
+                      }
+
+                      return matchesSearch;
+                    })
                     .slice(0, 20)  // Limit to 20 results
                     .map(partner => (
                       <button
@@ -2348,6 +2407,25 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                 <p className="text-xs text-gray-500 mt-1">
                   Selected: {partners.find(p => p.person_id === selectedPartner)?.name}
                 </p>
+              )}
+
+              {/* Vehicle History Filter Indicator */}
+              {vehicleHistoryFilter && (
+                <div className="mt-2 p-2 bg-indigo-50 border border-indigo-200 rounded flex items-center justify-between">
+                  <span className="text-xs text-indigo-700 font-semibold flex items-center gap-1">
+                    <span>🔍</span>
+                    <span>Filtered: Partners who reviewed {vehicleHistoryFilter.vin}</span>
+                  </span>
+                  <button
+                    onClick={() => {
+                      setVehicleHistoryFilter(null);
+                      window.dispatchEvent(new CustomEvent(EventTypes.CLEAR_HISTORY_FILTERS));
+                    }}
+                    className="text-indigo-700 hover:text-indigo-900 font-bold text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
               )}
               </div>
             )}
@@ -2412,6 +2490,25 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                     <div className="text-gray-600">
                       Trim: {selectedVehicle.trim} | Tier: {selectedVehicle.tier}
                     </div>
+                  </div>
+                )}
+
+                {/* Partner History Filter Indicator */}
+                {partnerHistoryFilter && (
+                  <div className="mt-2 p-2 bg-indigo-50 border border-indigo-200 rounded flex items-center justify-between">
+                    <span className="text-xs text-indigo-700 font-semibold flex items-center gap-1">
+                      <span>🔍</span>
+                      <span>Filtered: Vehicles reviewed by {partnerHistoryFilter.reviewHistory?.partner_name || `Partner ${partnerHistoryFilter.person_id}`}</span>
+                    </span>
+                    <button
+                      onClick={() => {
+                        setPartnerHistoryFilter(null);
+                        window.dispatchEvent(new CustomEvent(EventTypes.CLEAR_HISTORY_FILTERS));
+                      }}
+                      className="text-indigo-700 hover:text-indigo-900 font-bold text-sm"
+                    >
+                      ✕
+                    </button>
                   </div>
                 )}
               </div>
@@ -4391,6 +4488,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       {selectedAssignment && (
         <AssignmentDetailsPanel
           assignment={selectedAssignment}
+          office={selectedOffice}
           onClose={() => setSelectedAssignment(null)}
           onDelete={handleTimelineBarDelete}
           onRequest={handleTimelineBarRequest}

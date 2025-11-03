@@ -1335,7 +1335,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       console.log('Converted to editable slots:', slots);
 
       // Calculate budget for auto-generated chain
-      setTimeout(() => calculateChainBudget(), 100);
+      // Set flag to trigger budget calculation after state updates
+      setShouldCalculateBudget(true);
     } catch (err) {
       setError(err.message);
       setChain(null);
@@ -2124,7 +2125,10 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   const calculateChainBudget = async () => {
     // Only calculate if we have slots with selected vehicles
     const filledSlots = manualSlots.filter(s => s.selected_vehicle);
+    console.log('[Budget] Calculating budget. Filled slots:', filledSlots.length, 'Partner:', selectedPartner);
+
     if (filledSlots.length === 0) {
+      console.log('[Budget] No filled slots, clearing budget');
       setChainBudget(null);
       return;
     }
@@ -2136,6 +2140,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         start_date: slot.start_date
       }));
 
+      console.log('[Budget] Requesting budget with chain data:', chainData);
+
       const response = await fetch('http://localhost:8081/api/chain-builder/calculate-chain-budget', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2146,9 +2152,10 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       });
 
       const data = await response.json();
+      console.log('[Budget] Budget response:', data);
       setChainBudget(data);
     } catch (err) {
-      console.error('Error calculating budget:', err);
+      console.error('[Budget] Error calculating budget:', err);
       setChainBudget(null);
     }
   };

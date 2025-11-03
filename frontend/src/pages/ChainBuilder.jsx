@@ -1489,13 +1489,20 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   const [shouldCalculateBudget, setShouldCalculateBudget] = useState(false);
 
   useEffect(() => {
-    if (shouldCalculateBudget && manualSlots.length > 0 && selectedPartner) {
+    if (!shouldCalculateBudget) return;
+
+    // Handle both Partner Chain and Vehicle Chain modes
+    const shouldCalculate = chainMode === 'partner'
+      ? (manualSlots.length > 0 && selectedPartner)
+      : (manualPartnerSlots.length > 0 && selectedVehicle);
+
+    if (shouldCalculate) {
       const timer = setTimeout(() => {
         calculateChainBudget();
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [manualSlots, selectedPartner, shouldCalculateBudget]);
+  }, [manualSlots, manualPartnerSlots, selectedPartner, selectedVehicle, shouldCalculateBudget, chainMode]);
 
   // Save chain state to sessionStorage when it changes
   useEffect(() => {
@@ -1638,6 +1645,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
       setManualPartnerSlots(slots);
       console.log('Converted to editable partner slots:', slots);
+
+      // Calculate budget for auto-generated vehicle chain
+      setShouldCalculateBudget(true);
 
       // Set timeline view to show the chain's start month
       if (slots.length > 0 && slots[0].start_date) {
@@ -1899,6 +1909,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     });
 
     console.log(`Selected ${partner.name} for slot ${slotIndex}, recalculated downstream distances`);
+
+    // Trigger budget calculation for Vehicle Chain mode
+    setShouldCalculateBudget(true);
   };
 
   const deletePartnerSlot = (slotIndex) => {
@@ -2123,23 +2136,44 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   // ============================================================
 
   const calculateChainBudget = async () => {
-    // Only calculate if we have slots with selected vehicles
-    const filledSlots = manualSlots.filter(s => s.selected_vehicle);
-    console.log('[Budget] Calculating budget. Filled slots:', filledSlots.length, 'Partner:', selectedPartner);
+    // Handle both Partner Chain and Vehicle Chain modes
+    let chainData;
 
-    if (filledSlots.length === 0) {
-      console.log('[Budget] No filled slots, clearing budget');
-      setChainBudget(null);
-      return;
-    }
+    if (chainMode === 'partner') {
+      // Partner Chain mode: one partner, multiple vehicles
+      const filledSlots = manualSlots.filter(s => s.selected_vehicle);
+      console.log('[Budget] Partner Chain mode. Filled slots:', filledSlots.length, 'Partner:', selectedPartner);
 
-    try {
-      const chainData = filledSlots.map(slot => ({
+      if (filledSlots.length === 0 || !selectedPartner) {
+        console.log('[Budget] No filled slots or no partner selected, clearing budget');
+        setChainBudget(null);
+        return;
+      }
+
+      chainData = filledSlots.map(slot => ({
         person_id: selectedPartner,
         make: slot.selected_vehicle.make,
         start_date: slot.start_date
       }));
+    } else {
+      // Vehicle Chain mode: one vehicle, multiple partners
+      const filledSlots = manualPartnerSlots.filter(s => s.selected_partner);
+      console.log('[Budget] Vehicle Chain mode. Filled slots:', filledSlots.length, 'Vehicle:', selectedVehicle?.vin);
 
+      if (filledSlots.length === 0 || !selectedVehicle) {
+        console.log('[Budget] No filled slots or no vehicle selected, clearing budget');
+        setChainBudget(null);
+        return;
+      }
+
+      chainData = filledSlots.map(slot => ({
+        person_id: slot.selected_partner.person_id,
+        make: selectedVehicle.make,
+        start_date: slot.start_date
+      }));
+    }
+
+    try {
       console.log('[Budget] Requesting budget with chain data:', chainData);
 
       const response = await fetch('http://localhost:8081/api/chain-builder/calculate-chain-budget', {

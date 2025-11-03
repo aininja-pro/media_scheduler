@@ -1,6 +1,147 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { EventManager, EventTypes } from '../utils/eventManager';
 
+// Vehicle Review History Component
+function VehicleReviewHistory({ vin, office }) {
+  const [reviewHistory, setReviewHistory] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (!vin || !office) return;
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(
+          `http://localhost:8081/api/chain-builder/vehicle-review-history/${encodeURIComponent(vin)}?office=${encodeURIComponent(office)}`
+        );
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch: ${response.status}`);
+        }
+
+        const data = await response.json();
+        setReviewHistory(data);
+      } catch (err) {
+        console.error('Error fetching review history:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchHistory();
+  }, [vin, office]);
+
+  const formatRelativeDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 30) return `${diffDays} days ago`;
+    if (diffDays < 60) return '1 month ago';
+    const months = Math.floor(diffDays / 30);
+    return `${months} months ago`;
+  };
+
+  if (loading) {
+    return (
+      <div>
+        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">📋 Review History</h3>
+        <div className="flex items-center justify-center py-4 bg-gray-50 rounded-lg">
+          <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div>
+        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">📋 Review History</h3>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+          Error loading history: {error}
+        </div>
+      </div>
+    );
+  }
+
+  if (!reviewHistory || !reviewHistory.reviews || reviewHistory.reviews.length === 0) {
+    return (
+      <div>
+        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">📋 Review History</h3>
+        <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-500 text-center italic">
+          No review history in the last 6 months
+        </div>
+      </div>
+    );
+  }
+
+  const displayedReviews = showAll ? reviewHistory.reviews : reviewHistory.reviews.slice(0, 5);
+
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">📋 Review History</h3>
+      <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+        {displayedReviews.map((review, idx) => (
+          <div key={idx} className="bg-white rounded border border-gray-200 p-2 hover:border-blue-300 transition-colors">
+            <div className="flex justify-between items-start">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">{review.partner_name}</p>
+                <p className="text-xs text-gray-500" title={`${review.start_date} to ${review.end_date}`}>
+                  {formatRelativeDate(review.start_date)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-base ${review.published ? 'text-green-600' : 'text-gray-400'}`}>
+                  {review.published ? '✓' : '✗'}
+                </span>
+                {review.clips_count > 0 && (
+                  <span className="text-xs font-bold text-blue-600">
+                    {review.clips_count} clip{review.clips_count !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+            </div>
+            {!review.published && (
+              <p className="text-xs text-gray-400 mt-1">Not Published</p>
+            )}
+          </div>
+        ))}
+
+        {reviewHistory.total_historical_reviews > 5 && !showAll && (
+          <button
+            onClick={() => setShowAll(true)}
+            className="w-full text-xs text-blue-600 hover:text-blue-800 font-semibold py-1 border border-blue-200 rounded hover:bg-blue-50 transition-colors mt-2"
+          >
+            View All {reviewHistory.total_historical_reviews} Reviews →
+          </button>
+        )}
+
+        {showAll && (
+          <button
+            onClick={() => setShowAll(false)}
+            className="w-full text-xs text-gray-600 hover:text-gray-800 font-semibold py-1 border border-gray-200 rounded hover:bg-gray-50 transition-colors mt-2"
+          >
+            ← Show Less
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Haversine distance calculation (in miles)
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const R = 3959; // Earth's radius in miles
@@ -1849,6 +1990,9 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                       </div>
                     </div>
                   </div>
+
+                  {/* Review History */}
+                  <VehicleReviewHistory vin={vehicleContext.vin} office={selectedOffice} />
 
                   {/* Current Activity */}
                   {vehicleContext.current_activity && (

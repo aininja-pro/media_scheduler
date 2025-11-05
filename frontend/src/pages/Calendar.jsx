@@ -472,6 +472,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
   // Partner context for partner view
   const [selectedPartnerId, setSelectedPartnerId] = useState(null);
   const [partnerContext, setPartnerContext] = useState(null);
+  const [showPartnerTimeline, setShowPartnerTimeline] = useState(false);
   const [loadingPartnerContext, setLoadingPartnerContext] = useState(false);
 
   // Load offices
@@ -2442,22 +2443,140 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                     </div>
                   </div>
 
-                  {/* Approved Makes */}
+                  {/* Approved Makes & Budget Status */}
                   {partnerContext.approved_makes && partnerContext.approved_makes.length > 0 && (
                     <div>
-                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Approved Makes</h3>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <div className="flex flex-wrap gap-2">
-                          {partnerContext.approved_makes.map((item) => (
-                            <span
-                              key={item.make}
-                              className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getTierBadgeColor(item.rank)}`}
-                            >
-                              {item.make}
-                              <span className="ml-1.5 text-xs">{item.rank}</span>
-                            </span>
-                          ))}
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
+                        Approved Makes & Budget Status
+                      </h3>
+                      <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                        {partnerContext.approved_makes.map((item) => {
+                          const makeUpper = item.make.toUpperCase();
+                          const budget = partnerContext.budget_status?.[makeUpper];
+                          const percentUsed = budget?.percent_used || 0;
+
+                          // Budget warning color
+                          let budgetColor = 'text-green-600';
+                          let budgetBg = 'bg-green-50';
+                          if (percentUsed >= 90) {
+                            budgetColor = 'text-red-600';
+                            budgetBg = 'bg-red-50';
+                          } else if (percentUsed >= 75) {
+                            budgetColor = 'text-amber-600';
+                            budgetBg = 'bg-amber-50';
+                          }
+
+                          // Cost display text
+                          let costText = `$${Math.round(item.media_cost || 400).toLocaleString()}/loan`;
+                          if (item.cost_type === 'partner_avg') {
+                            costText = `~${costText} (partner avg)`;
+                          } else if (item.cost_type === 'default') {
+                            costText = `~${costText} (default)`;
+                          }
+
+                          return (
+                            <div key={item.make} className={`rounded-lg p-3 border ${budgetBg} border-gray-200`}>
+                              {/* Make badge with tier and NEW indicator */}
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getTierBadgeColor(item.rank)}`}>
+                                  {item.make}
+                                  <span className="ml-1.5 text-xs">{item.rank}</span>
+                                </span>
+                                {item.is_new_to_partner && (
+                                  <span className="inline-flex items-center px-2 py-0.5 bg-purple-500 text-white text-xs font-bold rounded">
+                                    🆕 NEW
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Budget info */}
+                              {budget && (
+                                <div className="text-xs space-y-1">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">Office Budget ({partnerContext.current_quarter}):</span>
+                                    <span className={`font-semibold ${budgetColor}`}>
+                                      ${budget.current.toLocaleString()} / ${budget.budget.toLocaleString()} ({Math.round(percentUsed)}%)
+                                      {percentUsed >= 75 && ' ⚠️'}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">Partner Cost:</span>
+                                    <span className="font-medium text-gray-900">{costText}</span>
+                                  </div>
+                                  {item.loan_count > 0 && (
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-gray-600">Partner Usage:</span>
+                                      <span className="font-medium text-gray-900">
+                                        {item.loan_count} loans = ${Math.round(item.total_spend).toLocaleString()}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Publication Performance */}
+                  {partnerContext.stats && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
+                        Publication Performance
+                      </h3>
+                      <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                        {/* Overall rate */}
+                        <div className="bg-white rounded-lg p-3 border border-gray-200">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Overall Rate:</span>
+                            <div className="text-right">
+                              <span className={`text-lg font-bold ${
+                                partnerContext.stats.publication_rate >= 0.7 ? 'text-green-600' :
+                                partnerContext.stats.publication_rate >= 0.5 ? 'text-amber-600' :
+                                'text-red-600'
+                              }`}>
+                                {Math.round(partnerContext.stats.publication_rate * 100)}%
+                              </span>
+                              <span className="text-xs text-gray-500 ml-2">
+                                ({partnerContext.stats.total_loans} loans)
+                              </span>
+                            </div>
+                          </div>
                         </div>
+
+                        {/* Per-make breakdown */}
+                        {partnerContext.publication_by_make && Object.keys(partnerContext.publication_by_make).length > 0 && (
+                          <div className="space-y-1.5">
+                            <p className="text-xs text-gray-500 font-medium">By Make (24-month):</p>
+                            {Object.entries(partnerContext.publication_by_make)
+                              .sort(([, a], [, b]) => (b.rate || 0) - (a.rate || 0))
+                              .map(([make, data]) => (
+                                <div key={make} className="flex justify-between items-center text-xs bg-white rounded px-3 py-2 border border-gray-100">
+                                  <span className="font-medium text-gray-700">{make}</span>
+                                  <div className="flex items-center gap-2">
+                                    {data.has_data && data.rate !== null ? (
+                                      <>
+                                        <span className={`font-bold ${
+                                          data.rate >= 0.7 ? 'text-green-600' :
+                                          data.rate >= 0.5 ? 'text-amber-600' :
+                                          'text-red-600'
+                                        }`}>
+                                          {Math.round(data.rate * 100)}%
+                                        </span>
+                                        <span className="text-gray-400">
+                                          ({data.published}/{data.total})
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-gray-400 italic">No data</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -2534,22 +2653,39 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                     )}
                   </div>
 
-                  {/* Timeline */}
+                  {/* Activity Timeline - Collapsible */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Activity Timeline</h3>
-                    <div className="space-y-2">
-                      {partnerContext.timeline.map((act, idx) => (
-                        <div key={idx} className="flex items-center text-xs bg-gray-50 rounded p-2">
-                          <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
-                            act.status === 'active' ? 'bg-blue-500' :
-                            act.status === 'planned' ? 'bg-green-500' :
-                            'bg-gray-400'
-                          }`}></span>
-                          <span className="flex-1 font-medium text-gray-900">{act.make} {act.model}</span>
-                          <span className="text-gray-500">{formatActivityDate(act.start_date)}</span>
-                        </div>
-                      ))}
+                    <div
+                      className="flex items-center justify-between cursor-pointer hover:bg-gray-50 rounded-lg p-2 -mx-2 transition-colors"
+                      onClick={() => setShowPartnerTimeline(!showPartnerTimeline)}
+                    >
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
+                        Activity Timeline
+                      </h3>
+                      <svg
+                        className={`w-4 h-4 text-gray-500 transition-transform ${showPartnerTimeline ? 'rotate-90' : ''}`}
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                      </svg>
                     </div>
+
+                    {showPartnerTimeline && (
+                      <div className="space-y-2 mt-2">
+                        {partnerContext.timeline.map((act, idx) => (
+                          <div key={idx} className="flex items-center text-xs bg-gray-50 rounded p-2">
+                            <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
+                              act.status === 'active' ? 'bg-blue-500' :
+                              act.status === 'planned' ? 'bg-green-500' :
+                              'bg-gray-400'
+                            }`}></span>
+                            <span className="flex-1 font-medium text-gray-900">{act.make} {act.model}</span>
+                            <span className="text-gray-500">{formatActivityDate(act.start_date)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (

@@ -1980,6 +1980,96 @@ async def get_partner_intelligence(
         # Sort by rank
         approved_makes.sort(key=lambda x: x['rank'])
 
+        # 3a. Add "new to partner" flag to approved makes
+        historical_makes = set()
+        if not loan_history_df.empty and 'make' in loan_history_df.columns:
+            historical_makes = set(loan_history_df['make'].dropna().unique())
+
+        for make_item in approved_makes:
+            make_item['is_new_to_partner'] = make_item['make'] not in historical_makes
+
+        # 3b. Add budget status for current quarter
+        budget_status = {}
+        current_quarter_str = None
+
+        try:
+            budgets_response = db.client.table('budgets').select('*').eq('office', office).execute()
+            budgets_df = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+
+            if not budgets_df.empty:
+                # Get current quarter
+                now = datetime.now()
+                current_year = now.year
+                current_quarter = f'Q{((now.month - 1) // 3) + 1}'
+                current_quarter_str = f"{current_quarter} {current_year}"
+
+                # Filter to current quarter
+                quarter_budgets = budgets_df[
+                    (budgets_df['year'] == current_year) &
+                    (budgets_df['quarter'] == current_quarter)
+                ]
+
+                # Build budget status for each approved make
+                for make_item in approved_makes:
+                    make_upper = make_item['make'].upper()
+
+                    # Find budget for this fleet
+                    fleet_budget = quarter_budgets[quarter_budgets['fleet'] == make_upper]
+
+                    if not fleet_budget.empty:
+                        row = fleet_budget.iloc[0]
+                        current_used = float(row['amount_used']) if pd.notna(row['amount_used']) else 0
+                        budget_amount = float(row['budget_amount']) if pd.notna(row['budget_amount']) else 0
+                        percent_used = (current_used / budget_amount * 100) if budget_amount > 0 else 0
+
+                        budget_status[make_upper] = {
+                            'current': int(current_used),
+                            'budget': int(budget_amount),
+                            'percent_used': round(percent_used, 1)
+                        }
+
+                    # Get partner's media cost for this make
+                    cost_info = get_cost_for_assignment(person_id, make_item['make'])
+                    make_item['media_cost'] = cost_info['cost']
+                    make_item['cost_type'] = cost_info['type']  # 'exact', 'partner_avg', or 'default'
+
+                    # Calculate partner's usage for this make
+                    if not loan_history_df.empty:
+                        make_loans = loan_history_df[loan_history_df['make'] == make_item['make']]
+                        make_item['loan_count'] = len(make_loans)
+                        make_item['total_spend'] = len(make_loans) * cost_info['cost']
+                    else:
+                        make_item['loan_count'] = 0
+                        make_item['total_spend'] = 0
+        except Exception as e:
+            logger.error(f"Error fetching budget data: {e}")
+            # Continue without budget data
+
+        # 3c. Calculate per-make publication rates
+        publication_by_make = {}
+        try:
+            if not loan_history_df.empty:
+                pub_rate_df = compute_publication_rate_24m(
+                    loan_history_df=loan_history_df,
+                    as_of_date=None,  # Use today
+                    window_months=24,
+                    min_observed=1
+                )
+
+                # Filter to this partner
+                partner_pub_rates = pub_rate_df[pub_rate_df['person_id'] == person_id]
+
+                for _, row in partner_pub_rates.iterrows():
+                    publication_by_make[row['make']] = {
+                        'rate': round(float(row['publication_rate']), 3) if pd.notna(row['publication_rate']) else None,
+                        'published': int(row['publications_24m']),
+                        'total': int(row['loans_total_24m']),
+                        'has_data': bool(row['has_clip_data'])
+                    }
+        except Exception as e:
+            logger.error(f"Error calculating publication rates: {e}")
+            # Continue without publication data
+
         # 4. Get recent loan history (last 6 months) with full vehicle details
         recent_loans = []
         if not loan_history_df.empty and len(loan_history_df) > 0:
@@ -2078,6 +2168,9 @@ async def get_partner_intelligence(
                 "last_loan_date": str(last_loan_date) if last_loan_date else None
             },
             "approved_makes": approved_makes,
+            "budget_status": budget_status,
+            "current_quarter": current_quarter_str,
+            "publication_by_make": publication_by_make,
             "recent_loans": recent_loans,
             "upcoming_assignments": upcoming_assignments,
             "current_loans": current_loans

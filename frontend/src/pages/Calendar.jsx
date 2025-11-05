@@ -2510,7 +2510,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                                   </div>
                                   {item.loan_count > 0 && (
                                     <div className="flex justify-between items-center">
-                                      <span className="text-gray-600">Partner Usage:</span>
+                                      <span className="text-gray-600">Their Usage:</span>
                                       <span className="font-medium text-gray-900">
                                         {item.loan_count} loans = ${Math.round(item.total_spend).toLocaleString()}
                                       </span>

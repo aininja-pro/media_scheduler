@@ -430,8 +430,8 @@ async def ingest_vehicles_from_url(
         # Parse CSV without headers since client data doesn't have them
         # Add the correct column headers manually
         expected_headers = [
-            'Year', 'Make', 'Model', 'Model Short Name', 'Office', 
-            'VIN', 'Fleet', 'Registration Exp', 'Insurance Exp', 
+            'vehicle_id', 'Year', 'Make', 'Model', 'Model Short Name', 'Office',
+            'VIN', 'Fleet', 'Registration Exp', 'Insurance Exp',
             'Current Mileage', 'In Service Date', 'Expected Turn In Date', 'Notes'
         ]
         
@@ -464,6 +464,7 @@ async def ingest_vehicles_from_url(
                 
                 # Direct mapping from exact CSV headers to schema fields
                 csv_header_mapping = {
+                    'vehicle_id': 'vehicle_id',
                     'Year': 'year',
                     'Make': 'make',
                     'Model': 'model',

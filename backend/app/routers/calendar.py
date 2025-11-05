@@ -22,7 +22,7 @@ async def get_all_vehicles(office: str = Query(..., description="Office name")) 
 
     try:
         response = db.client.table('vehicles')\
-            .select('vin, make, model, office, in_service_date, expected_turn_in_date')\
+            .select('vehicle_id, vin, make, model, office, in_service_date, expected_turn_in_date')\
             .eq('office', office)\
             .execute()
 

@@ -25,6 +25,7 @@ class RankEnum(str, Enum):
 
 class VehicleIngest(BaseModel):
     """Schema for vehicles CSV upload"""
+    vehicle_id: Optional[int] = None  # FMS internal vehicle ID (first column in CSV)
     year: Optional[int] = None
     make: str
     model: str

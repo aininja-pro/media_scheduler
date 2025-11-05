@@ -1497,13 +1497,13 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
       {/* Controls */}
       <div className="bg-white border-b px-6 py-2">
-        <div className="flex gap-2 items-end">
-          <div>
+        <div className="flex flex-wrap gap-3 items-end">
+          <div className="w-40">
             <label className="block text-xs font-medium text-gray-700 mb-1">Office</label>
             <select
               value={selectedOffice}
               onChange={(e) => handleOfficeChange(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
             >
               {offices.map(office => (
                 <option key={office} value={office}>{office}</option>
@@ -1537,11 +1537,11 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             </div>
           </div>
 
-          <div className="relative multi-select-dropdown">
+          <div className="relative multi-select-dropdown w-48">
             <label className="block text-xs font-medium text-gray-700 mb-1">Vehicles</label>
             <button
               onClick={() => setShowVehicleDropdown(!showVehicleDropdown)}
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs text-left bg-white hover:bg-gray-50 flex justify-between items-center"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-left bg-white hover:bg-gray-50 flex justify-between items-center"
             >
               <span>{selectedVehicles.length > 0 ? `${selectedVehicles.length} selected` : 'All'}</span>
               <span>▼</span>
@@ -1587,7 +1587,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             <label className="block text-xs font-medium text-gray-700 mb-1">Make</label>
             <button
               onClick={() => setShowMakeDropdown(!showMakeDropdown)}
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs text-left bg-white hover:bg-gray-50 flex justify-between items-center"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-left bg-white hover:bg-gray-50 flex justify-between items-center"
             >
               <span>{selectedMakes.length > 0 ? `${selectedMakes.length} selected` : 'All'}</span>
               <span>▼</span>
@@ -1626,11 +1626,11 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             )}
           </div>
 
-          <div className="relative multi-select-dropdown">
+          <div className="relative multi-select-dropdown w-32">
             <label className="block text-xs font-medium text-gray-700 mb-1">Tier</label>
             <button
               onClick={() => setShowTierDropdown(!showTierDropdown)}
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs text-left bg-white hover:bg-gray-50 flex justify-between items-center"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-left bg-white hover:bg-gray-50 flex justify-between items-center"
             >
               <span>{selectedTiers.length > 0 ? `${selectedTiers.length} selected` : 'All'}</span>
               <span>▼</span>
@@ -1648,7 +1648,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                 {['A+', 'A', 'B', 'C'].map(tier => (
                   <label
                     key={tier}
-                    className="flex items-center px-2 py-1.5 hover:bg-gray-50 cursor-pointer text-xs"
+                    className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
                   >
                     <input
                       type="checkbox"
@@ -1662,7 +1662,9 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                       }}
                       className="mr-2"
                     />
-                    <span>{tier}</span>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getTierBadgeColor(tier)}`}>
+                      {tier}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -1673,7 +1675,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             <label className="block text-xs font-medium text-gray-700 mb-1">Partners</label>
             <button
               onClick={() => setShowPartnerDropdown(!showPartnerDropdown)}
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs text-left bg-white hover:bg-gray-50 flex justify-between items-center"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-left bg-white hover:bg-gray-50 flex justify-between items-center"
             >
               <span>{selectedPartners.length > 0 ? `${selectedPartners.length} selected` : 'All'}</span>
               <span>▼</span>
@@ -1727,12 +1729,12 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             )}
           </div>
 
-          <div>
+          <div className="w-32">
             <label className="block text-xs font-medium text-gray-700 mb-1">Activity</label>
             <select
               value={activityFilter}
               onChange={(e) => setActivityFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
             >
               <option value="all">All</option>
               <option value="with-activity">With</option>
@@ -1740,12 +1742,12 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             </select>
           </div>
 
-          <div>
+          <div className="w-32">
             <label className="block text-xs font-medium text-gray-700 mb-1">Sort</label>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
             >
               <option value="make">Make</option>
               <option value="model">Model</option>
@@ -1753,12 +1755,12 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             </select>
           </div>
 
-          <div>
+          <div className="w-32">
             <label className="block text-xs font-medium text-gray-700 mb-1">Order</label>
             <select
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
             >
               <option value="asc">A → Z</option>
               <option value="desc">Z → A</option>

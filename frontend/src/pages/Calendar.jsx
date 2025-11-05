@@ -1118,6 +1118,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
         // Fetch approved makes from partner-intelligence endpoint
         let approvedMakes = [];
+        let intelligenceData = null;
         try {
           const intelligenceParams = new URLSearchParams({
             person_id: partnerId,
@@ -1125,7 +1126,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
           });
           const intelligenceResponse = await fetch(`http://localhost:8081/api/ui/phase7/partner-intelligence?${intelligenceParams}`);
           if (intelligenceResponse.ok) {
-            const intelligenceData = await intelligenceResponse.json();
+            intelligenceData = await intelligenceResponse.json();
             approvedMakes = intelligenceData.approved_makes || [];
           }
         } catch (err) {
@@ -1169,6 +1170,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
         // Partner has no activities - still show context with basic info
         let distanceInfo = partnerDistances[partnerId] || null;
         let approvedMakes = [];
+        let intelligenceData = null;
 
         // Fetch approved makes
         try {
@@ -1178,7 +1180,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
           });
           const intelligenceResponse = await fetch(`http://localhost:8081/api/ui/phase7/partner-intelligence?${intelligenceParams}`);
           if (intelligenceResponse.ok) {
-            const intelligenceData = await intelligenceResponse.json();
+            intelligenceData = await intelligenceResponse.json();
             approvedMakes = intelligenceData.approved_makes || [];
           }
         } catch (err) {

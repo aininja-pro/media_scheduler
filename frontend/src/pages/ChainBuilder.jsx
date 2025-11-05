@@ -1274,6 +1274,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     setError('');
     setSaveMessage('');
     setChain(null);
+    setManualSlots([]); // Clear existing chain immediately
+    setChainBudget(null); // Clear budget display
 
     try {
       const params = new URLSearchParams({
@@ -1557,6 +1559,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     setSaveMessage('');
     setVehicleChain(null);
     setManualPartnerSlots([]); // Clear existing slots immediately
+    setChainBudget(null); // Clear budget display
     setChainModified(false);
 
     try {

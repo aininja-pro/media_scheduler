@@ -4,7 +4,7 @@ import { EventManager, EventTypes } from '../utils/eventManager';
 import TimelineBar from '../components/TimelineBar';
 import AssignmentDetailsPanel from '../components/AssignmentDetailsPanel';
 
-function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicleLoaded }) {
+function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicleLoaded, preloadedPartner, onPartnerLoaded }) {
   // Chain mode: 'partner' (existing) or 'vehicle' (new)
   const [chainMode, setChainMode] = useState('partner');
 
@@ -534,6 +534,18 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       }
     }
   }, [preloadedVehicle]);
+
+  // Handle preloaded partner from Calendar navigation
+  useEffect(() => {
+    if (preloadedPartner) {
+      setChainMode('partner');
+      setSelectedPartner(preloadedPartner.person_id);
+      setPartnerSearchQuery(preloadedPartner.name);
+      if (onPartnerLoaded) {
+        onPartnerLoaded(); // Clear the preloaded partner from parent
+      }
+    }
+  }, [preloadedPartner]);
 
   // Refresh partner intelligence when tab becomes visible (detect visibility change)
   useEffect(() => {

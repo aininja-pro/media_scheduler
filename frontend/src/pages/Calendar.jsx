@@ -2486,17 +2486,12 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
                           return (
                             <div key={item.make} className={`rounded-lg p-3 border ${budgetBg} border-gray-200`}>
-                              {/* Make badge with tier and NEW indicator */}
+                              {/* Make badge with tier */}
                               <div className="flex items-center gap-2 mb-2">
                                 <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getTierBadgeColor(item.rank)}`}>
                                   {item.make}
                                   <span className="ml-1.5 text-xs">{item.rank}</span>
                                 </span>
-                                {item.is_new_to_partner && (
-                                  <span className="inline-flex items-center px-2 py-0.5 bg-purple-500 text-white text-xs font-bold rounded">
-                                    🆕 NEW
-                                  </span>
-                                )}
                               </div>
 
                               {/* Budget info */}

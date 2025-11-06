@@ -2276,13 +2276,22 @@ async def get_partner_review_history(
             clips_received_val = loan.get('clips_received', 0)
             clips_received = int(float(clips_received_val)) if pd.notna(clips_received_val) else 0
 
+            # Determine published status: any non-zero clips_received means published
+            is_published = False
+            if pd.notna(clips_received_val):
+                try:
+                    clips_num = float(clips_received_val)
+                    is_published = clips_num > 0  # Published if they received any clips
+                except (ValueError, TypeError):
+                    is_published = False
+
             reviews.append({
                 'vin': loan.get('vin', 'Unknown'),
                 'make': loan.get('make', 'Unknown'),
                 'model': loan.get('model', ''),
                 'start_date': start_date_str,
                 'end_date': end_date_str,
-                'published': bool(loan.get('published', False)),
+                'published': is_published,
                 'clips_count': clips_count,
                 'clips_received': clips_received
             })

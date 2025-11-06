@@ -962,9 +962,16 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
     const nameA = a.partner_name || '';
     const nameB = b.partner_name || '';
     
-    // Extract last name (last word in the name)
-    const lastNameA = nameA.trim().split(/\s+/).pop() || '';
-    const lastNameB = nameB.trim().split(/\s+/).pop() || '';
+    // Extract last name (last word in the name) and clean special characters
+    const getCleanLastName = (name) => {
+      const parts = name.trim().split(/\s+/);
+      const lastName = parts[parts.length - 1] || '';
+      // Remove leading special characters like quotes, parentheses, brackets
+      return lastName.replace(/^[^\w]+/, '');
+    };
+    
+    const lastNameA = getCleanLastName(nameA);
+    const lastNameB = getCleanLastName(nameB);
     
     const comparison = lastNameA.localeCompare(lastNameB);
     return sortOrder === 'asc' ? comparison : -comparison;

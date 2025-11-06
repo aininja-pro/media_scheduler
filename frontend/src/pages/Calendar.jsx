@@ -1125,6 +1125,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
         // Filter by status - matching Gantt chart colors exactly
         const currentLoans = sortedActivities.filter(a => a.status === 'active');
         const recommendedLoans = sortedActivities.filter(a => a.status === 'planned');
+        const requestedLoans = sortedActivities.filter(a => a.status === 'requested');
 
         const partnerAddress = partnerActivities[0].partner_address;
         const office = partnerActivities[0].office;
@@ -1183,6 +1184,14 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             status: loan.status
           })),
           recommended_loans: recommendedLoans.map(loan => ({
+            vin: loan.vin,
+            make: loan.make,
+            model: loan.model,
+            start_date: loan.start_date,
+            end_date: loan.end_date,
+            status: loan.status
+          })),
+          requested_loans: requestedLoans.map(loan => ({
             vin: loan.vin,
             make: loan.make,
             model: loan.model,
@@ -2699,6 +2708,38 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                       </div>
                     )}
                   </div>
+
+                  {/* Requested Loans - Table Format (Magenta/Pink) */}
+                  {partnerContext.requested_loans && partnerContext.requested_loans.length > 0 && (
+                    <div>
+                      <div className="border-l-4 border-pink-500 pl-3 mb-3">
+                        <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wide">
+                          Requested Loan{partnerContext.requested_loans.length > 1 ? 's' : ''} 
+                          <span className="ml-2 text-xs font-normal text-gray-400">({partnerContext.requested_loans.length})</span>
+                        </h3>
+                      </div>
+                      <div className="bg-pink-50 rounded-lg border-l-4 border-pink-500 overflow-hidden">
+                        <table className="min-w-full divide-y divide-pink-200">
+                          <tbody className="divide-y divide-pink-200">
+                            {partnerContext.requested_loans.map((loan, idx) => (
+                              <tr key={idx} className="hover:bg-pink-100 transition-colors">
+                                <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                                  {loan.make} {loan.model}
+                                </td>
+                                <td className="px-4 py-2 text-xs text-gray-600">
+                                  {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)}
+                                </td>
+                                <td className="px-4 py-2 text-xs text-right">
+                                  VIN: <a href="#" className="text-blue-600 hover:text-blue-800 font-mono">{loan.vin ? loan.vin.slice(-8) : 'N/A'}</a>
+                                  <span className="ml-2 text-xs font-semibold text-pink-600">⏳ Pending Approval</span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Activity Timeline - Collapsible */}
                   <div>

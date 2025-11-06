@@ -957,11 +957,17 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
     return sortOrder === 'asc' ? comparison : -comparison;
   });
 
-  // Sort partners alphabetically by name
+  // Sort partners by LAST name, respecting sort order
   const sortedPartners = filteredPartners.sort((a, b) => {
     const nameA = a.partner_name || '';
     const nameB = b.partner_name || '';
-    return nameA.localeCompare(nameB);
+    
+    // Extract last name (last word in the name)
+    const lastNameA = nameA.trim().split(/\s+/).pop() || '';
+    const lastNameB = nameB.trim().split(/\s+/).pop() || '';
+    
+    const comparison = lastNameA.localeCompare(lastNameB);
+    return sortOrder === 'asc' ? comparison : -comparison;
   });
 
   // Choose which data to display based on view mode

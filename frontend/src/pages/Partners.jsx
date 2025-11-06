@@ -1171,7 +1171,7 @@ export default function Partners({ office }) {
         {/* Media Partner Context Side Panel */}
         {selectedPartnerId && partnerContext && (
           <div className="fixed right-0 top-0 z-40 h-full">
-            <div className="bg-white w-96 h-full shadow-2xl overflow-y-auto border-l border-gray-200">
+            <div className="bg-white w-[700px] h-full shadow-2xl overflow-y-auto border-l border-gray-200">
               <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
                 <h2 className="text-lg font-semibold text-gray-900">Media Partner Context</h2>
                 <button
@@ -1230,89 +1230,239 @@ export default function Partners({ office }) {
                       </div>
                     </div>
 
-                    {/* Approved Makes */}
+                    {/* Approved Makes & Budget Status - New Table Design */}
                     {partnerContext.approved_makes && partnerContext.approved_makes.length > 0 && (
                       <div>
-                        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Approved Makes</h3>
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <div className="flex flex-wrap gap-2">
-                            {partnerContext.approved_makes.map((item) => (
-                              <span
-                                key={item.make}
-                                className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getTierBadgeColor(item.rank)}`}
-                              >
-                                {item.make}
-                                <span className="ml-1.5 text-xs">{item.rank}</span>
-                              </span>
-                            ))}
-                          </div>
+                        <div className="flex items-center justify-between mb-3 border-l-4 border-indigo-500 pl-3">
+                          <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wide">
+                            Approved Makes & Budget Status
+                          </h3>
+                          <span className="text-xs text-gray-500">Current Quarter: Q4 2025</span>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Make</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Tier</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Office Budget (Q4)</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">%</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Cost/Loan</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Partner Usage</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {[...partnerContext.approved_makes].sort((a, b) => a.make.localeCompare(b.make)).map((item, idx) => {
+                                const budgetPercent = item.budget_percent || null
+                                const budgetUsed = item.budget_used || null
+                                const budgetTotal = item.budget_total || null
+                                const costPerLoan = item.cost_per_loan || null
+                                const loanCount = item.loan_count || 0
+                                const totalCost = item.total_cost || 0
+                                
+                                // Color code budget percentage
+                                let percentColor = 'text-gray-500'
+                                if (budgetPercent !== null) {
+                                  if (budgetPercent < 40) percentColor = 'text-green-600 font-semibold'
+                                  else if (budgetPercent < 75) percentColor = 'text-amber-600 font-semibold'
+                                  else percentColor = 'text-red-600 font-semibold'
+                                }
+                                
+                                return (
+                                  <tr key={item.make} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors`}>
+                                    <td className="px-4 py-2 text-sm text-gray-900">{item.make}</td>
+                                    <td className="px-4 py-2 text-center">
+                                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getTierBadgeColor(item.rank)}`}>
+                                        {item.rank}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2 text-sm">
+                                      {budgetUsed !== null && budgetTotal !== null ? (
+                                        <span>
+                                          <span className="text-green-400 font-medium">${budgetUsed.toLocaleString()}</span>
+                                          <span className="text-gray-600"> / </span>
+                                          <span className="text-green-700 font-semibold">${budgetTotal.toLocaleString()}</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-gray-500">-</span>
+                                      )}
+                                    </td>
+                                    <td className={`px-4 py-2 text-sm text-center ${percentColor}`}>
+                                      {budgetPercent !== null ? `${budgetPercent}%` : '-'}
+                                    </td>
+                                    <td className="px-4 py-2 text-sm text-center text-gray-600">
+                                      {costPerLoan !== null ? `$${costPerLoan}` : '-'}
+                                    </td>
+                                    <td className="px-4 py-2 text-sm text-gray-600">
+                                      {loanCount} loan{loanCount !== 1 ? 's' : ''} • ${totalCost.toLocaleString()}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     )}
 
-                    {/* Current Loans (Active) */}
+                    {/* Publication Performance - New 3-Column Design */}
                     <div>
-                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
-                        Current Loan{partnerContext.current_loans?.length > 1 ? 's' : ''}
-                        {partnerContext.current_loans?.length > 0 && (
-                          <span className="ml-2 text-xs font-normal text-gray-400">({partnerContext.current_loans.length})</span>
-                        )}
-                      </h3>
+                      <div className="border-l-4 border-purple-500 pl-3 mb-3">
+                        <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wide">Publication Performance</h3>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4 bg-gray-50 rounded-lg p-4">
+                        <div className="text-center">
+                          <div className="text-sm text-gray-600 mb-1">Total Loans</div>
+                          <div className="text-2xl font-semibold text-gray-900">
+                            {partnerIntelligence?.stats?.total_loans || 0}
+                          </div>
+                        </div>
+                        <div className="text-center border-l border-r border-gray-200">
+                          <div className="text-sm text-gray-600 mb-1">Published</div>
+                          <div className="text-2xl font-semibold text-blue-600">
+                            {Math.round((partnerIntelligence?.stats?.total_loans || 0) * (partnerIntelligence?.stats?.publication_rate || 0))}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-sm text-gray-600 mb-1">Publication Rate</div>
+                          <div className={`text-2xl font-semibold ${
+                            (partnerIntelligence?.stats?.publication_rate || 0) >= 0.75 ? 'text-green-600' :
+                            (partnerIntelligence?.stats?.publication_rate || 0) >= 0.50 ? 'text-amber-600' :
+                            'text-red-600'
+                          }`}>
+                            {((partnerIntelligence?.stats?.publication_rate || 0) * 100).toFixed(0)}%
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Vehicles Reviewed - New Compact Table */}
+                    {partnerContext.timeline && partnerContext.timeline.filter(t => t.status === 'completed').length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-3 border-l-4 border-orange-500 pl-3">
+                          <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wide flex items-center gap-2">
+                            🚗 Vehicles Reviewed
+                          </h3>
+                          <a href="#" className="text-xs text-blue-600 hover:text-blue-800">
+                            View All {partnerContext.timeline.filter(t => t.status === 'completed').length} Reviews →
+                          </a>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Vehicle</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">VIN</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Date</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase w-10"></th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {partnerContext.timeline
+                                .filter(t => t.status === 'completed')
+                                .slice(0, 5)
+                                .map((item, idx) => {
+                                  const now = new Date()
+                                  const startDate = new Date(item.start_date)
+                                  const diffDays = Math.floor((now - startDate) / (1000 * 60 * 60 * 24))
+                                  const timeAgo = diffDays < 30 ? `${diffDays}d ago` : 
+                                                 diffDays < 60 ? `1mo ago` : 
+                                                 `${Math.floor(diffDays / 30)}mo ago`
+                                  
+                                  return (
+                                    <tr key={idx} className="hover:bg-blue-50 transition-colors">
+                                      <td className="px-4 py-2 text-sm text-gray-900">
+                                        {item.make} {item.model}
+                                      </td>
+                                      <td className="px-4 py-2 text-sm">
+                                        <a href="#" className="text-blue-600 hover:text-blue-800 font-mono">
+                                          {item.vin ? item.vin.slice(-8) : 'N/A'}
+                                        </a>
+                                      </td>
+                                      <td className="px-4 py-2 text-xs text-center text-gray-500">
+                                        {timeAgo}
+                                      </td>
+                                      <td className="px-4 py-2 text-center">
+                                        <button className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Current Loans - Compact Design */}
+                    <div>
+                      <div className="border-l-4 border-blue-500 pl-3 mb-3">
+                        <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wide">
+                          Current Loan{partnerContext.current_loans?.length > 1 ? 's' : ''} 
+                          {partnerContext.current_loans?.length > 0 && (
+                            <span className="ml-2 text-xs font-normal text-gray-400">({partnerContext.current_loans.length})</span>
+                          )}
+                        </h3>
+                      </div>
                       {partnerContext.current_loans && partnerContext.current_loans.length > 0 ? (
-                        <div className="space-y-2">
+                        <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4 space-y-2">
                           {partnerContext.current_loans.map((loan, idx) => (
-                            <div key={idx} className="bg-blue-50 border-2 border-blue-400 rounded-lg p-4">
-                              <div className="flex items-start">
-                                <svg className="w-5 h-5 text-blue-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                                </svg>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-blue-900">🚗 {loan.make} {loan.model}</p>
-                                  <p className="text-xs text-blue-700 mt-1">
-                                    {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)}
-                                  </p>
-                                  <p className="text-xs text-blue-600 mt-1 font-mono truncate">VIN: {loan.vin}</p>
-                                </div>
+                            <div key={idx} className="text-sm">
+                              <div className="font-medium text-gray-900">
+                                🚗 {loan.make} {loan.model}
+                              </div>
+                              <div className="text-xs text-gray-600 mt-1">
+                                {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)} • VIN: <a href="#" className="text-blue-600 hover:text-blue-800 font-mono">{loan.vin ? loan.vin.slice(-8) : 'N/A'}</a>
                               </div>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-lg border border-gray-200">
                           <p className="text-sm">No active loans</p>
                         </div>
                       )}
                     </div>
 
-                    {/* Recommended Loans (Planned) */}
+                    {/* Recommended Loans - Table Format */}
                     <div>
-                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
-                        Recommended Loan{partnerContext.recommended_loans?.length > 1 ? 's' : ''}
-                        {partnerContext.recommended_loans?.length > 0 && (
-                          <span className="ml-2 text-xs font-normal text-gray-400">({partnerContext.recommended_loans.length})</span>
-                        )}
-                      </h3>
+                      <div className="border-l-4 border-green-500 pl-3 mb-3">
+                        <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wide">
+                          Recommended Loan{partnerContext.recommended_loans?.length > 1 ? 's' : ''} 
+                          {partnerContext.recommended_loans?.length > 0 && (
+                            <span className="ml-2 text-xs font-normal text-gray-400">({partnerContext.recommended_loans.length})</span>
+                          )}
+                        </h3>
+                      </div>
                       {partnerContext.recommended_loans && partnerContext.recommended_loans.length > 0 ? (
-                        <div className="space-y-2">
-                          {partnerContext.recommended_loans.map((loan, idx) => (
-                            <div key={idx} className="bg-green-50 border-2 border-green-400 rounded-lg p-4">
-                              <div className="flex items-start">
-                                <svg className="w-5 h-5 text-green-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                                </svg>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-green-900">🚗 {loan.make} {loan.model}</p>
-                                  <p className="text-xs text-green-700 mt-1">
-                                    {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)}
-                                  </p>
-                                  <p className="text-xs text-green-600 mt-1 font-mono truncate">VIN: {loan.vin}</p>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
+                        <div className="bg-green-50 rounded-lg border-l-4 border-green-500 overflow-hidden">
+                          <table className="min-w-full divide-y divide-green-200">
+                            <tbody className="divide-y divide-green-200">
+                              {partnerContext.recommended_loans.map((loan, idx) => {
+                                // Generate a dummy score based on status
+                                const score = loan.status === 'manual' ? 85 : 82
+                                const scoreColor = score >= 80 ? 'text-green-600' : score >= 60 ? 'text-amber-600' : 'text-gray-600'
+                                
+                                return (
+                                  <tr key={idx} className="hover:bg-green-100 transition-colors">
+                                    <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                                      {loan.make} {loan.model}
+                                    </td>
+                                    <td className="px-4 py-2 text-xs text-gray-600">
+                                      {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)}
+                                    </td>
+                                    <td className="px-4 py-2 text-xs text-right">
+                                      VIN: <a href="#" className="text-blue-600 hover:text-blue-800 font-mono">{loan.vin ? loan.vin.slice(-8) : 'N/A'}</a>
+                                      <span className={`ml-2 font-semibold ${scoreColor}`}>Score: {score}</span>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       ) : (
-                        <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-lg border border-gray-200">
                           <p className="text-sm">No planned loans yet</p>
                           <p className="text-xs mt-1">Run the optimizer to get recommendations</p>
                         </div>

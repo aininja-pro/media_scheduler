@@ -471,7 +471,9 @@ function App() {
                           month: 'short',
                           day: 'numeric',
                           hour: 'numeric',
-                          minute: '2-digit'
+                          minute: '2-digit',
+                          timeZone: 'America/Los_Angeles',
+                          timeZoneName: 'short'
                         })}
                         {' '}({syncStatus.last_sync.success_count}/{syncStatus.last_sync.total_tables} tables,{' '}
                         {syncStatus.last_sync.total_rows_processed.toLocaleString()} rows)
@@ -485,7 +487,9 @@ function App() {
                           month: 'short',
                           day: 'numeric',
                           hour: 'numeric',
-                          minute: '2-digit'
+                          minute: '2-digit',
+                          timeZone: 'America/Los_Angeles',
+                          timeZoneName: 'short'
                         })}
                       </div>
                     )}

@@ -5,6 +5,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import os
 import logging
+import pytz
 
 from .routers import ingest
 from .services.database import db_service
@@ -24,16 +25,17 @@ async def lifespan(app: FastAPI):
     sync_hour = int(os.getenv('SYNC_HOUR', 2))
     sync_minute = int(os.getenv('SYNC_MINUTE', 0))
     sync_enabled = os.getenv('SYNC_ENABLED', 'true').lower() == 'true'
+    pacific_tz = pytz.timezone('America/Los_Angeles')
 
     if sync_enabled:
         scheduler.add_job(
             run_nightly_sync,
-            CronTrigger(hour=sync_hour, minute=sync_minute),
+            CronTrigger(hour=sync_hour, minute=sync_minute, timezone=pacific_tz),
             id='nightly_fms_sync',
             replace_existing=True
         )
         scheduler.start()
-        logger.info(f"✓ Nightly sync scheduler started - runs daily at {sync_hour:02d}:{sync_minute:02d}")
+        logger.info(f"✓ Nightly sync scheduler started - runs daily at {sync_hour:02d}:{sync_minute:02d} Pacific Time")
     else:
         logger.info("⚠ Nightly sync disabled (SYNC_ENABLED=false)")
 
@@ -214,14 +216,15 @@ async def update_sync_schedule(sync_hour: int, sync_minute: int):
 
     # Reschedule the job
     if scheduler.running:
+        pacific_tz = pytz.timezone('America/Los_Angeles')
         scheduler.remove_job('nightly_fms_sync')
         scheduler.add_job(
             run_nightly_sync,
-            CronTrigger(hour=sync_hour, minute=sync_minute),
+            CronTrigger(hour=sync_hour, minute=sync_minute, timezone=pacific_tz),
             id='nightly_fms_sync',
             replace_existing=True
         )
-        logger.info(f"✓ Sync schedule updated to {sync_hour:02d}:{sync_minute:02d}")
+        logger.info(f"✓ Sync schedule updated to {sync_hour:02d}:{sync_minute:02d} Pacific Time")
 
     # Get updated next run time
     next_run = None

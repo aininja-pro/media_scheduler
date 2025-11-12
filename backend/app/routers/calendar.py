@@ -552,9 +552,9 @@ async def change_assignment_status(
     """
     Change the status of a scheduled assignment.
 
-    Workflow:
-    - 'planned' (green) → 'requested' (magenta) when sent to FMS
-    - 'manual' (green dashed) → 'requested' (magenta) when sent to FMS
+    FMS Integration Workflow:
+    - 'planned'/'manual' (green) → 'requested' (magenta) = CREATE FMS vehicle request
+    - 'requested' (magenta) → 'planned'/'manual' (green) = DELETE FMS vehicle request (unrequest)
     - Cannot change to 'active' (that comes from current_activity sync)
     """
     db = DatabaseService()
@@ -569,22 +569,134 @@ async def change_assignment_status(
                 detail=f"Invalid status. Allowed: {allowed_statuses}"
             )
 
-        # Update the assignment
-        result = db.client.table('scheduled_assignments')\
-            .update({'status': new_status})\
+        # Get current assignment status
+        current_result = db.client.table('scheduled_assignments')\
+            .select('status, fms_request_id')\
             .eq('assignment_id', assignment_id)\
             .execute()
 
-        if not result.data:
+        if not current_result.data:
             raise HTTPException(status_code=404, detail=f"Assignment {assignment_id} not found")
 
-        return {
-            'success': True,
-            'message': f'Assignment {assignment_id} status changed to {new_status}',
-            'assignment_id': assignment_id,
-            'new_status': new_status
-        }
+        current_status = current_result.data[0]['status']
+        fms_request_id = current_result.data[0].get('fms_request_id')
 
+        # SCENARIO 1: User is REQUESTING (Green → Magenta)
+        if current_status in ['planned', 'manual'] and new_status == 'requested':
+            # Update status first
+            db.client.table('scheduled_assignments')\
+                .update({'status': 'requested'})\
+                .eq('assignment_id', assignment_id)\
+                .execute()
+
+            # Create FMS request
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    fms_response = await client.post(
+                        f"http://localhost:8081/api/fms/create-vehicle-request/{assignment_id}"
+                    )
+
+                    if fms_response.status_code != 200:
+                        # Rollback status change
+                        db.client.table('scheduled_assignments')\
+                            .update({'status': current_status})\
+                            .eq('assignment_id', assignment_id)\
+                            .execute()
+
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Failed to create FMS request: {fms_response.text}"
+                        )
+
+            except httpx.HTTPError as he:
+                # Rollback on error
+                db.client.table('scheduled_assignments')\
+                    .update({'status': current_status})\
+                    .eq('assignment_id', assignment_id)\
+                    .execute()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"FMS integration error: {str(he)}"
+                )
+
+            return {
+                'success': True,
+                'message': f'Assignment {assignment_id} requested in FMS',
+                'assignment_id': assignment_id,
+                'old_status': current_status,
+                'new_status': 'requested',
+                'fms_action': 'create'
+            }
+
+        # SCENARIO 2: User is UNREQUESTING (Magenta → Green)
+        elif current_status == 'requested' and new_status in ['planned', 'manual']:
+            # Delete from FMS first
+            if fms_request_id:
+                try:
+                    import httpx
+                    import os
+
+                    fms_environment = os.getenv("FMS_ENVIRONMENT", "staging")
+                    fms_staging_url = os.getenv("FMS_STAGING_URL", "https://staging.driveshop.com")
+                    fms_production_url = os.getenv("FMS_PRODUCTION_URL", "https://fms.driveshop.com")
+                    fms_base_url = fms_production_url if fms_environment == "production" else fms_staging_url
+
+                    fms_staging_token = os.getenv("FMS_STAGING_TOKEN")
+                    fms_production_token = os.getenv("FMS_PRODUCTION_TOKEN")
+                    fms_token = fms_production_token if fms_environment == "production" else fms_staging_token
+
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.delete(
+                            f"{fms_base_url}/api/v1/vehicle_requests/{fms_request_id}",
+                            headers={"Authorization": f"Bearer {fms_token}"}
+                        )
+
+                        if response.status_code not in [200, 204, 404]:
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"FMS deletion failed: {response.status_code} - {response.text}"
+                            )
+
+                except httpx.HTTPError as he:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to unrequest from FMS: {str(he)}"
+                    )
+
+            # Update local status
+            db.client.table('scheduled_assignments')\
+                .update({'status': new_status, 'fms_request_id': None})\
+                .eq('assignment_id', assignment_id)\
+                .execute()
+
+            return {
+                'success': True,
+                'message': f'Assignment {assignment_id} unrequested from FMS',
+                'assignment_id': assignment_id,
+                'old_status': current_status,
+                'new_status': new_status,
+                'fms_action': 'delete'
+            }
+
+        # SCENARIO 3: Other status changes (no FMS action)
+        else:
+            db.client.table('scheduled_assignments')\
+                .update({'status': new_status})\
+                .eq('assignment_id', assignment_id)\
+                .execute()
+
+            return {
+                'success': True,
+                'message': f'Assignment {assignment_id} status changed to {new_status}',
+                'assignment_id': assignment_id,
+                'old_status': current_status,
+                'new_status': new_status,
+                'fms_action': 'none'
+            }
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:

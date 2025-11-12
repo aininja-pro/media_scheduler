@@ -52,6 +52,10 @@ app.include_router(calendar.router)
 from .routers import chain_builder
 app.include_router(chain_builder.router, prefix="/api")
 
+# Import and include FMS Integration router
+from .routers import fms_integration
+app.include_router(fms_integration.router)
+
 @app.get("/")
 def read_root():
     """Root endpoint"""

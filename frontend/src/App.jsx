@@ -668,82 +668,46 @@ function App() {
                       </div>
                     ) : csvType.id === 'operations_data' ? (
                       /* Special handling for Operations Data - Excel file upload */
-                      <div className="space-y-3">
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-green-400 transition-colors">
-                          <input
-                            type="file"
-                            accept=".xlsx,.xls"
-                            onChange={handleOperationsDataUpload}
-                            className="hidden"
-                            id={`file-input-${csvType.id}`}
-                          />
-                          <label
-                            htmlFor={`file-input-${csvType.id}`}
-                            className="cursor-pointer"
-                          >
-                            <div className="text-gray-400 mb-2">
-                              <svg className="mx-auto h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                              </svg>
-                            </div>
-                            <p className="text-sm text-gray-600 mb-2">
-                              Drop Excel file or <span className="text-green-600 font-medium">browse</span>
-                            </p>
-                            <p className="text-xs text-gray-400">Max file size: 10MB | .xlsx, .xls</p>
-                          </label>
-                        </div>
-                        <div className="text-xs text-gray-500 space-y-1 mb-4">
-                          <div>✅ Sheet 1: Rules</div>
-                          <div>✅ Sheet 2: Ops Capacity</div>
-                          <div>✅ Sheet 3: Holiday/Blackout Dates</div>
-                        </div>
-                        <div className="mt-auto">
-                          <button 
-                            disabled={isLoadingOperationsData}
-                            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
-                          >
-                            {isLoadingOperationsData ? 'Processing...' : 'Ready for Excel Upload'}
-                          </button>
+                      <div className="space-y-2">
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls"
+                          onChange={handleOperationsDataUpload}
+                          className="hidden"
+                          id={`file-input-${csvType.id}`}
+                        />
+                        <label
+                          htmlFor={`file-input-${csvType.id}`}
+                          className="block w-full cursor-pointer"
+                        >
+                          <div className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors text-center">
+                            {isLoadingOperationsData ? 'Processing...' : 'Upload Excel File'}
+                          </div>
+                        </label>
+                        <div className="text-xs text-gray-500">
+                          Sheets: Rules, Ops Capacity, Holidays
                         </div>
                       </div>
                     ) : csvType.id === 'budgets' ? (
                       /* Special handling for Budgets - Excel file upload */
-                      <div className="space-y-3">
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-green-400 transition-colors">
-                          <input
-                            type="file"
-                            accept=".xlsx,.xls"
-                            onChange={handleBudgetsUpload}
-                            className="hidden"
-                            id={`file-input-${csvType.id}`}
-                          />
-                          <label
-                            htmlFor={`file-input-${csvType.id}`}
-                            className="cursor-pointer"
-                          >
-                            <div className="text-gray-400 mb-2">
-                              <svg className="mx-auto h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                              </svg>
-                            </div>
-                            <p className="text-sm text-gray-600 mb-2">
-                              Drop Excel file or <span className="text-green-600 font-medium">browse</span>
-                            </p>
-                            <p className="text-xs text-gray-400">Max file size: 10MB | .xlsx, .xls</p>
-                          </label>
-                        </div>
-                        <div className="text-xs text-gray-500 space-y-1 mb-4">
-                          <div>✅ Office budget data by quarter</div>
-                          <div>✅ Fleet/make budget allocations</div>
-                          <div>✅ Usage tracking and reporting</div>
-                        </div>
-                        <div className="mt-auto">
-                          <button 
-                            disabled={isLoadingBudgets}
-                            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
-                          >
-                            {isLoadingBudgets ? 'Processing...' : 'Ready for Budget Upload'}
-                          </button>
+                      <div className="space-y-2">
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls"
+                          onChange={handleBudgetsUpload}
+                          className="hidden"
+                          id={`file-input-${csvType.id}`}
+                        />
+                        <label
+                          htmlFor={`file-input-${csvType.id}`}
+                          className="block w-full cursor-pointer"
+                        >
+                          <div className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors text-center">
+                            {isLoadingBudgets ? 'Processing...' : 'Upload Excel File'}
+                          </div>
+                        </label>
+                        <div className="text-xs text-gray-500">
+                          Budget data by quarter, fleet allocations
                         </div>
                       </div>
                     ) : (

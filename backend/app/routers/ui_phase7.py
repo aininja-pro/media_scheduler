@@ -1933,15 +1933,28 @@ async def get_partner_intelligence(
 
         partner = partner_response.data[0]
 
-        # 2. Get loan history for stats
-        loan_history_response = db.client.table('loan_history')\
-            .select('*')\
-            .eq('person_id', person_id)\
-            .order('start_date', desc=True)\
-            .limit(100)\
-            .execute()
+        # 2. Get loan history for stats (with pagination to get ALL records)
+        all_loan_history = []
+        limit = 1000
+        offset = 0
+        while True:
+            loan_history_response = db.client.table('loan_history')\
+                .select('*')\
+                .eq('person_id', person_id)\
+                .order('start_date', desc=True)\
+                .range(offset, offset + limit - 1)\
+                .execute()
 
-        loan_history_df = pd.DataFrame(loan_history_response.data) if loan_history_response.data else pd.DataFrame()
+            if not loan_history_response.data:
+                break
+
+            all_loan_history.extend(loan_history_response.data)
+            offset += limit
+
+            if len(loan_history_response.data) < limit:
+                break
+
+        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
 
         # Calculate stats
         total_loans = len(loan_history_df)
@@ -2031,7 +2044,7 @@ async def get_partner_intelligence(
                     # Get partner's media cost for this make
                     cost_info = get_cost_for_assignment(person_id, make_item['make'])
                     make_item['media_cost'] = cost_info['cost']
-                    make_item['cost_type'] = cost_info['type']  # 'exact', 'partner_avg', or 'default'
+                    make_item['cost_type'] = cost_info['tier']  # 'exact', 'partner_avg', or 'default'
 
                     # Calculate partner's usage for this make
                     if not loan_history_df.empty:

@@ -21,10 +21,12 @@ Date: November 12, 2025
 import logging
 import httpx
 import os
+import pytz
 from datetime import datetime
 from typing import Dict, List
 
 logger = logging.getLogger(__name__)
+pacific_tz = pytz.timezone('America/Los_Angeles')
 
 # FMS CSV Export URLs from environment
 SYNC_URLS = {
@@ -113,9 +115,9 @@ async def run_nightly_sync() -> Dict:
     Returns:
         Dict with summary of sync results
     """
-    start_time = datetime.now()
+    start_time = datetime.now(pacific_tz)
     logger.info(f"[Nightly Sync] ========================================")
-    logger.info(f"[Nightly Sync] Starting nightly FMS data sync at {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"[Nightly Sync] Starting nightly FMS data sync at {start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     logger.info(f"[Nightly Sync] ========================================")
 
     results: List[Dict] = []
@@ -135,7 +137,7 @@ async def run_nightly_sync() -> Dict:
             })
 
     # Summary
-    end_time = datetime.now()
+    end_time = datetime.now(pacific_tz)
     duration = (end_time - start_time).total_seconds()
     success_count = sum(1 for r in results if r['success'])
     failure_count = len(results) - success_count

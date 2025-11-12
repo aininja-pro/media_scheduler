@@ -333,8 +333,8 @@ function App() {
     { id: 'approved_makes', name: 'Approved Ranks', description: 'A+/A/B/C rankings per partner/make', icon: '⭐', autoSync: true },
     { id: 'loan_history', name: 'Loan History', description: 'Historical assignment data', icon: '📊', autoSync: true },
     { id: 'current_activity', name: 'Current Activity', description: 'Active bookings and holds', icon: '📅', autoSync: true },
-    { id: 'operations_data', name: 'Operations Data', description: 'Rules, capacity limits, holiday dates', icon: '📊', autoSync: false },
-    { id: 'budgets', name: 'Budgets', description: 'Office/fleet budget tracking by quarter', icon: '💰', autoSync: false }
+    { id: 'budgets', name: 'Budgets', description: 'Office/fleet budget tracking by quarter', icon: '💰', autoSync: false },
+    { id: 'operations_data', name: 'Operations Data', description: 'Rules, capacity limits, holiday dates', icon: '📊', autoSync: false }
   ]
   
   return (
@@ -463,6 +463,20 @@ function App() {
                         Save Schedule
                       </button>
                     </div>
+                    {syncStatus?.last_sync?.end_time && (
+                      <div>
+                        <span className="font-medium">Last Successful Sync:</span>{' '}
+                        {new Date(syncStatus.last_sync.end_time).toLocaleString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit'
+                        })}
+                        {' '}({syncStatus.last_sync.success_count}/{syncStatus.last_sync.total_tables} tables,{' '}
+                        {syncStatus.last_sync.total_rows_processed.toLocaleString()} rows)
+                      </div>
+                    )}
                     {syncStatus?.next_sync_time && (
                       <div>
                         <span className="font-medium">Next Sync:</span>{' '}

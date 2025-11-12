@@ -39,6 +39,9 @@ SYNC_URLS = {
 # Use 'backend' for Docker internal calls, 'localhost:8081' for local dev
 API_BASE_URL = os.getenv('INTERNAL_API_URL', 'http://backend:8000')
 
+# Global variable to track last successful sync
+last_sync_result = None
+
 
 async def sync_single_table(table_name: str, csv_url: str) -> Dict:
     """
@@ -152,7 +155,7 @@ async def run_nightly_sync() -> Dict:
 
     logger.info(f"[Nightly Sync] ========================================")
 
-    return {
+    result_summary = {
         'start_time': start_time.isoformat(),
         'end_time': end_time.isoformat(),
         'duration_seconds': duration,
@@ -162,6 +165,12 @@ async def run_nightly_sync() -> Dict:
         'total_rows_processed': total_rows,
         'results': results
     }
+
+    # Store in global variable for status endpoint
+    global last_sync_result
+    last_sync_result = result_summary
+
+    return result_summary
 
 
 def get_sync_config() -> Dict:
@@ -181,3 +190,13 @@ def get_sync_config() -> Dict:
         'api_base_url': API_BASE_URL,
         'manual_only': ['operations_data', 'budgets']
     }
+
+
+def get_last_sync_result() -> Dict:
+    """
+    Get last sync result (if any)
+
+    Returns:
+        Last sync result or None
+    """
+    return last_sync_result

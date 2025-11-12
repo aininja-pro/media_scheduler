@@ -8,7 +8,7 @@ import logging
 
 from .routers import ingest
 from .services.database import db_service
-from .services.nightly_sync import run_nightly_sync, get_sync_config
+from .services.nightly_sync import run_nightly_sync, get_sync_config, get_last_sync_result
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ async def get_sync_status():
     Get status of nightly sync scheduler
 
     Returns:
-        Whether scheduler is running and next run time
+        Whether scheduler is running, next run time, and last sync result
     """
     is_running = scheduler.running
     next_run = None
@@ -175,12 +175,16 @@ async def get_sync_status():
         if sync_job and sync_job.next_run_time:
             next_run = sync_job.next_run_time.isoformat()
 
+    # Get last sync result
+    last_sync = get_last_sync_result()
+
     return {
         'scheduler_running': is_running,
         'next_sync_time': next_run,
         'sync_hour': int(os.getenv('SYNC_HOUR', 2)),
         'sync_minute': int(os.getenv('SYNC_MINUTE', 0)),
-        'sync_enabled': os.getenv('SYNC_ENABLED', 'true').lower() == 'true'
+        'sync_enabled': os.getenv('SYNC_ENABLED', 'true').lower() == 'true',
+        'last_sync': last_sync
     }
 
 

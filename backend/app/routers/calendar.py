@@ -591,25 +591,24 @@ async def change_assignment_status(
 
             # Create FMS request
             try:
-                import httpx
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    fms_response = await client.post(
-                        f"http://localhost:8081/api/fms/create-vehicle-request/{assignment_id}"
+                # Import and call FMS integration directly
+                from ..routers.fms_integration import create_fms_vehicle_request
+
+                fms_result = await create_fms_vehicle_request(assignment_id)
+
+                if not fms_result.get('success'):
+                    # Rollback status change
+                    db.client.table('scheduled_assignments')\
+                        .update({'status': current_status})\
+                        .eq('assignment_id', assignment_id)\
+                        .execute()
+
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to create FMS request: {fms_result.get('message', 'Unknown error')}"
                     )
 
-                    if fms_response.status_code != 200:
-                        # Rollback status change
-                        db.client.table('scheduled_assignments')\
-                            .update({'status': current_status})\
-                            .eq('assignment_id', assignment_id)\
-                            .execute()
-
-                        raise HTTPException(
-                            status_code=500,
-                            detail=f"Failed to create FMS request: {fms_response.text}"
-                        )
-
-            except httpx.HTTPError as he:
+            except HTTPException as he:
                 # Rollback on error
                 db.client.table('scheduled_assignments')\
                     .update({'status': current_status})\
@@ -649,7 +648,7 @@ async def change_assignment_status(
                     async with httpx.AsyncClient(timeout=30.0) as client:
                         response = await client.delete(
                             f"{fms_base_url}/api/v1/vehicle_requests/{fms_request_id}",
-                            headers={"Authorization": f"Bearer {fms_token}"}
+                            headers={"Authorization": f"Token {fms_token}"}  # FMS uses "Token" not "Bearer"
                         )
 
                         if response.status_code not in [200, 204, 404]:

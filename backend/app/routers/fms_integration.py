@@ -68,12 +68,13 @@ async def create_fms_vehicle_request(assignment_id: int):
     Called when: User clicks "Request" button (green → magenta)
 
     Process:
-    1. Fetch assignment details with vehicle_id (JOIN with vehicles table)
-    2. Convert dates to FMS format (MM/DD/YY from YYYY-MM-DD)
-    3. Build FMS API payload
-    4. POST to FMS API
-    5. Extract FMS request ID from response
-    6. Store FMS request ID in database
+    1. Fetch assignment details from scheduled_assignments
+    2. Fetch vehicle details from vehicles table (get vehicle_id)
+    3. Convert dates to FMS format (MM/DD/YY from YYYY-MM-DD)
+    4. Build FMS API payload
+    5. POST to FMS API
+    6. Extract FMS request ID from response
+    7. Store FMS request ID in database
 
     Args:
         assignment_id: Internal scheduler assignment ID
@@ -85,37 +86,44 @@ async def create_fms_vehicle_request(assignment_id: int):
     logger.info(f"Creating FMS vehicle request for assignment {assignment_id}")
 
     try:
-        # 1. Fetch assignment with vehicle details (JOIN with vehicles table)
-        query_result = await db_service.supabase.table('scheduled_assignments') \
-            .select('*, vehicles!inner(vehicle_id, make, model)') \
+        # 1. Fetch assignment details
+        assignment_result = db_service.client.table('scheduled_assignments') \
+            .select('*') \
             .eq('assignment_id', assignment_id) \
             .eq('status', 'requested') \
             .execute()
 
-        if not query_result.data or len(query_result.data) == 0:
+        if not assignment_result.data or len(assignment_result.data) == 0:
             raise HTTPException(
                 status_code=404,
                 detail="Assignment not found or not in 'requested' status"
             )
 
-        assignment = query_result.data[0]
-        vehicle_data = assignment.get('vehicles')
+        assignment = assignment_result.data[0]
+        vin = assignment.get('vin')
 
-        if not vehicle_data:
+        # 2. Fetch vehicle details to get vehicle_id
+        vehicle_result = db_service.client.table('vehicles') \
+            .select('vehicle_id, make, model') \
+            .eq('vin', vin) \
+            .execute()
+
+        if not vehicle_result.data or len(vehicle_result.data) == 0:
             raise HTTPException(
                 status_code=400,
-                detail=f"Vehicle not found for VIN: {assignment.get('vin')}"
+                detail=f"Vehicle not found for VIN: {vin}"
             )
 
+        vehicle_data = vehicle_result.data[0]
         vehicle_id = vehicle_data.get('vehicle_id')
 
         if not vehicle_id:
             raise HTTPException(
                 status_code=400,
-                detail=f"vehicle_id not found for VIN: {assignment.get('vin')}. Ensure vehicle is in vehicles table."
+                detail=f"vehicle_id not found for VIN: {vin}. Ensure vehicle is in vehicles table."
             )
 
-        # 2. Convert dates to FMS format (MM/DD/YY)
+        # 3. Convert dates to FMS format (MM/DD/YY)
         from datetime import datetime
 
         start_date_obj = datetime.strptime(str(assignment['start_day']), '%Y-%m-%d')
@@ -124,7 +132,7 @@ async def create_fms_vehicle_request(assignment_id: int):
         fms_start_date = start_date_obj.strftime('%m/%d/%y')
         fms_end_date = end_date_obj.strftime('%m/%d/%y')
 
-        # 3. Build FMS payload
+        # 4. Build FMS payload
         fms_payload = {
             "request": {
                 # Required fields
@@ -151,13 +159,13 @@ async def create_fms_vehicle_request(assignment_id: int):
         logger.debug(f"Payload: {fms_payload}")
         logger.debug(f"Dates converted: {assignment['start_day']} → {fms_start_date}, {assignment['end_day']} → {fms_end_date}")
 
-        # 4. Send to FMS
+        # 5. Send to FMS
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{FMS_BASE_URL}/api/v1/vehicle_requests",
                 json=fms_payload,
                 headers={
-                    "Authorization": f"Bearer {FMS_TOKEN}",
+                    "Authorization": f"Token {FMS_TOKEN}",  # FMS uses "Token" not "Bearer"
                     "Content-Type": "application/json"
                 }
             )
@@ -172,20 +180,17 @@ async def create_fms_vehicle_request(assignment_id: int):
             fms_response = response.json()
             logger.info(f"FMS response: {fms_response}")
 
-            # 5. Extract FMS request ID (try multiple possible field names)
-            fms_request_id = (
-                fms_response.get('id') or
-                fms_response.get('request_id') or
-                fms_response.get('vehicle_request', {}).get('id')
-            )
+            # 6. Extract FMS request ID
+            # FMS returns: {"request": {"id": 4371, ...}}
+            fms_request_id = fms_response.get('request', {}).get('id')
 
             if not fms_request_id:
                 logger.warning(f"Could not extract FMS request ID from response: {fms_response}")
                 # Continue anyway - we created the request successfully
 
-            # 6. Store FMS request ID for future reference
+            # 7. Store FMS request ID for future reference
             if fms_request_id:
-                await db_service.supabase.table('scheduled_assignments').update({
+                db_service.client.table('scheduled_assignments').update({
                     'fms_request_id': fms_request_id
                 }).eq('assignment_id', assignment_id).execute()
 
@@ -229,7 +234,7 @@ async def delete_fms_vehicle_request(assignment_id: int):
 
     try:
         # 1. Get FMS request ID
-        result = await db_service.supabase.table('scheduled_assignments') \
+        result = db_service.client.table('scheduled_assignments') \
             .select('fms_request_id, status') \
             .eq('assignment_id', assignment_id) \
             .execute()
@@ -250,7 +255,7 @@ async def delete_fms_vehicle_request(assignment_id: int):
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.delete(
                     f"{FMS_BASE_URL}/api/v1/vehicle_requests/{fms_request_id}",
-                    headers={"Authorization": f"Bearer {FMS_TOKEN}"}
+                    headers={"Authorization": f"Token {FMS_TOKEN}"}
                 )
 
                 if response.status_code not in [200, 204, 404]:
@@ -265,7 +270,7 @@ async def delete_fms_vehicle_request(assignment_id: int):
             logger.info(f"Assignment {assignment_id} not requested in FMS, skipping FMS deletion")
 
         # 3. Delete from scheduler database
-        await db_service.supabase.table('scheduled_assignments') \
+        db_service.client.table('scheduled_assignments') \
             .delete() \
             .eq('assignment_id', assignment_id) \
             .execute()
@@ -312,7 +317,7 @@ async def bulk_create_fms_vehicle_requests(request: BulkOperationRequest):
     for assignment_id in request.assignment_ids:
         try:
             # Check if assignment can be requested
-            result = await db_service.supabase.table('scheduled_assignments') \
+            result = db_service.client.table('scheduled_assignments') \
                 .select('status, assignment_id') \
                 .eq('assignment_id', assignment_id) \
                 .execute()
@@ -338,7 +343,7 @@ async def bulk_create_fms_vehicle_requests(request: BulkOperationRequest):
                 continue
 
             # Update status to 'requested'
-            await db_service.supabase.table('scheduled_assignments').update({
+            db_service.client.table('scheduled_assignments').update({
                 'status': 'requested'
             }).eq('assignment_id', assignment_id).execute()
 
@@ -355,7 +360,7 @@ async def bulk_create_fms_vehicle_requests(request: BulkOperationRequest):
 
             except HTTPException as he:
                 # Rollback status change
-                await db_service.supabase.table('scheduled_assignments').update({
+                db_service.client.table('scheduled_assignments').update({
                     'status': original_status
                 }).eq('assignment_id', assignment_id).execute()
 
@@ -409,7 +414,7 @@ async def bulk_unrequest_fms_vehicle_requests(request: BulkOperationRequest):
     for assignment_id in request.assignment_ids:
         try:
             # Check if assignment is 'requested'
-            result = await db_service.supabase.table('scheduled_assignments') \
+            result = db_service.client.table('scheduled_assignments') \
                 .select('status, fms_request_id') \
                 .eq('assignment_id', assignment_id) \
                 .execute()
@@ -439,7 +444,7 @@ async def bulk_unrequest_fms_vehicle_requests(request: BulkOperationRequest):
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.delete(
                         f"{FMS_BASE_URL}/api/v1/vehicle_requests/{fms_request_id}",
-                        headers={"Authorization": f"Bearer {FMS_TOKEN}"}
+                        headers={"Authorization": f"Token {FMS_TOKEN}"}
                     )
 
                     if response.status_code not in [200, 204, 404]:
@@ -451,7 +456,7 @@ async def bulk_unrequest_fms_vehicle_requests(request: BulkOperationRequest):
                         continue
 
             # Update status back to 'manual'
-            await db_service.supabase.table('scheduled_assignments').update({
+            db_service.client.table('scheduled_assignments').update({
                 'status': 'manual',
                 'fms_request_id': None
             }).eq('assignment_id', assignment_id).execute()
@@ -506,7 +511,7 @@ async def bulk_delete_fms_vehicle_requests(request: BulkOperationRequest):
     for assignment_id in request.assignment_ids:
         try:
             # Check assignment status
-            result = await db_service.supabase.table('scheduled_assignments') \
+            result = db_service.client.table('scheduled_assignments') \
                 .select('status, fms_request_id') \
                 .eq('assignment_id', assignment_id) \
                 .execute()
@@ -530,7 +535,7 @@ async def bulk_delete_fms_vehicle_requests(request: BulkOperationRequest):
                     async with httpx.AsyncClient(timeout=30.0) as client:
                         response = await client.delete(
                             f"{FMS_BASE_URL}/api/v1/vehicle_requests/{fms_request_id}",
-                            headers={"Authorization": f"Bearer {FMS_TOKEN}"}
+                            headers={"Authorization": f"Token {FMS_TOKEN}"}
                         )
 
                         if response.status_code not in [200, 204, 404]:
@@ -544,7 +549,7 @@ async def bulk_delete_fms_vehicle_requests(request: BulkOperationRequest):
                         deleted_from_fms = True
 
             # Delete from scheduler database
-            await db_service.supabase.table('scheduled_assignments') \
+            db_service.client.table('scheduled_assignments') \
                 .delete() \
                 .eq('assignment_id', assignment_id) \
                 .execute()

@@ -898,15 +898,41 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     }
 
     try {
-      const response = await fetch(
-        `http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`,
-        { method: 'DELETE' }
-      );
+      let response;
+
+      // If status is 'requested' (magenta), use FMS delete endpoint
+      if (assignment.status === 'requested') {
+        response = await fetch(
+          `http://localhost:8081/api/fms/delete-vehicle-request/${assignment.assignment_id}`,
+          { method: 'DELETE' }
+        );
+      } else {
+        // For non-requested assignments (green), use regular delete
+        response = await fetch(
+          `http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`,
+          { method: 'DELETE' }
+        );
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 500 && assignment.status === 'requested') {
+          setSaveMessage(`❌ Failed to delete from FMS - assignment may still exist`);
+        } else {
+          setSaveMessage(`❌ Failed to delete: ${errorData.detail || errorData.message || 'Unknown error'}`);
+        }
+        return;
+      }
 
       const data = await response.json();
 
       if (data.success) {
-        setSaveMessage(`✅ Assignment deleted successfully`);
+        // Show appropriate success message
+        if (assignment.status === 'requested' && data.deleted_from_fms) {
+          setSaveMessage(`✅ Assignment deleted! Request removed from FMS and scheduler.`);
+        } else {
+          setSaveMessage(`✅ Assignment deleted successfully`);
+        }
 
         // Reload intelligence based on mode
         if (chainMode === 'partner' && selectedPartner && selectedOffice) {
@@ -957,10 +983,26 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         `http://localhost:8081/api/calendar/change-assignment-status/${assignment.assignment_id}?new_status=requested`,
         { method: 'PATCH' }
       );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 500) {
+          setSaveMessage(`❌ Failed to send request to FMS - assignment not marked as requested`);
+        } else {
+          setSaveMessage(`❌ Failed to request: ${errorData.detail || errorData.message || 'Unknown error'}`);
+        }
+        return;
+      }
+
       const data = await response.json();
 
       if (data.success) {
-        setSaveMessage(`✅ Changed to requested (sent to FMS)`);
+        // Check if FMS action was performed
+        if (data.fms_action === 'create') {
+          setSaveMessage(`✅ Assignment requested! Request sent to FMS for approval.`);
+        } else {
+          setSaveMessage(`✅ Changed to requested`);
+        }
 
         // Reload intelligence
         if (chainMode === 'partner' && selectedPartner && selectedOffice) {
@@ -1011,10 +1053,26 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         `http://localhost:8081/api/calendar/change-assignment-status/${assignment.assignment_id}?new_status=manual`,
         { method: 'PATCH' }
       );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 500) {
+          setSaveMessage(`❌ Failed to unrequest from FMS - request may still be active`);
+        } else {
+          setSaveMessage(`❌ Failed to unrequest: ${errorData.detail || errorData.message || 'Unknown error'}`);
+        }
+        return;
+      }
+
       const data = await response.json();
 
       if (data.success) {
-        setSaveMessage(`✅ Changed back to manual`);
+        // Check if FMS action was performed
+        if (data.fms_action === 'delete') {
+          setSaveMessage(`✅ Unrequested! Request deleted from FMS and changed back to manual.`);
+        } else {
+          setSaveMessage(`✅ Changed back to manual`);
+        }
 
         // Reload intelligence
         if (chainMode === 'partner' && selectedPartner && selectedOffice) {

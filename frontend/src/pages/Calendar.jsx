@@ -392,47 +392,116 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
       const response = await fetch(`http://localhost:8081/api/calendar/change-assignment-status/${assignmentId}?new_status=requested`, {
         method: 'PATCH'
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 500) {
+          alert('⚠️ Failed to send request to FMS.\n\nThe assignment has NOT been marked as requested. Please try again or contact support if the issue persists.');
+        } else {
+          alert(`Failed to request: ${errorData.detail || errorData.message || 'Unknown error'}`);
+        }
+        return;
+      }
+
       const data = await response.json();
+
       if (data.success) {
+        // Check if FMS action was performed
+        if (data.fms_action === 'create') {
+          alert('✓ Assignment requested successfully!\n\nThe request has been sent to FMS for approval.');
+        } else {
+          alert('✓ Assignment status changed to requested.');
+        }
+
         // Reload activities to show magenta bar
         loadActivities();
       } else {
-        alert(`Failed to request: ${data.message}`);
+        alert(`Failed to request: ${data.message || 'Unknown error'}`);
       }
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      console.error('Request assignment error:', err);
+      alert(`Network error: Could not connect to server.\n\n${err.message}`);
     }
   };
 
   // Handle unrequest (magenta → green)
   const unrequestAssignment = async (assignmentId) => {
     try {
-      // Change back to 'planned' status
+      // Change back to 'planned' status (this will delete from FMS)
       const response = await fetch(`http://localhost:8081/api/calendar/change-assignment-status/${assignmentId}?new_status=planned`, {
         method: 'PATCH'
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 500) {
+          alert('⚠️ Failed to unrequest from FMS.\n\nThe request may still be active in FMS. Please try again or contact support.');
+        } else {
+          alert(`Failed to unrequest: ${errorData.detail || errorData.message || 'Unknown error'}`);
+        }
+        return;
+      }
+
       const data = await response.json();
+
       if (data.success) {
+        // Check if FMS action was performed
+        if (data.fms_action === 'delete') {
+          alert('✓ Assignment unrequested successfully!\n\nThe request has been deleted from FMS and the assignment is back to planned status.');
+        } else {
+          alert('✓ Assignment status changed back to planned.');
+        }
+
         // Reload activities to show green bar again
         loadActivities();
       } else {
-        alert(`Failed to unrequest: ${data.message}`);
+        alert(`Failed to unrequest: ${data.message || 'Unknown error'}`);
       }
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      console.error('Unrequest assignment error:', err);
+      alert(`Network error: Could not connect to server.\n\n${err.message}`);
     }
   };
 
   // Handle delete assignment
-  const deleteAssignment = async (assignmentId) => {
+  const deleteAssignment = async (assignmentId, status) => {
     if (!confirm('Delete this assignment?')) return;
 
     try {
-      const response = await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignmentId}`, {
-        method: 'DELETE'
-      });
+      let response;
+
+      // If status is 'requested' (magenta), use FMS delete endpoint
+      if (status === 'requested') {
+        response = await fetch(`http://localhost:8081/api/fms/delete-vehicle-request/${assignmentId}`, {
+          method: 'DELETE'
+        });
+      } else {
+        // For non-requested assignments (green), use regular delete
+        response = await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignmentId}`, {
+          method: 'DELETE'
+        });
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 500 && status === 'requested') {
+          alert('⚠️ Failed to delete from FMS.\n\nThe assignment may still exist in FMS. Please try again or contact support.');
+        } else {
+          alert(`Failed to delete: ${errorData.detail || errorData.message || 'Unknown error'}`);
+        }
+        return;
+      }
+
       const data = await response.json();
+
       if (data.success) {
+        // Show appropriate success message
+        if (status === 'requested' && data.deleted_from_fms) {
+          alert('✓ Assignment deleted successfully!\n\nThe request has been deleted from FMS and removed from the scheduler.');
+        } else {
+          alert('✓ Assignment deleted successfully!');
+        }
+
         // Reload activities
         loadActivities();
 
@@ -443,10 +512,11 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
           assignmentId
         });
       } else {
-        alert(`Failed to delete: ${data.message}`);
+        alert(`Failed to delete: ${data.message || 'Unknown error'}`);
       }
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      console.error('Delete assignment error:', err);
+      alert(`Network error: Could not connect to server.\n\n${err.message}`);
     }
   };
 
@@ -2095,7 +2165,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    deleteAssignment(activity.assignment_id);
+                                    deleteAssignment(activity.assignment_id, activity.status);
                                   }}
                                   className="bg-white text-red-600 hover:bg-red-100 rounded px-1 py-0.5 text-[10px] font-bold shadow-sm"
                                   title="Delete"

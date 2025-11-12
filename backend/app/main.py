@@ -1,16 +1,48 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+import os
+import logging
 
 from .routers import ingest
 from .services.database import db_service
+from .services.nightly_sync import run_nightly_sync, get_sync_config
+
+logger = logging.getLogger(__name__)
+
+# Initialize APScheduler
+scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     await db_service.initialize()
+
+    # Start nightly sync scheduler
+    sync_hour = int(os.getenv('SYNC_HOUR', 2))
+    sync_minute = int(os.getenv('SYNC_MINUTE', 0))
+    sync_enabled = os.getenv('SYNC_ENABLED', 'true').lower() == 'true'
+
+    if sync_enabled:
+        scheduler.add_job(
+            run_nightly_sync,
+            CronTrigger(hour=sync_hour, minute=sync_minute),
+            id='nightly_fms_sync',
+            replace_existing=True
+        )
+        scheduler.start()
+        logger.info(f"✓ Nightly sync scheduler started - runs daily at {sync_hour:02d}:{sync_minute:02d}")
+    else:
+        logger.info("⚠ Nightly sync disabled (SYNC_ENABLED=false)")
+
     yield
+
     # Shutdown
+    if sync_enabled:
+        scheduler.shutdown()
+        logger.info("✓ Scheduler stopped")
     await db_service.close()
 
 app = FastAPI(
@@ -23,7 +55,13 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3001", "http://localhost:5173"],  # Frontend URLs
+    allow_origins=[
+        "http://localhost:3001",
+        "http://localhost:5173",
+        "https://fms.driveshop.com",              # FMS production
+        "https://staging.driveshop.com",          # FMS staging
+        "https://media-scheduler.onrender.com",   # Frontend production
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -83,3 +121,64 @@ async def database_health_check():
         return {"database": "connected" if is_connected else "disconnected"}
     except Exception as e:
         return {"database": "error", "detail": str(e)}
+
+
+# ============================================
+# NIGHTLY SYNC ADMIN ENDPOINTS
+# ============================================
+
+@app.post("/api/admin/trigger-sync")
+async def trigger_manual_sync():
+    """
+    Manually trigger FMS data sync (for testing/debugging)
+
+    Syncs all tables:
+    - Vehicles
+    - Media Partners (with geocoding + preferred day analysis)
+    - Loan History
+    - Current Activity
+    - Approved Makes
+
+    Note: Operations Data and Budgets remain manual (Excel upload)
+    """
+    logger.info("[Manual Sync] Triggered by user")
+    result = await run_nightly_sync()
+    return result
+
+
+@app.get("/api/admin/sync-config")
+async def get_sync_configuration():
+    """
+    Get nightly sync configuration
+
+    Returns:
+        Sync schedule, URLs, and settings
+    """
+    config = get_sync_config()
+    return config
+
+
+@app.get("/api/admin/sync-status")
+async def get_sync_status():
+    """
+    Get status of nightly sync scheduler
+
+    Returns:
+        Whether scheduler is running and next run time
+    """
+    is_running = scheduler.running
+    next_run = None
+
+    if is_running:
+        jobs = scheduler.get_jobs()
+        sync_job = next((j for j in jobs if j.id == 'nightly_fms_sync'), None)
+        if sync_job and sync_job.next_run_time:
+            next_run = sync_job.next_run_time.isoformat()
+
+    return {
+        'scheduler_running': is_running,
+        'next_sync_time': next_run,
+        'sync_hour': int(os.getenv('SYNC_HOUR', 2)),
+        'sync_minute': int(os.getenv('SYNC_MINUTE', 0)),
+        'sync_enabled': os.getenv('SYNC_ENABLED', 'true').lower() == 'true'
+    }

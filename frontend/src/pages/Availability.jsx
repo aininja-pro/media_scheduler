@@ -30,7 +30,7 @@ function Availability() {
 
   const fetchOffices = async () => {
     try {
-      const response = await fetch('${API_BASE_URL}/api/etl/offices')
+      const response = await fetch(`${API_BASE_URL}/api/etl/offices`)
       if (response.ok) {
         const result = await response.json()
         setOffices(result.offices)

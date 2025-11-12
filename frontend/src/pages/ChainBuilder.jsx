@@ -109,7 +109,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   useEffect(() => {
     const loadOffices = async () => {
       try {
-        const response = await fetch('${API_BASE_URL}/api/offices');
+        const response = await fetch(`${API_BASE_URL}/api/offices`);
         const data = await response.json();
         if (data && data.length > 0) {
           setOffices(data.map(office => office.name));
@@ -1166,7 +1166,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       }
 
       // Save new vehicle
-      await fetch('${API_BASE_URL}/api/chain-builder/save-chain', {
+      await fetch(`${API_BASE_URL}/api/chain-builder/save-chain`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1281,7 +1281,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     setSaveMessage('');
 
     try {
-      const response = await fetch('${API_BASE_URL}/api/chain-builder/save-chain', {
+      const response = await fetch(`${API_BASE_URL}/api/chain-builder/save-chain`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2145,7 +2145,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         chain: chainData
       };
 
-      const response = await fetch('${API_BASE_URL}/api/chain-builder/save-vehicle-chain', {
+      const response = await fetch(`${API_BASE_URL}/api/chain-builder/save-vehicle-chain`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -2250,7 +2250,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     try {
       console.log('[Budget] Requesting budget with chain data:', chainData);
 
-      const response = await fetch('${API_BASE_URL}/api/chain-builder/calculate-chain-budget', {
+      const response = await fetch(`${API_BASE_URL}/api/chain-builder/calculate-chain-budget`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2319,7 +2319,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         throw new Error(`Failed to serialize payload: ${jsonError.message}`);
       }
 
-      const response = await fetch('${API_BASE_URL}/api/chain-builder/save-chain', {
+      const response = await fetch(`${API_BASE_URL}/api/chain-builder/save-chain`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

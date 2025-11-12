@@ -198,7 +198,7 @@ export default function Partners({ office }) {
       monday.setDate(date.getDate() - date.getDay() + (date.getDay() === 0 ? -6 : 1))
       const weekStart = monday.toISOString().split('T')[0]
 
-      const response = await fetch('${API_BASE_URL}/api/calendar/schedule-assignment', {
+      const response = await fetch(`${API_BASE_URL}/api/calendar/schedule-assignment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

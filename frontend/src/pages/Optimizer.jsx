@@ -105,7 +105,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   useEffect(() => {
     const loadOffices = async () => {
       try {
-        const response = await fetch('${API_BASE_URL}/api/offices');
+        const response = await fetch(`${API_BASE_URL}/api/offices`);
         const data = await response.json();
         if (data && data.length > 0) {
           setOffices(data.map(office => office.name));
@@ -425,7 +425,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
       console.log('Sending daily_capacities to optimizer:', dailyCapacities);
       console.log('Full request body:', requestBody);
 
-      const response = await fetch('${API_BASE_URL}/api/ui/phase7/run', {
+      const response = await fetch(`${API_BASE_URL}/api/ui/phase7/run`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -5,6 +5,7 @@ import Optimizer from './pages/Optimizer.jsx'
 import Calendar from './pages/Calendar.jsx'
 import Partners from './pages/Partners.jsx'
 import ChainBuilder from './pages/ChainBuilder.jsx'
+import TabNavigation from './components/TabNavigation.jsx'
 import './App.css'
 
 function App() {
@@ -14,6 +15,16 @@ function App() {
   const [optimizerOffice, setOptimizerOffice] = useState('Los Angeles') // Shared office state
   const [chainBuilderVehicle, setChainBuilderVehicle] = useState(null) // For Calendar→ChainBuilder navigation
   const [chainBuilderPartner, setChainBuilderPartner] = useState(null) // For Calendar→ChainBuilder partner navigation
+
+  // Detect if app is embedded in iframe (FMS integration)
+  const [isEmbedded, setIsEmbedded] = useState(false)
+
+  useEffect(() => {
+    // Check URL parameter for embedded mode
+    const urlParams = new URLSearchParams(window.location.search)
+    const embedded = urlParams.get('embedded') === 'true'
+    setIsEmbedded(embedded)
+  }, [])
   const [vehiclesUrl, setVehiclesUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/active_vehicles.rpt&init=csv')
   const [mediaPartnersUrl, setMediaPartnersUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/media_partners.rpt&init=csv')
   const [approvedRanksUrl, setApprovedRanksUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/approved_makes.rpt&init=csv')
@@ -254,69 +265,76 @@ function App() {
   
   return (
     <div className="w-full min-h-screen bg-gray-50">
-      {/* Header with DriveShop logo */}
-      <header className="bg-black h-16 md:h-20">
-        <div className="w-full px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-              <img
-                src={driveShopLogo}
-                alt="DriveShop Logo"
-                className="h-10 w-auto"
-                onError={() => console.log('Logo failed to load')}
-              />
-              <span className="ml-3 text-white/90 text-lg md:text-xl lg:text-2xl font-semibold tracking-wide leading-none whitespace-nowrap">
-                Media Scheduler
-              </span>
-          </div>
+      {/* Header with DriveShop logo - Only show in standalone mode */}
+      {!isEmbedded && (
+        <header className="bg-black h-16 md:h-20">
+          <div className="w-full px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+                <img
+                  src={driveShopLogo}
+                  alt="DriveShop Logo"
+                  className="h-10 w-auto"
+                  onError={() => console.log('Logo failed to load')}
+                />
+                <span className="ml-3 text-white/90 text-lg md:text-xl lg:text-2xl font-semibold tracking-wide leading-none whitespace-nowrap">
+                  Media Scheduler
+                </span>
+            </div>
 
-          <nav className="flex space-x-2">
-              <button
-                onClick={() => setActiveTab('upload')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'upload'
-                    ? 'bg-white text-black'
-                    : 'bg-gray-600 text-white hover:bg-gray-500'
-                }`}
-              >
-                Upload Data
-              </button>
-              <button
-                onClick={() => setActiveTab('optimizer')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'optimizer'
-                    ? 'bg-white text-black'
-                    : 'bg-gray-600 text-white hover:bg-gray-500'
-                }`}
-              >
-                Optimizer
-              </button>
-              <button
-                onClick={() => setActiveTab('calendar')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'calendar'
-                    ? 'bg-white text-black'
-                    : 'bg-gray-600 text-white hover:bg-gray-500'
-                }`}
-              >
-                Calendar
-              </button>
-              <button
-                onClick={() => setActiveTab('chain-builder')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'chain-builder'
-                    ? 'bg-white text-black'
-                    : 'bg-gray-600 text-white hover:bg-gray-500'
-                }`}
-              >
-                Chain Builder
-              </button>
-          </nav>
-        </div>
-      </header>
+            <nav className="flex space-x-2">
+                <button
+                  onClick={() => setActiveTab('upload')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'upload'
+                      ? 'bg-white text-black'
+                      : 'bg-gray-600 text-white hover:bg-gray-500'
+                  }`}
+                >
+                  Upload Data
+                </button>
+                <button
+                  onClick={() => setActiveTab('chain-builder')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'chain-builder'
+                      ? 'bg-white text-black'
+                      : 'bg-gray-600 text-white hover:bg-gray-500'
+                  }`}
+                >
+                  Chain Builder
+                </button>
+                <button
+                  onClick={() => setActiveTab('calendar')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'calendar'
+                      ? 'bg-white text-black'
+                      : 'bg-gray-600 text-white hover:bg-gray-500'
+                  }`}
+                >
+                  Calendar
+                </button>
+                <button
+                  onClick={() => setActiveTab('optimizer')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'optimizer'
+                      ? 'bg-white text-black'
+                      : 'bg-gray-600 text-white hover:bg-gray-500'
+                  }`}
+                >
+                  Optimizer
+                </button>
+            </nav>
+          </div>
+        </header>
+      )}
 
       {/* Main Content */}
       <main className="w-full py-8 px-4 sm:px-6 lg:px-8">
         <div className="min-h-[800px]">
+
+        {/* Tab Navigation - Only show in embedded mode */}
+        {isEmbedded && (
+          <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
+        )}
 
         {/* Upload Data Tab */}
         {activeTab === 'upload' && (

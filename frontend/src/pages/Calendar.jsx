@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { EventManager, EventTypes } from '../utils/eventManager';
+import { API_BASE_URL } from '../config';
 
 /**
  * Format partner name for display
@@ -44,7 +45,7 @@ function PartnerReviewHistory({ personId, office }) {
 
       try {
         const response = await fetch(
-          `http://localhost:8081/api/chain-builder/partner-review-history/${personId}?office=${encodeURIComponent(office)}`
+          `${API_BASE_URL}/api/chain-builder/partner-review-history/${personId}?office=${encodeURIComponent(office)}`
         );
 
         if (!response.ok) {
@@ -201,7 +202,7 @@ function VehicleReviewHistory({ vin, office }) {
 
       try {
         const response = await fetch(
-          `http://localhost:8081/api/chain-builder/vehicle-review-history/${encodeURIComponent(vin)}?office=${encodeURIComponent(office)}`
+          `${API_BASE_URL}/api/chain-builder/vehicle-review-history/${encodeURIComponent(vin)}?office=${encodeURIComponent(office)}`
         );
 
         if (!response.ok) {
@@ -389,7 +390,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
   // Handle status change (green → magenta)
   const requestAssignment = async (assignmentId) => {
     try {
-      const response = await fetch(`http://localhost:8081/api/calendar/change-assignment-status/${assignmentId}?new_status=requested`, {
+      const response = await fetch(`${API_BASE_URL}/api/calendar/change-assignment-status/${assignmentId}?new_status=requested`, {
         method: 'PATCH'
       });
 
@@ -428,7 +429,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
   const unrequestAssignment = async (assignmentId) => {
     try {
       // Change back to 'planned' status (this will delete from FMS)
-      const response = await fetch(`http://localhost:8081/api/calendar/change-assignment-status/${assignmentId}?new_status=planned`, {
+      const response = await fetch(`${API_BASE_URL}/api/calendar/change-assignment-status/${assignmentId}?new_status=planned`, {
         method: 'PATCH'
       });
 
@@ -472,12 +473,12 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
       // If status is 'requested' (magenta), use FMS delete endpoint
       if (status === 'requested') {
-        response = await fetch(`http://localhost:8081/api/fms/delete-vehicle-request/${assignmentId}`, {
+        response = await fetch(`${API_BASE_URL}/api/fms/delete-vehicle-request/${assignmentId}`, {
           method: 'DELETE'
         });
       } else {
         // For non-requested assignments (green), use regular delete
-        response = await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignmentId}`, {
+        response = await fetch(`${API_BASE_URL}/api/calendar/delete-assignment/${assignmentId}`, {
           method: 'DELETE'
         });
       }
@@ -571,7 +572,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
   useEffect(() => {
     const loadOffices = async () => {
       try {
-        const response = await fetch('http://localhost:8081/api/offices');
+        const response = await fetch('${API_BASE_URL}/api/offices');
         const data = await response.json();
         if (data && data.length > 0) {
           setOffices(data.map(office => office.name));
@@ -661,7 +662,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
     const loadVehicles = async () => {
       if (!selectedOffice) return;
       try {
-        const response = await fetch(`http://localhost:8081/api/calendar/vehicles?office=${selectedOffice}`);
+        const response = await fetch(`${API_BASE_URL}/api/calendar/vehicles?office=${selectedOffice}`);
         if (response.ok) {
           const data = await response.json();
           setAllVehicles(data.vehicles || []);
@@ -678,7 +679,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
     const loadPartners = async () => {
       if (!selectedOffice) return;
       try {
-        const response = await fetch(`http://localhost:8081/api/calendar/media-partners?office=${selectedOffice}`);
+        const response = await fetch(`${API_BASE_URL}/api/calendar/media-partners?office=${selectedOffice}`);
         if (response.ok) {
           const data = await response.json();
           setAllPartners(data.partners || []);
@@ -698,7 +699,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
         }
 
         // Fetch tier data for all partners in one call
-        const tierResponse = await fetch(`http://localhost:8081/api/calendar/partner-tiers?office=${selectedOffice}`);
+        const tierResponse = await fetch(`${API_BASE_URL}/api/calendar/partner-tiers?office=${selectedOffice}`);
         if (tierResponse.ok) {
           const tierData = await tierResponse.json();
           setPartnerTiers(tierData.tiers || {});
@@ -735,7 +736,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
               person_id: personId,
               office: selectedOffice
             });
-            const response = await fetch(`http://localhost:8081/api/ui/phase7/partner-distance?${params}`);
+            const response = await fetch(`${API_BASE_URL}/api/ui/phase7/partner-distance?${params}`);
             if (response.ok) {
               const data = await response.json();
               if (data.success) {
@@ -796,7 +797,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
         end_date: endDate
       });
 
-      const response = await fetch(`http://localhost:8081/api/calendar/activity?${params}`);
+      const response = await fetch(`${API_BASE_URL}/api/calendar/activity?${params}`);
       if (!response.ok) throw new Error('Failed to fetch activities');
 
       const data = await response.json();
@@ -1059,7 +1060,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
     setLoadingVehicleContext(true);
     try {
-      const response = await fetch(`http://localhost:8081/api/ui/phase7/vehicle-context/${vin}`);
+      const response = await fetch(`${API_BASE_URL}/api/ui/phase7/vehicle-context/${vin}`);
       if (!response.ok) throw new Error('Failed to fetch vehicle context');
       const data = await response.json();
       setVehicleContext(data);
@@ -1097,7 +1098,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
         // Try to get mileage from vehicles table
         let mileage = 'N/A';
         try {
-          const vehicleResponse = await fetch(`http://localhost:8081/api/ui/phase7/vehicle-context/${vin}`);
+          const vehicleResponse = await fetch(`${API_BASE_URL}/api/ui/phase7/vehicle-context/${vin}`);
           if (vehicleResponse.ok) {
             const vehicleData = await vehicleResponse.json();
             mileage = vehicleData.mileage || 'N/A';
@@ -1152,7 +1153,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
               office: selectedOffice,
               max_distance: 50
             });
-            const chainResponse = await fetch(`http://localhost:8081/api/ui/phase7/vehicle-chains/${vin}?${params}`);
+            const chainResponse = await fetch(`${API_BASE_URL}/api/ui/phase7/vehicle-chains/${vin}?${params}`);
             if (chainResponse.ok) {
               const chainData = await chainResponse.json();
               setChainingOpportunities(chainData);
@@ -1207,7 +1208,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             person_id: partnerId,
             office: office
           });
-          const distanceResponse = await fetch(`http://localhost:8081/api/ui/phase7/partner-distance?${params}`);
+          const distanceResponse = await fetch(`${API_BASE_URL}/api/ui/phase7/partner-distance?${params}`);
           if (distanceResponse.ok) {
             distanceInfo = await distanceResponse.json();
           }
@@ -1223,7 +1224,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             person_id: partnerId,
             office: office
           });
-          const intelligenceResponse = await fetch(`http://localhost:8081/api/ui/phase7/partner-intelligence?${intelligenceParams}`);
+          const intelligenceResponse = await fetch(`${API_BASE_URL}/api/ui/phase7/partner-intelligence?${intelligenceParams}`);
           if (intelligenceResponse.ok) {
             intelligenceData = await intelligenceResponse.json();
             approvedMakes = intelligenceData.approved_makes || [];
@@ -1285,7 +1286,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             person_id: partnerId,
             office: partnerOffice
           });
-          const intelligenceResponse = await fetch(`http://localhost:8081/api/ui/phase7/partner-intelligence?${intelligenceParams}`);
+          const intelligenceResponse = await fetch(`${API_BASE_URL}/api/ui/phase7/partner-intelligence?${intelligenceParams}`);
           if (intelligenceResponse.ok) {
             intelligenceData = await intelligenceResponse.json();
             approvedMakes = intelligenceData.approved_makes || [];

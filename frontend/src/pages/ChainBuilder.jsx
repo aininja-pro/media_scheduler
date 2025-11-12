@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 import ModelSelector from '../components/ModelSelector';
 import { EventManager, EventTypes } from '../utils/eventManager';
 import TimelineBar from '../components/TimelineBar';
@@ -108,7 +109,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   useEffect(() => {
     const loadOffices = async () => {
       try {
-        const response = await fetch('http://localhost:8081/api/offices');
+        const response = await fetch('${API_BASE_URL}/api/offices');
         const data = await response.json();
         if (data && data.length > 0) {
           setOffices(data.map(office => office.name));
@@ -128,7 +129,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     const loadPartners = async () => {
       try {
         // Use the calendar API to get all partners for this office
-        const response = await fetch(`http://localhost:8081/api/calendar/media-partners?office=${encodeURIComponent(selectedOffice)}`);
+        const response = await fetch(`${API_BASE_URL}/api/calendar/media-partners?office=${encodeURIComponent(selectedOffice)}`);
         if (!response.ok) {
           console.error('Failed to load partners');
           return;
@@ -169,7 +170,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     const loadVehicles = async () => {
       try {
         const response = await fetch(
-          `http://localhost:8081/api/chain-builder/search-vehicles?office=${encodeURIComponent(selectedOffice)}&search_term=${encodeURIComponent(vehicleSearchQuery)}&limit=50`
+          `${API_BASE_URL}/api/chain-builder/search-vehicles?office=${encodeURIComponent(selectedOffice)}&search_term=${encodeURIComponent(vehicleSearchQuery)}&limit=50`
         );
 
         if (!response.ok) {
@@ -367,7 +368,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       if (chainMode === 'partner' && detail.office === selectedOffice && selectedPartner) {
         console.log('[ChainBuilder] Reloading partner intelligence...');
         fetch(
-          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+          `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
         )
           .then(response => response.json())
           .then(data => {
@@ -388,7 +389,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         const endDate = sixMonthsAhead.toISOString().split('T')[0];
 
         fetch(
-          `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+          `${API_BASE_URL}/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
         )
           .then(response => response.json())
           .then(data => setVehicleIntelligence(data))
@@ -448,7 +449,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       setLoadingIntelligence(true);
       try {
         const response = await fetch(
-          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+          `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
         );
         if (response.ok) {
           const data = await response.json();
@@ -498,7 +499,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         const endDate = sixMonthsAhead.toISOString().split('T')[0];
 
         const response = await fetch(
-          `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+          `${API_BASE_URL}/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
         );
 
         if (response.ok) {
@@ -555,7 +556,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         const refreshPartnerIntelligence = async () => {
           try {
             const response = await fetch(
-              `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+              `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
             );
             if (response.ok) {
               const data = await response.json();
@@ -621,7 +622,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     setLoadingIntelligence(true);
     try {
       const response = await fetch(
-        `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+        `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
       );
       if (response.ok) {
         const data = await response.json();
@@ -671,7 +672,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     try {
       // Delete each assignment
       for (const assignment of chainAssignments) {
-        await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`, {
+        await fetch(`${API_BASE_URL}/api/calendar/delete-assignment/${assignment.assignment_id}`, {
           method: 'DELETE'
         });
       }
@@ -681,7 +682,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       // Reload partner intelligence to refresh calendar
       if (selectedPartner && selectedOffice) {
         const response = await fetch(
-          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+          `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
         );
         if (response.ok) {
           const data = await response.json();
@@ -728,7 +729,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     try {
       // Delete each assignment
       for (const assignment of chainAssignments) {
-        await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`, {
+        await fetch(`${API_BASE_URL}/api/calendar/delete-assignment/${assignment.assignment_id}`, {
           method: 'DELETE'
         });
       }
@@ -738,7 +739,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       // Reload partner intelligence to refresh calendar
       if (selectedPartner && selectedOffice) {
         const response = await fetch(
-          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+          `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
         );
         if (response.ok) {
           const data = await response.json();
@@ -785,7 +786,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     try {
       // Delete each assignment
       for (const assignment of chainAssignments) {
-        await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`, {
+        await fetch(`${API_BASE_URL}/api/calendar/delete-assignment/${assignment.assignment_id}`, {
           method: 'DELETE'
         });
       }
@@ -801,7 +802,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         const endDate = sixMonthsAhead.toISOString().split('T')[0];
 
         const response = await fetch(
-          `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+          `${API_BASE_URL}/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
         );
         if (response.ok) {
           const data = await response.json();
@@ -846,7 +847,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     try {
       // Delete each assignment
       for (const assignment of chainAssignments) {
-        await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`, {
+        await fetch(`${API_BASE_URL}/api/calendar/delete-assignment/${assignment.assignment_id}`, {
           method: 'DELETE'
         });
       }
@@ -862,7 +863,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         const endDate = sixMonthsAhead.toISOString().split('T')[0];
 
         const response = await fetch(
-          `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+          `${API_BASE_URL}/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
         );
         if (response.ok) {
           const data = await response.json();
@@ -903,13 +904,13 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       // If status is 'requested' (magenta), use FMS delete endpoint
       if (assignment.status === 'requested') {
         response = await fetch(
-          `http://localhost:8081/api/fms/delete-vehicle-request/${assignment.assignment_id}`,
+          `${API_BASE_URL}/api/fms/delete-vehicle-request/${assignment.assignment_id}`,
           { method: 'DELETE' }
         );
       } else {
         // For non-requested assignments (green), use regular delete
         response = await fetch(
-          `http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`,
+          `${API_BASE_URL}/api/calendar/delete-assignment/${assignment.assignment_id}`,
           { method: 'DELETE' }
         );
       }
@@ -937,7 +938,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         // Reload intelligence based on mode
         if (chainMode === 'partner' && selectedPartner && selectedOffice) {
           const resp = await fetch(
-            `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+            `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
           );
           if (resp.ok) {
             const reloadData = await resp.json();
@@ -953,7 +954,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           const endDate = sixMonthsAhead.toISOString().split('T')[0];
 
           const resp = await fetch(
-            `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+            `${API_BASE_URL}/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
           );
           if (resp.ok) {
             const reloadData = await resp.json();
@@ -980,7 +981,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
     try {
       const response = await fetch(
-        `http://localhost:8081/api/calendar/change-assignment-status/${assignment.assignment_id}?new_status=requested`,
+        `${API_BASE_URL}/api/calendar/change-assignment-status/${assignment.assignment_id}?new_status=requested`,
         { method: 'PATCH' }
       );
 
@@ -1007,7 +1008,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         // Reload intelligence
         if (chainMode === 'partner' && selectedPartner && selectedOffice) {
           const resp = await fetch(
-            `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+            `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
           );
           if (resp.ok) {
             const reloadData = await resp.json();
@@ -1023,7 +1024,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           const endDate = sixMonthsAhead.toISOString().split('T')[0];
 
           const resp = await fetch(
-            `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+            `${API_BASE_URL}/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
           );
           if (resp.ok) {
             const reloadData = await resp.json();
@@ -1050,7 +1051,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
     try {
       const response = await fetch(
-        `http://localhost:8081/api/calendar/change-assignment-status/${assignment.assignment_id}?new_status=manual`,
+        `${API_BASE_URL}/api/calendar/change-assignment-status/${assignment.assignment_id}?new_status=manual`,
         { method: 'PATCH' }
       );
 
@@ -1077,7 +1078,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         // Reload intelligence
         if (chainMode === 'partner' && selectedPartner && selectedOffice) {
           const resp = await fetch(
-            `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+            `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
           );
           if (resp.ok) {
             const reloadData = await resp.json();
@@ -1093,7 +1094,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           const endDate = sixMonthsAhead.toISOString().split('T')[0];
 
           const resp = await fetch(
-            `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+            `${API_BASE_URL}/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
           );
           if (resp.ok) {
             const reloadData = await resp.json();
@@ -1138,7 +1139,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         params.append('preferred_makes', selectedMakes.join(','));
       }
 
-      const response = await fetch(`http://localhost:8081/api/chain-builder/suggest-chain?${params}`);
+      const response = await fetch(`${API_BASE_URL}/api/chain-builder/suggest-chain?${params}`);
       const data = await response.json();
 
       if (response.ok && data.chain && data.chain.length > 0) {
@@ -1159,13 +1160,13 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     // Delete old assignment, save new one
     try {
       if (swapSlot.assignment_id) {
-        await fetch(`http://localhost:8081/api/calendar/delete-assignment/${swapSlot.assignment_id}`, {
+        await fetch(`${API_BASE_URL}/api/calendar/delete-assignment/${swapSlot.assignment_id}`, {
           method: 'DELETE'
         });
       }
 
       // Save new vehicle
-      await fetch('http://localhost:8081/api/chain-builder/save-chain', {
+      await fetch('${API_BASE_URL}/api/chain-builder/save-chain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1189,7 +1190,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       // Reload partner intelligence
       if (selectedPartner && selectedOffice) {
         const response = await fetch(
-          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+          `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
         );
         if (response.ok) {
           const data = await response.json();
@@ -1209,7 +1210,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     }
 
     try {
-      const response = await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignmentId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/calendar/delete-assignment/${assignmentId}`, {
         method: 'DELETE'
       });
 
@@ -1221,7 +1222,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         // Reload partner intelligence to refresh
         if (selectedPartner && selectedOffice) {
           const resp = await fetch(
-            `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+            `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
           );
           if (resp.ok) {
             const data = await resp.json();
@@ -1280,7 +1281,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     setSaveMessage('');
 
     try {
-      const response = await fetch('http://localhost:8081/api/chain-builder/save-chain', {
+      const response = await fetch('${API_BASE_URL}/api/chain-builder/save-chain', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1313,7 +1314,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       // Just reload partner intelligence to get assignment IDs
       if (selectedPartner && selectedOffice) {
         const resp = await fetch(
-          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+          `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
         );
         if (resp.ok) {
           const reloadData = await resp.json();
@@ -1367,7 +1368,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         params.append('model_preferences', JSON.stringify(modelPreferences));
       }
 
-      const response = await fetch(`http://localhost:8081/api/chain-builder/suggest-chain?${params}`);
+      const response = await fetch(`${API_BASE_URL}/api/chain-builder/suggest-chain?${params}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -1449,7 +1450,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         params.append('preferred_makes', selectedMakes.join(','));
       }
 
-      const response = await fetch(`http://localhost:8081/api/chain-builder/suggest-chain?${params}`);
+      const response = await fetch(`${API_BASE_URL}/api/chain-builder/suggest-chain?${params}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -1519,7 +1520,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         params.append('exclude_vins', excludeVins);
       }
 
-      const response = await fetch(`http://localhost:8081/api/chain-builder/get-slot-options?${params}`);
+      const response = await fetch(`${API_BASE_URL}/api/chain-builder/get-slot-options?${params}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -1648,7 +1649,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         params.append('partner_tier_filter', selectedTiers.join(','));
       }
 
-      const response = await fetch(`http://localhost:8081/api/chain-builder/suggest-vehicle-chain?${params}`, {
+      const response = await fetch(`${API_BASE_URL}/api/chain-builder/suggest-vehicle-chain?${params}`, {
         method: 'POST'
       });
       const data = await response.json();
@@ -1866,7 +1867,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         params.append('previous_partner_lng', previousPartnerLng);
       }
 
-      const response = await fetch(`http://localhost:8081/api/chain-builder/get-partner-slot-options?${params}`);
+      const response = await fetch(`${API_BASE_URL}/api/chain-builder/get-partner-slot-options?${params}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -2144,7 +2145,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         chain: chainData
       };
 
-      const response = await fetch('http://localhost:8081/api/chain-builder/save-vehicle-chain', {
+      const response = await fetch('${API_BASE_URL}/api/chain-builder/save-vehicle-chain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -2176,7 +2177,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           const endDate = sixMonthsAhead.toISOString().split('T')[0];
 
           const resp = await fetch(
-            `http://localhost:8081/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
+            `${API_BASE_URL}/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(selectedVehicle.vin)}&start_date=${startDate}&end_date=${endDate}`
           );
 
           if (resp.ok) {
@@ -2249,7 +2250,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     try {
       console.log('[Budget] Requesting budget with chain data:', chainData);
 
-      const response = await fetch('http://localhost:8081/api/chain-builder/calculate-chain-budget', {
+      const response = await fetch('${API_BASE_URL}/api/chain-builder/calculate-chain-budget', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2318,7 +2319,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         throw new Error(`Failed to serialize payload: ${jsonError.message}`);
       }
 
-      const response = await fetch('http://localhost:8081/api/chain-builder/save-chain', {
+      const response = await fetch('${API_BASE_URL}/api/chain-builder/save-chain', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2342,7 +2343,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       // Reload partner intelligence to show the saved assignments (magenta/green bars)
       if (selectedPartner && selectedOffice) {
         const resp = await fetch(
-          `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
+          `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner}&office=${encodeURIComponent(selectedOffice)}`
         );
         if (resp.ok) {
           const reloadData = await resp.json();

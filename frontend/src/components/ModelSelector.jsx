@@ -1,4 +1,5 @@
 /**
+import { API_BASE_URL } from '../config';
  * ModelSelector Component
  *
  * Checkbox tree UI for selecting vehicle makes/models for Partner Chain preferences.
@@ -51,7 +52,7 @@ const ModelSelector = ({
         });
 
         const response = await fetch(
-          `http://localhost:8081/api/chain-builder/model-availability?${params}`
+          `${API_BASE_URL}/api/chain-builder/model-availability?${params}`
         );
 
         if (!response.ok) {

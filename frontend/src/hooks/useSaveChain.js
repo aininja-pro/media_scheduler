@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { API_BASE_URL } from '../config';
 import { EventManager, EventTypes } from '../utils/eventManager';
 
 /**
@@ -24,7 +25,7 @@ export function useSaveChain() {
     setSaveError('');
 
     try {
-      const response = await fetch(`http://localhost:8081${endpoint}`, {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

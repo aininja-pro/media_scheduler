@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { API_BASE_URL } from '../config';
 import { EventManager, EventTypes } from '../utils/eventManager';
 
 /**
@@ -30,7 +31,7 @@ export function useDeleteAssignment() {
 
     try {
       const response = await fetch(
-        `http://localhost:8081/api/calendar/delete-assignment/${assignmentId}`,
+        `${API_BASE_URL}/api/calendar/delete-assignment/${assignmentId}`,
         { method: 'DELETE' }
       );
 
@@ -88,7 +89,7 @@ export function useDeleteAssignment() {
       for (const assignment of assignments) {
         try {
           const response = await fetch(
-            `http://localhost:8081/api/calendar/delete-assignment/${assignment.assignment_id}`,
+            `${API_BASE_URL}/api/calendar/delete-assignment/${assignment.assignment_id}`,
             { method: 'DELETE' }
           );
 

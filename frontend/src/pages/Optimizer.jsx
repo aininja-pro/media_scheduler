@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 function Optimizer({ sharedOffice, onOfficeChange }) {
   // Use shared office from parent, fallback to 'Los Angeles' if not provided
@@ -104,7 +105,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   useEffect(() => {
     const loadOffices = async () => {
       try {
-        const response = await fetch('http://localhost:8081/api/offices');
+        const response = await fetch('${API_BASE_URL}/api/offices');
         const data = await response.json();
         if (data && data.length > 0) {
           setOffices(data.map(office => office.name));
@@ -128,7 +129,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
       if (!selectedOffice) return;
 
       try {
-        const response = await fetch(`http://localhost:8081/api/ui/phase7/office-default-capacity?office=${encodeURIComponent(selectedOffice)}`);
+        const response = await fetch(`${API_BASE_URL}/api/ui/phase7/office-default-capacity?office=${encodeURIComponent(selectedOffice)}`);
         if (!response.ok) {
           console.error('Failed to load office capacity defaults');
           return;
@@ -164,7 +165,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
 
     // Auto-clear old optimizer suggestions when loading new data
     try {
-      await fetch(`http://localhost:8081/api/ui/phase7/clear-optimizer-suggestions?office=${encodeURIComponent(selectedOffice)}`, {
+      await fetch(`${API_BASE_URL}/api/ui/phase7/clear-optimizer-suggestions?office=${encodeURIComponent(selectedOffice)}`, {
         method: 'DELETE'
       });
       console.log('Cleared old optimizer suggestions');
@@ -192,7 +193,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
       });
 
       setLoadingStage('calculating-metrics');
-      const response = await fetch(`http://localhost:8081/api/ui/phase7/overview?${params}`);
+      const response = await fetch(`${API_BASE_URL}/api/ui/phase7/overview?${params}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -307,7 +308,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
 
     setLoadingVehicleContext(true);
     try {
-      const response = await fetch(`http://localhost:8081/api/ui/phase7/vehicle-context/${vin}`);
+      const response = await fetch(`${API_BASE_URL}/api/ui/phase7/vehicle-context/${vin}`);
       if (!response.ok) {
         throw new Error('Failed to fetch vehicle context');
       }
@@ -328,7 +329,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
     }
 
     try {
-      const response = await fetch(`http://localhost:8081/api/ui/phase7/vehicle-context/${vin}`);
+      const response = await fetch(`${API_BASE_URL}/api/ui/phase7/vehicle-context/${vin}`);
       if (!response.ok) {
         throw new Error('Failed to fetch vehicle context');
       }
@@ -424,7 +425,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
       console.log('Sending daily_capacities to optimizer:', dailyCapacities);
       console.log('Full request body:', requestBody);
 
-      const response = await fetch('http://localhost:8081/api/ui/phase7/run', {
+      const response = await fetch('${API_BASE_URL}/api/ui/phase7/run', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -659,7 +660,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                   <button
                     onClick={async () => {
                       try {
-                        const response = await fetch(`http://localhost:8081/api/ui/phase7/clear-optimizer-suggestions?office=${encodeURIComponent(selectedOffice)}`, {
+                        const response = await fetch(`${API_BASE_URL}/api/ui/phase7/clear-optimizer-suggestions?office=${encodeURIComponent(selectedOffice)}`, {
                           method: 'DELETE'
                         });
                         const data = await response.json();
@@ -1007,7 +1008,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                       e.stopPropagation();
                       const loadOfficeDefaults = async () => {
                         try {
-                          const response = await fetch(`http://localhost:8081/api/ui/phase7/office-default-capacity?office=${encodeURIComponent(selectedOffice)}`);
+                          const response = await fetch(`${API_BASE_URL}/api/ui/phase7/office-default-capacity?office=${encodeURIComponent(selectedOffice)}`);
                           if (response.ok) {
                             const data = await response.json();
                             if (data.daily_capacities) {

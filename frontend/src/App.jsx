@@ -6,6 +6,7 @@ import Calendar from './pages/Calendar.jsx'
 import Partners from './pages/Partners.jsx'
 import ChainBuilder from './pages/ChainBuilder.jsx'
 import TabNavigation from './components/TabNavigation.jsx'
+import { API_BASE_URL } from './config'
 import './App.css'
 
 function App() {
@@ -55,7 +56,7 @@ function App() {
   const handleVehiclesUpdate = async () => {
     setIsLoading(true)
     try {
-      const response = await fetch(`http://localhost:8081/ingest/vehicles/url?url=${encodeURIComponent(vehiclesUrl)}`, {
+      const response = await fetch(`${API_BASE_URL}/ingest/vehicles/url?url=${encodeURIComponent(vehiclesUrl)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -82,7 +83,7 @@ function App() {
 
     try {
       const eventSource = new EventSource(
-        `http://localhost:8081/ingest/media_partners/url/stream?url=${encodeURIComponent(mediaPartnersUrl)}`
+        `${API_BASE_URL}/ingest/media_partners/url/stream?url=${encodeURIComponent(mediaPartnersUrl)}`
       )
 
       eventSource.onmessage = (event) => {
@@ -124,7 +125,7 @@ function App() {
   const handleApprovedRanksUpdate = async () => {
     setIsLoadingApprovedRanks(true)
     try {
-      const response = await fetch(`http://localhost:8081/ingest/approved_makes/url?url=${encodeURIComponent(approvedRanksUrl)}`, {
+      const response = await fetch(`${API_BASE_URL}/ingest/approved_makes/url?url=${encodeURIComponent(approvedRanksUrl)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -148,7 +149,7 @@ function App() {
   const handleLoanHistoryUpdate = async () => {
     setIsLoadingLoanHistory(true)
     try {
-      const response = await fetch(`http://localhost:8081/ingest/loan_history/url?url=${encodeURIComponent(loanHistoryUrl)}`, {
+      const response = await fetch(`${API_BASE_URL}/ingest/loan_history/url?url=${encodeURIComponent(loanHistoryUrl)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -172,7 +173,7 @@ function App() {
   const handleCurrentActivityUpdate = async () => {
     setIsLoadingCurrentActivity(true)
     try {
-      const response = await fetch(`http://localhost:8081/ingest/current_activity/url?url=${encodeURIComponent(currentActivityUrl)}`, {
+      const response = await fetch(`${API_BASE_URL}/ingest/current_activity/url?url=${encodeURIComponent(currentActivityUrl)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -202,7 +203,7 @@ function App() {
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch(`http://localhost:8081/ingest/operations_data`, {
+      const response = await fetch(`${API_BASE_URL}/ingest/operations_data`, {
         method: 'POST',
         body: formData,
       })
@@ -232,7 +233,7 @@ function App() {
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch(`http://localhost:8081/ingest/budgets`, {
+      const response = await fetch(`${API_BASE_URL}/ingest/budgets`, {
         method: 'POST',
         body: formData,
       })

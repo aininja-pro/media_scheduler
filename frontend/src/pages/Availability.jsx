@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { API_BASE_URL } from '../config';
 
 function Availability() {
   const [selectedOffice, setSelectedOffice] = useState('Los Angeles')
@@ -29,7 +30,7 @@ function Availability() {
 
   const fetchOffices = async () => {
     try {
-      const response = await fetch('http://localhost:8081/api/etl/offices')
+      const response = await fetch('${API_BASE_URL}/api/etl/offices')
       if (response.ok) {
         const result = await response.json()
         setOffices(result.offices)
@@ -53,7 +54,7 @@ function Availability() {
     setAvailabilityData(null)
 
     try {
-      const url = `http://localhost:8081/api/etl/availability?office=${encodeURIComponent(selectedOffice)}&week_start=${weekStart}`
+      const url = `${API_BASE_URL}/api/etl/availability?office=${encodeURIComponent(selectedOffice)}&week_start=${weekStart}`
       const response = await fetch(url)
 
       if (response.ok) {
@@ -88,7 +89,7 @@ function Availability() {
     setPartnerDetails(null)
 
     try {
-      const url = `http://localhost:8081/api/etl/eligible_partners?vin=${encodeURIComponent(vin)}&day=${day}`
+      const url = `${API_BASE_URL}/api/etl/eligible_partners?vin=${encodeURIComponent(vin)}&day=${day}`
       const response = await fetch(url)
 
       if (response.ok) {

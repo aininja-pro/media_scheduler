@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
+import { API_BASE_URL } from '../config';
 import { Listbox, Transition } from '@headlessui/react'
 
 export default function Partners({ office }) {
@@ -105,7 +106,7 @@ export default function Partners({ office }) {
   const loadAllPartners = async () => {
     setLoadingPartners(true)
     try {
-      const response = await fetch(`http://localhost:8081/ingest/partners/search?office=${encodeURIComponent(office)}&query=`)
+      const response = await fetch(`${API_BASE_URL}/ingest/partners/search?office=${encodeURIComponent(office)}&query=`)
       if (response.ok) {
         const data = await response.json()
         const sorted = (data.partners || []).sort((a, b) => a.name.localeCompare(b.name))
@@ -124,7 +125,7 @@ export default function Partners({ office }) {
     setLoadingIntelligence(true)
     try {
       const response = await fetch(
-        `http://localhost:8081/api/ui/phase7/partner-intelligence?person_id=${selectedPartner.person_id}&office=${office}`
+        `${API_BASE_URL}/api/ui/phase7/partner-intelligence?person_id=${selectedPartner.person_id}&office=${office}`
       )
       if (response.ok) {
         const data = await response.json()
@@ -156,7 +157,7 @@ export default function Partners({ office }) {
 
     try {
       const response = await fetch(
-        `http://localhost:8081/api/ui/phase7/partner-day-candidates?person_id=${selectedPartner.person_id}&date=${selectedDate}&office=${office}`
+        `${API_BASE_URL}/api/ui/phase7/partner-day-candidates?person_id=${selectedPartner.person_id}&date=${selectedDate}&office=${office}`
       )
 
       if (response.ok) {
@@ -197,7 +198,7 @@ export default function Partners({ office }) {
       monday.setDate(date.getDate() - date.getDay() + (date.getDay() === 0 ? -6 : 1))
       const weekStart = monday.toISOString().split('T')[0]
 
-      const response = await fetch('http://localhost:8081/api/calendar/schedule-assignment', {
+      const response = await fetch('${API_BASE_URL}/api/calendar/schedule-assignment', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -237,7 +238,7 @@ export default function Partners({ office }) {
     }
 
     try {
-      const response = await fetch(`http://localhost:8081/api/calendar/delete-assignment/${assignmentId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/calendar/delete-assignment/${assignmentId}`, {
         method: 'DELETE'
       })
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { API_BASE_URL } from '../config';
 
 function PublicationRates() {
   const [publicationData, setPublicationData] = useState(null)
@@ -28,7 +29,7 @@ function PublicationRates() {
         min_observed: minObserved.toString()
       })
 
-      const response = await fetch(`http://localhost:8081/api/etl/publication_rates?${params}`)
+      const response = await fetch(`${API_BASE_URL}/api/etl/publication_rates?${params}`)
 
       if (response.ok) {
         const data = await response.json()

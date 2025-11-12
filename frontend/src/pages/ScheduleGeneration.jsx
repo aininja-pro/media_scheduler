@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { API_BASE_URL } from '../config';
 
 function ScheduleGeneration() {
   const [selectedOffice, setSelectedOffice] = useState('Los Angeles')
@@ -90,7 +91,7 @@ function ScheduleGeneration() {
         cooldown_days: 30
       })
 
-      const response = await fetch(`http://localhost:8081/api/solver/generate_schedule?${params}`)
+      const response = await fetch(`${API_BASE_URL}/api/solver/generate_schedule?${params}`)
       const data = await response.json()
 
       if (!response.ok) {
@@ -110,7 +111,7 @@ function ScheduleGeneration() {
         min_available_days: minAvailableDays
       })
 
-      const optionsResponse = await fetch(`http://localhost:8081/api/solver/assignment_options?${optionsParams}`)
+      const optionsResponse = await fetch(`${API_BASE_URL}/api/solver/assignment_options?${optionsParams}`)
       const optionsData = await optionsResponse.json()
 
       if (optionsResponse.ok) {
@@ -147,7 +148,7 @@ function ScheduleGeneration() {
         min_available_days: minAvailableDays
       })
 
-      const response = await fetch(`http://localhost:8081/api/solver/assignment_options?${params}`)
+      const response = await fetch(`${API_BASE_URL}/api/solver/assignment_options?${params}`)
       const data = await response.json()
 
       if (!response.ok) {
@@ -175,7 +176,7 @@ function ScheduleGeneration() {
         vin: debugVin.trim()
       })
 
-      const response = await fetch(`http://localhost:8081/api/solver/analyze_vin?${params}`)
+      const response = await fetch(`${API_BASE_URL}/api/solver/analyze_vin?${params}`)
       const data = await response.json()
 
       if (!response.ok) {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 /**
  * Assignment Details Panel
@@ -42,10 +43,10 @@ export function AssignmentDetailsPanel({
         // Determine which endpoint to call based on view mode
         if (assignment.vin) {
           // Vehicle view - show partners who reviewed this vehicle
-          url = `http://localhost:8081/api/chain-builder/vehicle-review-history/${encodeURIComponent(assignment.vin)}?office=${encodeURIComponent(office)}`;
+          url = `${API_BASE_URL}/api/chain-builder/vehicle-review-history/${encodeURIComponent(assignment.vin)}?office=${encodeURIComponent(office)}`;
         } else if (assignment.person_id) {
           // Partner view - show vehicles this partner has reviewed
-          url = `http://localhost:8081/api/chain-builder/partner-review-history/${assignment.person_id}?office=${encodeURIComponent(office)}`;
+          url = `${API_BASE_URL}/api/chain-builder/partner-review-history/${assignment.person_id}?office=${encodeURIComponent(office)}`;
         } else {
           // Can't determine what to fetch
           setLoadingHistory(false);

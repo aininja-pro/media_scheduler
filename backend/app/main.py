@@ -182,3 +182,55 @@ async def get_sync_status():
         'sync_minute': int(os.getenv('SYNC_MINUTE', 0)),
         'sync_enabled': os.getenv('SYNC_ENABLED', 'true').lower() == 'true'
     }
+
+
+@app.post("/api/admin/update-sync-schedule")
+async def update_sync_schedule(sync_hour: int, sync_minute: int):
+    """
+    Update the nightly sync schedule
+
+    Args:
+        sync_hour: Hour (0-23)
+        sync_minute: Minute (0-59)
+
+    Returns:
+        Updated schedule info
+    """
+    from pydantic import BaseModel
+
+    # Validate inputs
+    if not (0 <= sync_hour <= 23):
+        raise HTTPException(status_code=400, detail="sync_hour must be between 0-23")
+    if not (0 <= sync_minute <= 59):
+        raise HTTPException(status_code=400, detail="sync_minute must be between 0-59")
+
+    # Update environment variables (runtime only - not persisted to .env)
+    os.environ['SYNC_HOUR'] = str(sync_hour)
+    os.environ['SYNC_MINUTE'] = str(sync_minute)
+
+    # Reschedule the job
+    if scheduler.running:
+        scheduler.remove_job('nightly_fms_sync')
+        scheduler.add_job(
+            run_nightly_sync,
+            CronTrigger(hour=sync_hour, minute=sync_minute),
+            id='nightly_fms_sync',
+            replace_existing=True
+        )
+        logger.info(f"✓ Sync schedule updated to {sync_hour:02d}:{sync_minute:02d}")
+
+    # Get updated next run time
+    next_run = None
+    if scheduler.running:
+        jobs = scheduler.get_jobs()
+        sync_job = next((j for j in jobs if j.id == 'nightly_fms_sync'), None)
+        if sync_job and sync_job.next_run_time:
+            next_run = sync_job.next_run_time.isoformat()
+
+    return {
+        'success': True,
+        'message': f'Sync schedule updated to {sync_hour:02d}:{sync_minute:02d}',
+        'sync_hour': sync_hour,
+        'sync_minute': sync_minute,
+        'next_sync_time': next_run
+    }

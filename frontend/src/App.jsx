@@ -40,6 +40,12 @@ function App() {
   const [isLoadingOperationsData, setIsLoadingOperationsData] = useState(false)
   const [isLoadingBudgets, setIsLoadingBudgets] = useState(false)
 
+  // Nightly sync state
+  const [syncStatus, setSyncStatus] = useState(null)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncHour, setSyncHour] = useState(2)
+  const [syncMinute, setSyncMinute] = useState(0)
+
   const offices = ['SEA', 'PDX', 'LAX', 'SFO', 'PHX', 'DEN', 'LAS']
 
   // Listen for navigation from ChainBuilder to Calendar
@@ -254,14 +260,81 @@ function App() {
     }
   }
 
+  // Fetch sync status
+  const fetchSyncStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/sync-status`)
+      const data = await response.json()
+      setSyncStatus(data)
+      if (data.sync_hour !== undefined) setSyncHour(data.sync_hour)
+      if (data.sync_minute !== undefined) setSyncMinute(data.sync_minute)
+    } catch (error) {
+      console.error('Failed to fetch sync status:', error)
+    }
+  }
+
+  // Trigger manual sync
+  const handleTriggerSync = async () => {
+    if (!confirm('Trigger manual sync now? This will sync all 5 auto-synced tables.')) return
+
+    setIsSyncing(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/trigger-sync`, {
+        method: 'POST'
+      })
+      const result = await response.json()
+
+      if (result.success_count) {
+        alert(`✓ Sync complete!\n\n${result.success_count}/${result.total_tables} tables synced\n${result.total_rows_processed} rows processed`)
+      } else {
+        alert(`⚠️ Sync failed\n\n${result.failure_count} tables failed`)
+      }
+
+      await fetchSyncStatus()
+    } catch (error) {
+      alert(`Error triggering sync: ${error.message}`)
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
+  // Update sync schedule
+  const handleUpdateSchedule = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/update-sync-schedule?sync_hour=${syncHour}&sync_minute=${syncMinute}`, {
+        method: 'POST'
+      })
+      const result = await response.json()
+
+      if (result.success) {
+        alert(`✓ Sync schedule updated!\n\nNew schedule: ${syncHour}:${syncMinute.toString().padStart(2, '0')}`)
+        await fetchSyncStatus()
+      } else {
+        alert('Failed to update schedule')
+      }
+    } catch (error) {
+      alert(`Error updating schedule: ${error.message}`)
+    }
+  }
+
+  // Load sync status on mount and when activeTab changes to 'upload'
+  useEffect(() => {
+    if (activeTab === 'upload') {
+      fetchSyncStatus()
+      // Poll every 60 seconds
+      const interval = setInterval(fetchSyncStatus, 60000)
+      return () => clearInterval(interval)
+    }
+  }, [activeTab])
+
   const csvTypes = [
-    { id: 'vehicles', name: 'Vehicles', description: 'Year, make, model, VIN, fleet, dates', icon: '🚗' },
-    { id: 'media_partners', name: 'Media Partners', description: 'Partner details, contact info, eligibility', icon: '📺' },
-    { id: 'approved_makes', name: 'Approved Ranks', description: 'A+/A/B/C rankings per partner/make', icon: '⭐' },
-    { id: 'loan_history', name: 'Loan History', description: 'Historical assignment data', icon: '📊' },
-    { id: 'current_activity', name: 'Current Activity', description: 'Active bookings and holds', icon: '📅' },
-    { id: 'operations_data', name: 'Operations Data', description: 'Rules, capacity limits, holiday dates', icon: '📊' },
-    { id: 'budgets', name: 'Budgets', description: 'Office/fleet budget tracking by quarter', icon: '💰' }
+    { id: 'vehicles', name: 'Vehicles', description: 'Year, make, model, VIN, fleet, dates', icon: '🚗', autoSync: true },
+    { id: 'media_partners', name: 'Media Partners', description: 'Partner details, contact info, eligibility', icon: '📺', autoSync: true },
+    { id: 'approved_makes', name: 'Approved Ranks', description: 'A+/A/B/C rankings per partner/make', icon: '⭐', autoSync: true },
+    { id: 'loan_history', name: 'Loan History', description: 'Historical assignment data', icon: '📊', autoSync: true },
+    { id: 'current_activity', name: 'Current Activity', description: 'Active bookings and holds', icon: '📅', autoSync: true },
+    { id: 'operations_data', name: 'Operations Data', description: 'Rules, capacity limits, holiday dates', icon: '📊', autoSync: false },
+    { id: 'budgets', name: 'Budgets', description: 'Office/fleet budget tracking by quarter', icon: '💰', autoSync: false }
   ]
   
   return (
@@ -340,7 +413,7 @@ function App() {
         {/* Upload Data Tab */}
         {activeTab === 'upload' && (
           <>
-            <div className="mb-8">
+            <div className="mb-6">
               <h2 className="text-3xl font-bold text-gray-900 mb-3">
                 Upload CSV Data
               </h2>
@@ -349,34 +422,103 @@ function App() {
               </p>
             </div>
 
-            {/* CSV Upload Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {csvTypes.map((csvType) => (
-                <div key={csvType.id} className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow">
-                  <div className="p-6">
-                    <div className="flex items-center mb-4">
-                      <div className="text-3xl mr-3">{csvType.icon}</div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">{csvType.name}</h3>
-                        <p className="text-sm text-gray-500">{csvType.description}</p>
-                      </div>
+            {/* Nightly Auto-Sync Status Panel */}
+            <div className="mb-6 bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center mb-2">
+                    <span className="text-lg font-bold text-gray-900 mr-3">🔄 Nightly Auto-Sync</span>
+                    {syncStatus?.scheduler_running ? (
+                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">ACTIVE</span>
+                    ) : (
+                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">DISABLED</span>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-700 space-y-1">
+                    <div>
+                      <span className="font-medium">Schedule:</span> Every night at{' '}
+                      <select
+                        value={syncHour}
+                        onChange={(e) => setSyncHour(parseInt(e.target.value))}
+                        className="mx-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                      >
+                        {[...Array(24)].map((_, i) => (
+                          <option key={i} value={i}>{i.toString().padStart(2, '0')}</option>
+                        ))}
+                      </select>
+                      :
+                      <select
+                        value={syncMinute}
+                        onChange={(e) => setSyncMinute(parseInt(e.target.value))}
+                        className="mx-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                      >
+                        {[0, 15, 30, 45].map((min) => (
+                          <option key={min} value={min}>{min.toString().padStart(2, '0')}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleUpdateSchedule}
+                        className="ml-2 px-3 py-1 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Save Schedule
+                      </button>
                     </div>
-                    
-                    {/* CSV drop area for non-operations tables */}
-                    {csvType.id !== 'operations_data' && csvType.id !== 'budgets' && (
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors cursor-pointer mb-4">
-                        <div className="text-gray-400 mb-2">
-                          <svg className="mx-auto h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                          </svg>
-                        </div>
-                        <p className="text-sm text-gray-600 mb-2">
-                          Drop CSV file or <span className="text-blue-600 font-medium">browse</span>
-                        </p>
-                        <p className="text-xs text-gray-400">Max file size: 10MB</p>
+                    {syncStatus?.next_sync_time && (
+                      <div>
+                        <span className="font-medium">Next Sync:</span>{' '}
+                        {new Date(syncStatus.next_sync_time).toLocaleString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit'
+                        })}
                       </div>
                     )}
-                    
+                    <div className="text-xs text-gray-600">
+                      Auto-syncs: Vehicles, Media Partners, Loan History, Current Activity, Approved Makes
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <button
+                    onClick={handleTriggerSync}
+                    disabled={isSyncing}
+                    className="px-4 py-2 font-medium bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 transition-colors"
+                  >
+                    {isSyncing ? 'Syncing...' : 'Trigger Sync Now'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* CSV Upload Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {csvTypes.map((csvType) => (
+                <div
+                  key={csvType.id}
+                  className={`bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow ${
+                    csvType.autoSync ? 'border-l-4 border-blue-500' : 'border-l-4 border-orange-500'
+                  }`}
+                >
+                  <div className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center">
+                        <div className="text-2xl mr-2">{csvType.icon}</div>
+                        <div>
+                          <h3 className="text-base font-semibold text-gray-900">{csvType.name}</h3>
+                          <p className="text-xs text-gray-500">{csvType.description}</p>
+                        </div>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                        csvType.autoSync
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-orange-100 text-orange-700'
+                      }`}>
+                        {csvType.autoSync ? 'AUTO-SYNC' : 'MANUAL'}
+                      </span>
+                    </div>
+
                     {/* Special handling for Vehicles - URL input */}
                     {csvType.id === 'vehicles' ? (
                       <div className="space-y-3">

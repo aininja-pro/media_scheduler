@@ -69,9 +69,11 @@ async def create_fms_vehicle_request(assignment_id: int):
 
     Process:
     1. Fetch assignment details with vehicle_id (JOIN with vehicles table)
-    2. Build FMS API payload
-    3. POST to FMS API
-    4. Store FMS request ID in database
+    2. Convert dates to FMS format (MM/DD/YY from YYYY-MM-DD)
+    3. Build FMS API payload
+    4. POST to FMS API
+    5. Extract FMS request ID from response
+    6. Store FMS request ID in database
 
     Args:
         assignment_id: Internal scheduler assignment ID
@@ -113,13 +115,22 @@ async def create_fms_vehicle_request(assignment_id: int):
                 detail=f"vehicle_id not found for VIN: {assignment.get('vin')}. Ensure vehicle is in vehicles table."
             )
 
-        # 2. Build FMS payload
+        # 2. Convert dates to FMS format (MM/DD/YY)
+        from datetime import datetime
+
+        start_date_obj = datetime.strptime(str(assignment['start_day']), '%Y-%m-%d')
+        end_date_obj = datetime.strptime(str(assignment['end_day']), '%Y-%m-%d')
+
+        fms_start_date = start_date_obj.strftime('%m/%d/%y')
+        fms_end_date = end_date_obj.strftime('%m/%d/%y')
+
+        # 3. Build FMS payload
         fms_payload = {
             "request": {
                 # Required fields
                 "requestor_id": int(FMS_REQUESTOR_ID),
-                "start_date": str(assignment['start_day']),
-                "end_date": str(assignment['end_day']),
+                "start_date": fms_start_date,
+                "end_date": fms_end_date,
 
                 # Optional but helpful fields
                 "activity_to": assignment.get('partner_name', ''),
@@ -138,8 +149,9 @@ async def create_fms_vehicle_request(assignment_id: int):
 
         logger.info(f"Sending FMS request to {FMS_BASE_URL}/api/v1/vehicle_requests")
         logger.debug(f"Payload: {fms_payload}")
+        logger.debug(f"Dates converted: {assignment['start_day']} → {fms_start_date}, {assignment['end_day']} → {fms_end_date}")
 
-        # 3. Send to FMS
+        # 4. Send to FMS
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{FMS_BASE_URL}/api/v1/vehicle_requests",
@@ -160,7 +172,7 @@ async def create_fms_vehicle_request(assignment_id: int):
             fms_response = response.json()
             logger.info(f"FMS response: {fms_response}")
 
-            # 4. Extract FMS request ID (try multiple possible field names)
+            # 5. Extract FMS request ID (try multiple possible field names)
             fms_request_id = (
                 fms_response.get('id') or
                 fms_response.get('request_id') or
@@ -171,7 +183,7 @@ async def create_fms_vehicle_request(assignment_id: int):
                 logger.warning(f"Could not extract FMS request ID from response: {fms_response}")
                 # Continue anyway - we created the request successfully
 
-            # 5. Store FMS request ID for future reference
+            # 6. Store FMS request ID for future reference
             if fms_request_id:
                 await db_service.supabase.table('scheduled_assignments').update({
                     'fms_request_id': fms_request_id

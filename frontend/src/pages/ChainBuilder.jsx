@@ -727,14 +727,23 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     setSaveMessage('');
 
     try {
-      // Delete each assignment
-      for (const assignment of chainAssignments) {
-        await fetch(`${API_BASE_URL}/api/calendar/delete-assignment/${assignment.assignment_id}`, {
-          method: 'DELETE'
-        });
-      }
+      // Use bulk delete endpoint for requested chains (handles FMS deletion)
+      const assignmentIds = chainAssignments.map(a => a.assignment_id);
 
-      setSaveMessage(`✅ Deleted ${chainAssignments.length} requested assignment(s)`);
+      const response = await fetch(`${API_BASE_URL}/api/fms/bulk-delete-vehicle-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignment_ids: assignmentIds })
+      });
+
+      const result = await response.json();
+
+      if (result.succeeded > 0) {
+        setSaveMessage(`✅ Deleted ${result.succeeded}/${result.total} assignment(s) from FMS and scheduler`);
+      } else {
+        setSaveMessage(`❌ Failed to delete chain: ${result.failed} errors`);
+        console.error('Bulk delete failed:', result);
+      }
 
       // Reload partner intelligence to refresh calendar
       if (selectedPartner && selectedOffice) {
@@ -837,7 +846,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       return;
     }
 
-    if (!window.confirm(`Delete requested chain (${chainAssignments.length} partners) for ${selectedVehicle.make} ${selectedVehicle.model}?\n\nNote: This will remove assignments that were sent to FMS.`)) {
+    if (!window.confirm(`Delete requested chain (${chainAssignments.length} partners) for ${selectedVehicle.make} ${selectedVehicle.model}?\n\nNote: This will remove assignments from FMS.`)) {
       return;
     }
 
@@ -845,14 +854,23 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     setSaveMessage('');
 
     try {
-      // Delete each assignment
-      for (const assignment of chainAssignments) {
-        await fetch(`${API_BASE_URL}/api/calendar/delete-assignment/${assignment.assignment_id}`, {
-          method: 'DELETE'
-        });
-      }
+      // Use bulk delete endpoint for requested chains (handles FMS deletion)
+      const assignmentIds = chainAssignments.map(a => a.assignment_id);
 
-      setSaveMessage(`✅ Deleted ${chainAssignments.length} requested assignment(s)`);
+      const response = await fetch(`${API_BASE_URL}/api/fms/bulk-delete-vehicle-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignment_ids: assignmentIds })
+      });
+
+      const result = await response.json();
+
+      if (result.succeeded > 0) {
+        setSaveMessage(`✅ Deleted ${result.succeeded}/${result.total} assignment(s) from FMS and scheduler`);
+      } else {
+        setSaveMessage(`❌ Failed to delete chain: ${result.failed} errors`);
+        console.error('Bulk delete failed:', result);
+      }
 
       // Reload vehicle intelligence to refresh calendar
       if (selectedVehicle) {
@@ -2160,6 +2178,29 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       setSaveMessage(`✅ ${data.message} Slots cleared for next build.`);
       console.log('Vehicle chain saved:', data);
 
+      // If saved as 'requested', send to FMS
+      if (saveStatus === 'requested' && data.assignment_ids && data.assignment_ids.length > 0) {
+        try {
+          const fmsResponse = await fetch(`${API_BASE_URL}/api/fms/bulk-create-vehicle-requests`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ assignment_ids: data.assignment_ids })
+          });
+
+          const fmsResult = await fmsResponse.json();
+
+          if (fmsResult.succeeded > 0) {
+            setSaveMessage(`✅ Chain saved and ${fmsResult.succeeded}/${fmsResult.total} requests sent to FMS!`);
+          } else {
+            setSaveMessage(`⚠️ Chain saved but FMS requests failed. See console for details.`);
+            console.error('FMS bulk request failed:', fmsResult);
+          }
+        } catch (fmsError) {
+          console.error('Failed to send bulk requests to FMS:', fmsError);
+          setSaveMessage(`⚠️ Chain saved but failed to send to FMS: ${fmsError.message}`);
+        }
+      }
+
       // Clear modified flag
       setChainModified(false);
 
@@ -2335,6 +2376,29 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
       setSaveMessage(`✅ ${data.message} Slots cleared for next build.`);
       console.log('Manual chain saved:', data);
+
+      // If saved as 'requested', send to FMS
+      if (status === 'requested' && data.assignment_ids && data.assignment_ids.length > 0) {
+        try {
+          const fmsResponse = await fetch(`${API_BASE_URL}/api/fms/bulk-create-vehicle-requests`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ assignment_ids: data.assignment_ids })
+          });
+
+          const fmsResult = await fmsResponse.json();
+
+          if (fmsResult.succeeded > 0) {
+            setSaveMessage(`✅ Chain saved and ${fmsResult.succeeded}/${fmsResult.total} requests sent to FMS!`);
+          } else {
+            setSaveMessage(`⚠️ Chain saved but FMS requests failed. See console for details.`);
+            console.error('FMS bulk request failed:', fmsResult);
+          }
+        } catch (fmsError) {
+          console.error('Failed to send bulk requests to FMS:', fmsError);
+          setSaveMessage(`⚠️ Chain saved but failed to send to FMS: ${fmsError.message}`);
+        }
+      }
 
       // Clear the proposed chain slots (green bars) since they're now saved
       setManualSlots([]);

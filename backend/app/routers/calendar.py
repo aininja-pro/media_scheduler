@@ -630,25 +630,18 @@ async def change_assignment_status(
 
         # SCENARIO 2: User is UNREQUESTING (Magenta → Green)
         elif current_status == 'requested' and new_status in ['planned', 'manual']:
-            # Delete from FMS first
+            # Delete from FMS first using centralized function
             if fms_request_id:
                 try:
                     import httpx
-                    import os
 
-                    fms_environment = os.getenv("FMS_ENVIRONMENT", "staging")
-                    fms_staging_url = os.getenv("FMS_STAGING_URL", "https://staging.driveshop.com")
-                    fms_production_url = os.getenv("FMS_PRODUCTION_URL", "https://fms.driveshop.com")
-                    fms_base_url = fms_production_url if fms_environment == "production" else fms_staging_url
-
-                    fms_staging_token = os.getenv("FMS_STAGING_TOKEN")
-                    fms_production_token = os.getenv("FMS_PRODUCTION_TOKEN")
-                    fms_token = fms_production_token if fms_environment == "production" else fms_staging_token
+                    # Import FMS config from fms_integration module
+                    from ..routers.fms_integration import FMS_BASE_URL, FMS_TOKEN
 
                     async with httpx.AsyncClient(timeout=30.0) as client:
                         response = await client.delete(
-                            f"{fms_base_url}/api/v1/vehicle_requests/{fms_request_id}",
-                            headers={"Authorization": f"Token {fms_token}"}  # FMS uses "Token" not "Bearer"
+                            f"{FMS_BASE_URL}/api/v1/vehicle_requests/{fms_request_id}",
+                            headers={"Authorization": f"Token {FMS_TOKEN}"}
                         )
 
                         if response.status_code not in [200, 204, 404]:

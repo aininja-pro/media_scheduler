@@ -19,23 +19,32 @@ def build_chain_availability_grid(
     num_slots: int,
     days_per_slot: int = 7,
     office: str = None,
-    end_date: str = None  # NEW: explicit end date if provided
+    end_date: str = None,  # NEW: explicit end date if provided
+    scheduled_assignments_df: pd.DataFrame = None,  # NEW: scheduled assignments to check conflicts
+    current_person_id: int = None  # NEW: exclude this partner's assignments from conflict checking
 ) -> pd.DataFrame:
     """
     Build availability grid covering entire chain period.
 
     Args:
         vehicles_df: All vehicles (will be filtered to office)
-        activity_df: Current activity data
+        activity_df: Current activity data (active loans - BLUE)
         start_date: Chain start date (YYYY-MM-DD)
         num_slots: Number of vehicles in chain
         days_per_slot: Days per vehicle loan (default 7)
         office: Office to filter vehicles (optional)
         end_date: Explicit end date (YYYY-MM-DD) - overrides calculation
+        scheduled_assignments_df: Scheduled assignments (planned/manual/requested - GREEN/MAGENTA)
+        current_person_id: Partner ID building the chain (exclude their assignments from conflicts)
 
     Returns:
         DataFrame with columns: vin, date, available (boolean)
         Covers full chain duration
+
+    Note:
+        This function now checks for vehicle conflicts with OTHER partners' assignments.
+        It filters out vehicles that are assigned to other partners (excluding current_person_id)
+        with status 'active', 'planned', 'manual', or 'requested' during the same time period.
     """
 
     try:
@@ -108,15 +117,66 @@ def build_chain_availability_grid(
                                 activity_conflict = True
                                 break
 
-                available = lifecycle_available and not activity_conflict
+                # Check scheduled assignments (for OTHER partners)
+                # This prevents recommending vehicles already assigned to other partners
+                scheduled_conflict = False
+                if not scheduled_conflict and scheduled_assignments_df is not None and not scheduled_assignments_df.empty:
+                    # Filter to relevant statuses: planned, manual, requested (GREEN/MAGENTA)
+                    # Exclude 'completed' status (vehicles that have been returned)
+                    relevant_statuses = ['planned', 'manual', 'requested', 'active']
+
+                    scheduled_for_vehicle = scheduled_assignments_df[
+                        (scheduled_assignments_df['vin'] == vin) &
+                        (scheduled_assignments_df['status'].isin(relevant_statuses))
+                    ].copy()
+
+                    # If current_person_id is provided, exclude this partner's assignments
+                    if current_person_id is not None and 'person_id' in scheduled_for_vehicle.columns:
+                        scheduled_for_vehicle = scheduled_for_vehicle[
+                            scheduled_for_vehicle['person_id'].astype(int) != int(current_person_id)
+                        ]
+
+                    for _, assignment in scheduled_for_vehicle.iterrows():
+                        assign_start = assignment.get('start_day')
+                        assign_end = assignment.get('end_day')
+
+                        # Convert to date objects
+                        if assign_start is not None:
+                            if isinstance(assign_start, str):
+                                assign_start = datetime.strptime(assign_start, '%Y-%m-%d').date()
+                            elif hasattr(assign_start, 'date'):
+                                assign_start = assign_start.date()
+
+                        if assign_end is not None:
+                            if isinstance(assign_end, str):
+                                assign_end = datetime.strptime(assign_end, '%Y-%m-%d').date()
+                            elif hasattr(assign_end, 'date'):
+                                assign_end = assign_end.date()
+
+                        # Check if this date falls within scheduled assignment period
+                        if assign_start and assign_end:
+                            if assign_start <= check_date <= assign_end:
+                                scheduled_conflict = True
+                                logger.debug(f"Vehicle {vin} has scheduled conflict on {check_date}: assigned to partner {assignment.get('person_id')} ({assign_start} to {assign_end}, status: {assignment.get('status')})")
+                                break
+
+                available = lifecycle_available and not activity_conflict and not scheduled_conflict
+
+                # Determine reason
+                reason = 'available'
+                if not available:
+                    if not lifecycle_available:
+                        reason = 'lifecycle'
+                    elif activity_conflict:
+                        reason = 'activity_conflict'
+                    elif scheduled_conflict:
+                        reason = 'scheduled_conflict'
 
                 availability_records.append({
                     'vin': vin,
                     'date': check_date,
                     'available': available,
-                    'reason': 'available' if available else (
-                        'lifecycle' if not lifecycle_available else 'activity_conflict'
-                    )
+                    'reason': reason
                 })
 
         availability_df = pd.DataFrame(availability_records)

@@ -164,7 +164,7 @@ async def suggest_chain(
         if not activity_df.empty and 'vehicle_vin' in activity_df.columns:
             activity_df['vin'] = activity_df['vehicle_vin']
 
-        # Load scheduled assignments for this partner
+        # Load scheduled assignments for this partner (for smart scheduling)
         logger.info(f"Loading scheduled assignments for partner {person_id}")
         scheduled_response = db.client.table('scheduled_assignments')\
             .select('*')\
@@ -173,6 +173,12 @@ async def suggest_chain(
 
         scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
         logger.info(f"Found {len(scheduled_df)} scheduled assignments for partner {person_id}")
+
+        # Load ALL scheduled assignments (for vehicle conflict checking)
+        logger.info("Loading all scheduled assignments for conflict detection")
+        all_scheduled_response = db.client.table('scheduled_assignments').select('*').execute()
+        all_scheduled_df = pd.DataFrame(all_scheduled_response.data) if all_scheduled_response.data else pd.DataFrame()
+        logger.info(f"Loaded {len(all_scheduled_df)} total scheduled assignments for conflict checking")
 
         # Use smart scheduling to find slots that work around existing commitments
         estimated_chain_end = (start_dt + timedelta(days=num_vehicles * days_per_loan * 2)).strftime('%Y-%m-%d')
@@ -207,7 +213,9 @@ async def suggest_chain(
                 num_slots=len(smart_slots),
                 days_per_slot=days_per_loan,
                 office=office,
-                end_date=actual_end  # Pass explicit end date to cover weekend extensions
+                end_date=actual_end,  # Pass explicit end date to cover weekend extensions
+                scheduled_assignments_df=all_scheduled_df,  # Check conflicts with ALL partners
+                current_person_id=int(person_id)  # Exclude this partner's assignments from conflicts
             )
         else:
             # No smart slots - return empty
@@ -655,7 +663,7 @@ async def get_slot_options(
         if not activity_df.empty and 'vehicle_vin' in activity_df.columns:
             activity_df['vin'] = activity_df['vehicle_vin']
 
-        # Load scheduled assignments for this partner
+        # Load scheduled assignments for this partner (for smart scheduling)
         logger.info(f"Loading scheduled assignments for partner {person_id}")
         scheduled_response = db.client.table('scheduled_assignments')\
             .select('*')\
@@ -663,6 +671,12 @@ async def get_slot_options(
             .execute()
 
         scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+
+        # Load ALL scheduled assignments (for vehicle conflict checking)
+        logger.info("Loading all scheduled assignments for conflict detection")
+        all_scheduled_response = db.client.table('scheduled_assignments').select('*').execute()
+        all_scheduled_df = pd.DataFrame(all_scheduled_response.data) if all_scheduled_response.data else pd.DataFrame()
+        logger.info(f"Loaded {len(all_scheduled_df)} total scheduled assignments for conflict checking")
 
         # Use smart scheduling to calculate all slot dates
         smart_slots = adjust_chain_for_existing_commitments(
@@ -701,7 +715,9 @@ async def get_slot_options(
                 num_slots=len(smart_slots),
                 days_per_slot=days_per_loan,
                 office=office,
-                end_date=actual_end
+                end_date=actual_end,
+                scheduled_assignments_df=all_scheduled_df,  # Check conflicts with ALL partners
+                current_person_id=int(person_id)  # Exclude this partner's assignments from conflicts
             )
         else:
             availability_grid = pd.DataFrame()

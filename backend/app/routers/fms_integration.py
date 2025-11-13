@@ -156,8 +156,10 @@ async def create_fms_vehicle_request(assignment_id: int):
         }
 
         logger.info(f"Sending FMS request to {FMS_BASE_URL}/api/v1/vehicle_requests")
-        logger.debug(f"Payload: {fms_payload}")
-        logger.debug(f"Dates converted: {assignment['start_day']} → {fms_start_date}, {assignment['end_day']} → {fms_end_date}")
+        logger.info(f"  Vehicle: {vehicle_data.get('make')} {vehicle_data.get('model')} (VIN: {vin}, vehicle_id: {vehicle_id})")
+        logger.info(f"  Partner: {assignment.get('partner_name')} (person_id: {assignment.get('person_id')})")
+        logger.info(f"  Dates: {fms_start_date} to {fms_end_date}")
+        logger.debug(f"Full payload: {fms_payload}")
 
         # 5. Send to FMS
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -333,8 +335,8 @@ async def bulk_create_fms_vehicle_requests(request: BulkOperationRequest):
             assignment = result.data[0]
             original_status = assignment['status']
 
-            # Only request if status is 'planned' or 'manual'
-            if assignment['status'] not in ['planned', 'manual']:
+            # Only request if status is 'planned', 'manual', or already 'requested' (but not sent to FMS yet)
+            if assignment['status'] not in ['planned', 'manual', 'requested']:
                 results.append(OperationResult(
                     assignment_id=assignment_id,
                     success=False,
@@ -342,10 +344,11 @@ async def bulk_create_fms_vehicle_requests(request: BulkOperationRequest):
                 ))
                 continue
 
-            # Update status to 'requested'
-            db_service.client.table('scheduled_assignments').update({
-                'status': 'requested'
-            }).eq('assignment_id', assignment_id).execute()
+            # Update status to 'requested' if not already
+            if assignment['status'] != 'requested':
+                db_service.client.table('scheduled_assignments').update({
+                    'status': 'requested'
+                }).eq('assignment_id', assignment_id).execute()
 
             # Create FMS request
             try:

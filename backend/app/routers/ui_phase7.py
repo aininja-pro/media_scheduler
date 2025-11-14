@@ -2107,13 +2107,15 @@ async def get_partner_intelligence(
                     'clips_count': int(loan.get('clips_count', 0)) if pd.notna(loan.get('clips_count')) else 0
                 })
 
-        # 5. Get scheduled assignments (upcoming)
+        # 5. Get scheduled assignments (upcoming and current)
+        # Changed to filter by end_day so we show assignments that are still active
+        # even if they started in the past
         today = datetime.now().date()
         scheduled_response = db.client.table('scheduled_assignments')\
             .select('*')\
             .eq('person_id', person_id)\
             .eq('office', office)\
-            .gte('start_day', str(today))\
+            .gte('end_day', str(today))\
             .order('start_day')\
             .execute()
 

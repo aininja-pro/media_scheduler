@@ -3316,7 +3316,29 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                 });
                               });
 
-                              return existingActivities.map((activity, idx) => {
+                              // Detect overlaps and assign row positions (match Calendar behavior)
+                              const activitiesWithRows = existingActivities.map((activity, idx) => {
+                                // Check if this activity overlaps with any previous activity
+                                let rowIndex = 0;
+                                const actStart = activity.start;
+                                const actEnd = activity.end;
+
+                                for (let i = 0; i < idx; i++) {
+                                  const prevAct = existingActivities[i];
+                                  const prevStart = prevAct.start;
+                                  const prevEnd = prevAct.end;
+
+                                  // Check if dates overlap
+                                  if (actStart <= prevEnd && actEnd >= prevStart) {
+                                    rowIndex = Math.max(rowIndex, (existingActivities[i].rowIndex || 0) + 1);
+                                  }
+                                }
+
+                                activity.rowIndex = rowIndex;
+                                return activity;
+                              });
+
+                              return activitiesWithRows.map((activity, idx) => {
                                 const aStart = activity.start;
                                 const aEnd = activity.end;
 
@@ -3340,6 +3362,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                 const left = ((startDayOffset + 0.5) / totalDays) * 100;
                                 const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
 
+                                // Use rowIndex for vertical positioning to prevent overlaps
+                                const topOffset = 8 + (activity.rowIndex * 28);
+
                                 return (
                                   <TimelineBar
                                     key={`existing-${idx}`}
@@ -3348,7 +3373,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                       left: `${left}%`,
                                       width: `${width}%`,
                                       minWidth: '60px',
-                                      top: '8px',
+                                      top: `${topOffset}px`,
                                       height: '20px',
                                       zIndex: 5
                                     }}

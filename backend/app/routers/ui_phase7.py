@@ -2107,12 +2107,19 @@ async def get_partner_intelligence(
                     'clips_count': int(loan.get('clips_count', 0)) if pd.notna(loan.get('clips_count')) else 0
                 })
 
-        # 5. Get ALL scheduled assignments for this partner
-        # Let the frontend handle date filtering for display
+        # 5. Get scheduled assignments with date filtering for performance
+        # Use 6-month window (generous for display, optimized for speed)
+        today = datetime.now().date()
+        fetch_start = today - timedelta(days=180)  # 6 months back
+        fetch_end = today + timedelta(days=180)    # 6 months forward
+
+        # Use overlap logic: show if end_day >= fetch_start AND start_day <= fetch_end
         scheduled_response = db.client.table('scheduled_assignments')\
             .select('*')\
             .eq('person_id', person_id)\
             .eq('office', office)\
+            .gte('end_day', str(fetch_start))\
+            .lte('start_day', str(fetch_end))\
             .order('start_day')\
             .execute()
 

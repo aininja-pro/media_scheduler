@@ -2107,19 +2107,12 @@ async def get_partner_intelligence(
                     'clips_count': int(loan.get('clips_count', 0)) if pd.notna(loan.get('clips_count')) else 0
                 })
 
-        # 5. Get scheduled assignments (use same date range as main Calendar)
-        # Load 6 weeks back, 12 weeks forward to match Calendar behavior
-        today = datetime.now().date()
-        fetch_start = today - timedelta(days=42)  # 6 weeks back
-        fetch_end = today + timedelta(days=84)    # 12 weeks forward
-
-        # Use overlap logic: show if end_day >= fetch_start AND start_day <= fetch_end
+        # 5. Get ALL scheduled assignments for this partner
+        # Let the frontend handle date filtering for display
         scheduled_response = db.client.table('scheduled_assignments')\
             .select('*')\
             .eq('person_id', person_id)\
             .eq('office', office)\
-            .gte('end_day', str(fetch_start))\
-            .lte('start_day', str(fetch_end))\
             .order('start_day')\
             .execute()
 
@@ -2139,11 +2132,11 @@ async def get_partner_intelligence(
                 })
 
         # 6. Get current active loans with vehicle details
-        # Use same date range as Calendar - show loans that started before fetch_end
+        # Get ALL current_activity for this partner (no date filtering)
+        # The table only contains active loans, so all rows are relevant
         active_response = db.client.table('current_activity')\
             .select('*')\
             .eq('person_id', person_id)\
-            .lte('start_date', str(fetch_end))\
             .execute()
 
         current_loans = []

@@ -1933,28 +1933,18 @@ async def get_partner_intelligence(
 
         partner = partner_response.data[0]
 
-        # 2. Get loan history for stats (with pagination to get ALL records)
-        all_loan_history = []
-        limit = 1000
-        offset = 0
-        while True:
-            loan_history_response = db.client.table('loan_history')\
-                .select('*')\
-                .eq('person_id', person_id)\
-                .order('start_date', desc=True)\
-                .range(offset, offset + limit - 1)\
-                .execute()
+        # 2. Get loan history (last 24 months for stats - optimized for performance)
+        # Only load recent history; full history not needed for Chain Builder display
+        two_years_ago = (datetime.now() - timedelta(days=730)).date()
 
-            if not loan_history_response.data:
-                break
+        loan_history_response = db.client.table('loan_history')\
+            .select('*')\
+            .eq('person_id', person_id)\
+            .gte('start_date', str(two_years_ago))\
+            .order('start_date', desc=True)\
+            .execute()
 
-            all_loan_history.extend(loan_history_response.data)
-            offset += limit
-
-            if len(loan_history_response.data) < limit:
-                break
-
-        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
+        loan_history_df = pd.DataFrame(loan_history_response.data) if loan_history_response.data else pd.DataFrame()
 
         # Calculate stats
         total_loans = len(loan_history_df)
@@ -2148,26 +2138,32 @@ async def get_partner_intelligence(
 
         current_loans = []
         if active_response.data:
+            # Batch fetch all vehicle details in ONE query (fix N+1 problem)
+            vins = [a.get('vehicle_vin') for a in active_response.data if a.get('vehicle_vin')]
+
+            vehicle_map = {}
+            if vins:
+                try:
+                    vehicles_response = db.client.table('vehicles')\
+                        .select('vin, make, model')\
+                        .in_('vin', vins)\
+                        .execute()
+
+                    # Create lookup map
+                    if vehicles_response.data:
+                        vehicle_map = {v['vin']: v for v in vehicles_response.data}
+                except Exception as e:
+                    logger.warning(f"Could not fetch vehicle details: {e}")
+
+            # Build results using lookup map
             for activity in active_response.data:
-                # Get vehicle make/model from vehicles table
                 vin = activity.get('vehicle_vin')
-                make, model = None, None
-                if vin:
-                    try:
-                        vehicle_response = db.client.table('vehicles')\
-                            .select('make, model')\
-                            .eq('vin', vin)\
-                            .execute()
-                        if vehicle_response.data:
-                            make = vehicle_response.data[0].get('make')
-                            model = vehicle_response.data[0].get('model')
-                    except Exception as e:
-                        logger.warning(f"Could not fetch vehicle details for VIN {vin}: {e}")
+                vehicle = vehicle_map.get(vin, {})
 
                 current_loans.append({
                     'vehicle_vin': vin,
-                    'make': make,
-                    'model': model,
+                    'make': vehicle.get('make'),
+                    'model': vehicle.get('model'),
                     'start_date': activity.get('start_date'),
                     'end_date': activity.get('end_date')
                 })

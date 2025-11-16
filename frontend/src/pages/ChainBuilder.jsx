@@ -2800,12 +2800,12 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                       className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border cursor-pointer text-xs transition-colors ${
                         selectedTiers.includes(tier)
                           ? tier === 'A+'
-                            ? 'bg-purple-50 border-purple-500 text-purple-700'
+                            ? 'bg-green-100 border-green-600 text-green-800'
                             : tier === 'A'
-                            ? 'bg-blue-50 border-blue-500 text-blue-700'
+                            ? 'bg-green-100 border-green-300 text-green-800'
                             : tier === 'B'
-                            ? 'bg-green-50 border-green-500 text-green-700'
-                            : 'bg-gray-50 border-gray-500 text-gray-700'
+                            ? 'bg-blue-100 border-blue-300 text-blue-800'
+                            : 'bg-yellow-100 border-yellow-300 text-yellow-800'
                           : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
                       }`}
                     >

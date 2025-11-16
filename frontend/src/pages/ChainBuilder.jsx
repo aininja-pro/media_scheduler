@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
 import { API_BASE_URL } from '../config';
 import ModelSelector from '../components/ModelSelector';
 import { EventManager, EventTypes } from '../utils/eventManager';
 import TimelineBar from '../components/TimelineBar';
 import AssignmentDetailsPanel from '../components/AssignmentDetailsPanel';
+import { Combobox, Transition } from '@headlessui/react';
 
 function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicleLoaded, preloadedPartner, onPartnerLoaded }) {
   // Chain mode: 'partner' (existing) or 'vehicle' (new)
@@ -37,7 +38,6 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   const [offices, setOffices] = useState([]);
   const [partners, setPartners] = useState([]);
   const [partnerSearchQuery, setPartnerSearchQuery] = useState('');
-  const [showPartnerDropdown, setShowPartnerDropdown] = useState(false);
 
   // Vehicle search (for vehicle chain mode)
   const [vehicles, setVehicles] = useState([]);
@@ -62,6 +62,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
   // Tier filter for Vehicle Chain (NEW)
   const [selectedTiers, setSelectedTiers] = useState(['A+', 'A', 'B', 'C']); // Default: all tiers
+
+  // Helper: Get selected partner object for Combobox display
+  const selectedPartnerObj = partners.find(p => p.person_id === selectedPartner) || null;
 
   // Swap modal
   const [swapModalOpen, setSwapModalOpen] = useState(false);
@@ -2522,71 +2525,95 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           <div className="space-y-4">
             {/* Partner Chain Mode - Partner Selector */}
             {chainMode === 'partner' && (
-              <div className="relative">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Media Partner
                 </label>
 
-              {/* Search Input */}
-              <input
-                type="text"
-                placeholder="Type to search partners..."
-                value={partnerSearchQuery}
-                onChange={(e) => {
-                  setPartnerSearchQuery(e.target.value);
-                  setShowPartnerDropdown(true);
-                }}
-                onFocus={() => setShowPartnerDropdown(true)}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-
-              {/* Dropdown - only show when focused and has results */}
-              {showPartnerDropdown && partnerSearchQuery.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                  {partners
-                    .filter(partner => {
-                      // Search query filter
-                      const matchesSearch = partner.name.toLowerCase().includes(partnerSearchQuery.toLowerCase());
-
-                      // Review history filter (if active)
-                      if (vehicleHistoryFilter && vehicleHistoryFilter.reviewHistory) {
-                        const reviewedPartnerIds = new Set(
-                          vehicleHistoryFilter.reviewHistory.reviews.map(r => r.person_id)
-                        );
-                        return matchesSearch && reviewedPartnerIds.has(partner.person_id);
-                      }
-
-                      return matchesSearch;
-                    })
-                    .slice(0, 20)  // Limit to 20 results
-                    .map(partner => (
-                      <button
-                        key={partner.person_id}
-                        onClick={() => {
-                          setSelectedPartner(partner.person_id);
-                          setPartnerSearchQuery(partner.name);
-                          setShowPartnerDropdown(false);
-                          // Clear model preferences when switching partners
-                          setModelPreferences([]);
-                        }}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors border-b last:border-b-0"
-                      >
-                        {partner.name}
-                      </button>
-                    ))}
-                  {partners.filter(p => p.name.toLowerCase().includes(partnerSearchQuery.toLowerCase())).length === 0 && (
-                    <div className="px-3 py-4 text-sm text-gray-500 text-center">
-                      No partners found
+                <Combobox
+                  value={selectedPartnerObj}
+                  onChange={(partner) => {
+                    setSelectedPartner(partner?.person_id || '');
+                    setPartnerSearchQuery('');
+                    setModelPreferences([]);
+                  }}
+                >
+                  <div className="relative">
+                    <div className="relative w-full">
+                      <Combobox.Input
+                        className="w-full border border-gray-300 rounded px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        displayValue={(partner) => partner?.name || ''}
+                        onChange={(event) => setPartnerSearchQuery(event.target.value)}
+                        placeholder="Select or search partner..."
+                      />
+                      <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
+                        <svg className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                        </svg>
+                      </Combobox.Button>
                     </div>
-                  )}
-                </div>
-              )}
 
-              {selectedPartner && !showPartnerDropdown && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Selected: {partners.find(p => p.person_id === selectedPartner)?.name}
-                </p>
-              )}
+                    <Transition
+                      as={Fragment}
+                      leave="transition ease-in duration-100"
+                      leaveFrom="opacity-100"
+                      leaveTo="opacity-0"
+                      afterLeave={() => setPartnerSearchQuery('')}
+                    >
+                      <Combobox.Options className="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        {partners
+                          .filter(partner => {
+                            // Search query filter
+                            const searchLower = partnerSearchQuery.toLowerCase();
+                            const matchesSearch = partnerSearchQuery === '' || partner.name.toLowerCase().includes(searchLower);
+
+                            // Review history filter (if active)
+                            if (vehicleHistoryFilter && vehicleHistoryFilter.reviewHistory) {
+                              const reviewedPartnerIds = new Set(
+                                vehicleHistoryFilter.reviewHistory.reviews.map(r => r.person_id)
+                              );
+                              return matchesSearch && reviewedPartnerIds.has(partner.person_id);
+                            }
+
+                            return matchesSearch;
+                          })
+                          .slice(0, 20)
+                          .map((partner) => (
+                            <Combobox.Option
+                              key={partner.person_id}
+                              value={partner}
+                              className={({ active }) =>
+                                `relative cursor-pointer select-none py-2 px-3 text-sm ${
+                                  active ? 'bg-blue-50 text-blue-900' : 'text-gray-900'
+                                }`
+                              }
+                            >
+                              {({ selected }) => (
+                                <div className="flex items-center justify-between">
+                                  <span className={selected ? 'font-semibold' : 'font-normal'}>
+                                    {partner.name}
+                                  </span>
+                                  {selected && (
+                                    <svg className="h-5 w-5 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                                      <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                    </svg>
+                                  )}
+                                </div>
+                              )}
+                            </Combobox.Option>
+                          ))}
+                        {partners.filter(p => {
+                          const searchLower = partnerSearchQuery.toLowerCase();
+                          return partnerSearchQuery === '' || p.name.toLowerCase().includes(searchLower);
+                        }).length === 0 && (
+                          <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                            No partners found
+                          </div>
+                        )}
+                      </Combobox.Options>
+                    </Transition>
+                  </div>
+                </Combobox>
 
               {/* Vehicle History Filter Indicator */}
               {vehicleHistoryFilter && (

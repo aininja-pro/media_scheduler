@@ -645,7 +645,8 @@ async def ingest_media_partners_from_url_stream(url: str):
 
             # Parse CSV
             expected_headers = [
-                'Person_ID', 'Name', 'Address', 'Office', 'Default loan region', 'Notes / Instructions'
+                'Person_ID', 'Name', 'Address', 'Office', 'Default loan region', 'Notes / Instructions',
+                'Affiliation', 'Activity_Type_Subcategory_ID'
             ]
 
             df = pd.read_csv(StringIO(csv_content), header=None, names=expected_headers)
@@ -676,7 +677,9 @@ async def ingest_media_partners_from_url_stream(url: str):
                         'Address': 'address',
                         'Office': 'office',
                         'Default loan region': 'default_loan_region',
-                        'Notes / Instructions': 'notes_instructions'
+                        'Notes / Instructions': 'notes_instructions',
+                        'Affiliation': 'affiliation',
+                        'Activity_Type_Subcategory_ID': 'activity_type_subcategory_id'
                     }
 
                     normalized_dict = {}

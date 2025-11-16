@@ -2859,7 +2859,10 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                         key={item.make}
                         className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border cursor-pointer text-xs transition-colors ${
                           selectedMakes.includes(item.make)
-                            ? 'bg-blue-50 border-blue-300 text-blue-700'
+                            ? item.rank === 'A+' ? 'bg-green-100 border-green-600 text-green-800' :
+                              item.rank === 'A' ? 'bg-green-100 border-green-300 text-green-800' :
+                              item.rank === 'B' ? 'bg-blue-100 border-blue-300 text-blue-800' :
+                              'bg-yellow-100 border-yellow-300 text-yellow-800'
                             : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
                         }`}
                       >
@@ -2930,7 +2933,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Preference Mode
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <label className={`flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer text-xs ${
                       preferenceMode === 'prioritize'
                         ? 'bg-blue-50 border-blue-500 text-blue-700'
@@ -2968,25 +2971,6 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                         <div className="text-gray-500">Only these</div>
                       </div>
                     </label>
-
-                    <label className={`flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer text-xs ${
-                      preferenceMode === 'ignore'
-                        ? 'bg-blue-50 border-blue-500 text-blue-700'
-                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                    }`}>
-                      <input
-                        type="radio"
-                        name="preferenceMode"
-                        value="ignore"
-                        checked={preferenceMode === 'ignore'}
-                        onChange={(e) => setPreferenceMode(e.target.value)}
-                        className="text-blue-600"
-                      />
-                      <div>
-                        <div className="font-medium">Let AI Decide</div>
-                        <div className="text-gray-500">Ignore</div>
-                      </div>
-                    </label>
                   </div>
 
                   <div className="mt-2 text-xs text-gray-500">
@@ -2996,10 +2980,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                     {preferenceMode === 'strict' && modelPreferences.length > 0 && (
                       <span>⚠️ Chain will ONLY include selected models</span>
                     )}
-                    {preferenceMode === 'ignore' && (
-                      <span>Preferences will be ignored (optimizer decides)</span>
-                    )}
-                    {modelPreferences.length === 0 && preferenceMode !== 'ignore' && (
+                    {modelPreferences.length === 0 && (
                       <span>No models selected - preferences will not apply</span>
                     )}
                   </div>

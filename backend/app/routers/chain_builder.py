@@ -1133,7 +1133,7 @@ async def calculate_chain_budget(
 async def search_vehicles(
     office: str = Query(..., description="Office name"),
     search_term: str = Query("", description="Search by VIN, make, or model"),
-    limit: int = Query(50, description="Maximum number of results", ge=1, le=100),
+    limit: int = Query(50, description="Maximum number of results", ge=1, le=1000),
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """

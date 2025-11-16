@@ -3251,7 +3251,22 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
               {/* Timeline Visualization - Calendar Style with Month View */}
               <div className="bg-white rounded-lg shadow-sm border p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-md font-semibold text-gray-900">Chain Timeline</h3>
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-md font-semibold text-gray-900">Chain Timeline</h3>
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        window.dispatchEvent(new CustomEvent('navigateToCalendar', {
+                          detail: { person_id: selectedPartner }
+                        }));
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                      title="Open in Calendar view"
+                    >
+                      📅 View Full Calendar
+                    </a>
+                  </div>
 
                   <div className="flex items-center gap-3">
                     {/* Delete Manual Chain Button - show if partner has saved manual chains */}
@@ -3346,6 +3361,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                   className={`flex-1 text-center text-xs py-2 border-r ${
                                     isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-gray-600'
                                   }`}
+                                  style={{ minWidth: '50px' }}
                                 >
                                   <div className="leading-tight font-semibold">
                                     {monthDay}
@@ -4119,6 +4135,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                 className={`flex-1 text-center text-xs py-2 border-r ${
                                   isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-gray-600'
                                 }`}
+                                style={{ minWidth: '50px' }}
                               >
                                 <div className="leading-tight font-semibold">
                                   {monthDay}

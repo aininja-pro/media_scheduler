@@ -6,6 +6,33 @@ import TimelineBar from '../components/TimelineBar';
 import AssignmentDetailsPanel from '../components/AssignmentDetailsPanel';
 import { Combobox, Transition } from '@headlessui/react';
 
+/**
+ * Format partner name for display
+ * @param {string} name - Full name (e.g., "John Smith" or "Mary Jo Smith")
+ * @param {string} format - 'lastFirst' or 'firstLast'
+ * @returns {string} Formatted name
+ */
+const formatPartnerName = (name, format = 'lastFirst') => {
+  if (!name) return '';
+
+  const parts = name.trim().split(/\s+/);
+
+  // Single word name (e.g., "Madonna")
+  if (parts.length === 1) {
+    return name;
+  }
+
+  // Multi-part name
+  const lastName = parts[parts.length - 1];
+  const firstName = parts.slice(0, -1).join(' ');
+
+  if (format === 'lastFirst') {
+    return `${lastName}, ${firstName}`;
+  } else {
+    return name; // firstLast - return original
+  }
+};
+
 function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicleLoaded, preloadedPartner, onPartnerLoaded }) {
   // Chain mode: 'partner' (existing) or 'vehicle' (new)
   const [chainMode, setChainMode] = useState('partner');
@@ -2542,7 +2569,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                     <div className="relative w-full">
                       <Combobox.Input
                         className="w-full border border-gray-300 rounded px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        displayValue={(partner) => partner?.name || ''}
+                        displayValue={(partner) => partner?.name ? formatPartnerName(partner.name, 'lastFirst') : ''}
                         onChange={(event) => setPartnerSearchQuery(event.target.value)}
                         placeholder="Select or search partner..."
                       />
@@ -2577,7 +2604,12 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
                             return matchesSearch;
                           })
-                          .slice(0, 20)
+                          .sort((a, b) => {
+                            // Sort by last name
+                            const aFormatted = formatPartnerName(a.name, 'lastFirst');
+                            const bFormatted = formatPartnerName(b.name, 'lastFirst');
+                            return aFormatted.localeCompare(bFormatted);
+                          })
                           .map((partner) => (
                             <Combobox.Option
                               key={partner.person_id}
@@ -2591,7 +2623,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                               {({ selected }) => (
                                 <div className="flex items-center justify-between">
                                   <span className={selected ? 'font-semibold' : 'font-normal'}>
-                                    {partner.name}
+                                    {formatPartnerName(partner.name, 'lastFirst')}
                                   </span>
                                   {selected && (
                                     <svg className="h-5 w-5 text-blue-600" viewBox="0 0 20 20" fill="currentColor">

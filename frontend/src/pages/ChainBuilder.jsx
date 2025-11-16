@@ -190,16 +190,12 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   useEffect(() => {
     if (!selectedOffice || chainMode !== 'vehicle') return;
 
-    // Only search if we have a search query (at least 1 character)
-    if (!vehicleSearchQuery || vehicleSearchQuery.length === 0) {
-      setVehicles([]);
-      return;
-    }
-
     const loadVehicles = async () => {
       try {
+        // Load all vehicles or filtered vehicles (empty search_term returns all)
+        const searchTerm = vehicleSearchQuery || '';
         const response = await fetch(
-          `${API_BASE_URL}/api/chain-builder/search-vehicles?office=${encodeURIComponent(selectedOffice)}&search_term=${encodeURIComponent(vehicleSearchQuery)}&limit=50`
+          `${API_BASE_URL}/api/chain-builder/search-vehicles?office=${encodeURIComponent(selectedOffice)}&search_term=${encodeURIComponent(searchTerm)}&limit=200`
         );
 
         if (!response.ok) {

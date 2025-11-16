@@ -70,7 +70,6 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   const [vehicles, setVehicles] = useState([]);
   const [vehicleSearchQuery, setVehicleSearchQuery] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState(null);
-  const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
 
   // Partner intelligence (current/scheduled activities)
   const [partnerIntelligence, setPartnerIntelligence] = useState(null);
@@ -2670,54 +2669,107 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
             {/* Vehicle Chain Mode - Vehicle Selector */}
             {chainMode === 'vehicle' && (
-              <div className="relative">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Vehicle
                 </label>
 
-                {/* Vehicle Search Input */}
-                <input
-                  type="text"
-                  placeholder="Type VIN, make, or model..."
-                  value={vehicleSearchQuery}
-                  onChange={(e) => {
-                    setVehicleSearchQuery(e.target.value);
-                    setShowVehicleDropdown(true);
+                <Combobox
+                  value={selectedVehicle}
+                  onChange={(vehicle) => {
+                    setSelectedVehicle(vehicle);
+                    setVehicleSearchQuery('');
                   }}
-                  onFocus={() => setShowVehicleDropdown(true)}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                >
+                  <div className="relative">
+                    <div className="relative w-full">
+                      <Combobox.Input
+                        className="w-full border border-gray-300 rounded px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        displayValue={(vehicle) => vehicle ? `${vehicle.make} ${vehicle.model} ${vehicle.year}` : ''}
+                        onChange={(event) => setVehicleSearchQuery(event.target.value)}
+                        placeholder="Select or search vehicle..."
+                      />
+                      <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
+                        <svg className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                        </svg>
+                      </Combobox.Button>
+                    </div>
 
-                {/* Vehicle Dropdown */}
-                {showVehicleDropdown && vehicleSearchQuery.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                    {vehicles.length > 0 ? (
-                      vehicles.map(vehicle => (
-                        <button
-                          key={vehicle.vin}
-                          onClick={() => {
-                            setSelectedVehicle(vehicle);
-                            setVehicleSearchQuery(`${vehicle.make} ${vehicle.model} ${vehicle.year} (${vehicle.vin.slice(-6)})`);
-                            setShowVehicleDropdown(false);
-                          }}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors border-b last:border-b-0"
-                        >
-                          <div className="font-medium">{vehicle.make} {vehicle.model} {vehicle.year}</div>
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            VIN: {vehicle.vin} | Tier: {vehicle.tier}
+                    <Transition
+                      as={Fragment}
+                      leave="transition ease-in duration-100"
+                      leaveFrom="opacity-100"
+                      leaveTo="opacity-0"
+                      afterLeave={() => setVehicleSearchQuery('')}
+                    >
+                      <Combobox.Options className="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        {vehicles
+                          .filter(vehicle => {
+                            // Search query filter
+                            const searchLower = vehicleSearchQuery.toLowerCase();
+                            if (vehicleSearchQuery === '') return true;
+
+                            return (
+                              vehicle.make.toLowerCase().includes(searchLower) ||
+                              vehicle.model.toLowerCase().includes(searchLower) ||
+                              vehicle.vin.toLowerCase().includes(searchLower) ||
+                              vehicle.year?.toString().includes(searchLower)
+                            );
+                          })
+                          .sort((a, b) => {
+                            // Sort by make, then model
+                            const makeCompare = a.make.localeCompare(b.make);
+                            if (makeCompare !== 0) return makeCompare;
+                            return a.model.localeCompare(b.model);
+                          })
+                          .map((vehicle) => (
+                            <Combobox.Option
+                              key={vehicle.vin}
+                              value={vehicle}
+                              className={({ active }) =>
+                                `relative cursor-pointer select-none py-2 px-3 text-sm ${
+                                  active ? 'bg-blue-50 text-blue-900' : 'text-gray-900'
+                                }`
+                              }
+                            >
+                              {({ selected }) => (
+                                <div>
+                                  <div className="flex items-center justify-between">
+                                    <span className={selected ? 'font-semibold' : 'font-medium'}>
+                                      {vehicle.make} {vehicle.model} {vehicle.year}
+                                    </span>
+                                    {selected && (
+                                      <svg className="h-5 w-5 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-gray-500 mt-0.5">
+                                    VIN: {vehicle.vin} | Tier: {vehicle.tier}
+                                  </div>
+                                </div>
+                              )}
+                            </Combobox.Option>
+                          ))}
+                        {vehicles.filter(v => {
+                          const searchLower = vehicleSearchQuery.toLowerCase();
+                          return vehicleSearchQuery === '' ||
+                                 v.make.toLowerCase().includes(searchLower) ||
+                                 v.model.toLowerCase().includes(searchLower) ||
+                                 v.vin.toLowerCase().includes(searchLower);
+                        }).length === 0 && (
+                          <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                            No vehicles found
                           </div>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="px-3 py-4 text-sm text-gray-500 text-center">
-                        No vehicles found for "{vehicleSearchQuery}"
-                      </div>
-                    )}
+                        )}
+                      </Combobox.Options>
+                    </Transition>
                   </div>
-                )}
+                </Combobox>
 
                 {/* Selected Vehicle Display */}
-                {selectedVehicle && !showVehicleDropdown && (
+                {selectedVehicle && (
                   <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs">
                     <div className="font-medium text-gray-900">
                       {selectedVehicle.make} {selectedVehicle.model} {selectedVehicle.year}

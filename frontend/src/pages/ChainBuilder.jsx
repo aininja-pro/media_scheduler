@@ -43,6 +43,14 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   // Update parent when local office changes
   const handleOfficeChange = (newOffice) => {
     setSelectedOffice(newOffice);
+    // Clear selections when office changes (old selections may not exist in new office)
+    setSelectedPartner('');
+    setSelectedVehicle(null);
+    setPartnerSearchQuery('');
+    setVehicleSearchQuery('');
+    setChain(null);
+    setManualSlots([]);
+    setManualPartnerSlots([]);
     if (onOfficeChange) {
       onOfficeChange(newOffice);
     }

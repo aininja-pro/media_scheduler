@@ -186,16 +186,18 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     loadPartners();
   }, [selectedOffice]);
 
-  // Load vehicles when office changes or search query updates (debounced)
+  // Load all vehicles when office or chainMode changes (no debounce for dropdown)
   useEffect(() => {
-    if (!selectedOffice || chainMode !== 'vehicle') return;
+    if (!selectedOffice || chainMode !== 'vehicle') {
+      setVehicles([]);
+      return;
+    }
 
     const loadVehicles = async () => {
       try {
-        // Load all vehicles or filtered vehicles (empty search_term returns all)
-        const searchTerm = vehicleSearchQuery || '';
+        // Load all vehicles for office (empty search_term returns all)
         const response = await fetch(
-          `${API_BASE_URL}/api/chain-builder/search-vehicles?office=${encodeURIComponent(selectedOffice)}&search_term=${encodeURIComponent(searchTerm)}&limit=200`
+          `${API_BASE_URL}/api/chain-builder/search-vehicles?office=${encodeURIComponent(selectedOffice)}&search_term=&limit=500`
         );
 
         if (!response.ok) {
@@ -217,20 +219,15 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         }
 
         setVehicles(vehiclesList);
-        console.log(`Loaded ${vehiclesList.length} vehicles for search "${vehicleSearchQuery}" in ${selectedOffice}`);
+        console.log(`Loaded ${vehiclesList.length} vehicles for ${selectedOffice}`);
       } catch (err) {
         console.error('Failed to load vehicles:', err);
         setVehicles([]);
       }
     };
 
-    // Debounce the search - wait 300ms after user stops typing
-    const timeoutId = setTimeout(() => {
-      loadVehicles();
-    }, 300);
-
-    return () => clearTimeout(timeoutId);
-  }, [selectedOffice, vehicleSearchQuery, chainMode, partnerHistoryFilter]);
+    loadVehicles();
+  }, [selectedOffice, chainMode, partnerHistoryFilter]);
 
   // Get current Monday as default
   const getCurrentMonday = () => {

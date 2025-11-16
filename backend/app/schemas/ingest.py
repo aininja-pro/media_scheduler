@@ -106,6 +106,8 @@ class MediaPartnerIngest(BaseModel):
     office: str
     default_loan_region: Optional[str] = None
     notes_instructions: Optional[str] = None
+    affiliation: Optional[str] = None  # NEW: CSV column 7, used for FMS request 'reason' field
+    activity_type_subcategory_id: Optional[int] = None  # NEW: CSV column 8, for FMS request payload
 
     @field_validator('person_id', mode='before')
     @classmethod
@@ -117,6 +119,17 @@ class MediaPartnerIngest(BaseModel):
         if not v_str:
             raise ValueError("Person ID cannot be empty")
         return v_str
+
+    @field_validator('activity_type_subcategory_id', mode='before')
+    @classmethod
+    def validate_subcategory_id(cls, v):
+        """Convert subcategory ID to int, allow None/empty."""
+        if v is None or (isinstance(v, str) and v.strip() == ''):
+            return None
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            return None
 
 
 class ApprovedMakesIngest(BaseModel):

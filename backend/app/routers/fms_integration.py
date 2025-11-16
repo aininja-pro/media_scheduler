@@ -123,6 +123,15 @@ async def create_fms_vehicle_request(assignment_id: int):
                 detail=f"vehicle_id not found for VIN: {vin}. Ensure vehicle is in vehicles table."
             )
 
+        # 2b. Fetch partner details for FMS payload (affiliation & subcategory)
+        partner_result = db_service.client.table('media_partners') \
+            .select('affiliation, activity_type_subcategory_id') \
+            .eq('person_id', assignment.get('person_id')) \
+            .eq('office', assignment.get('office')) \
+            .execute()
+
+        partner_data = partner_result.data[0] if partner_result.data else {}
+
         # 3. Convert dates to FMS format (MM/DD/YY)
         from datetime import datetime
 
@@ -139,10 +148,11 @@ async def create_fms_vehicle_request(assignment_id: int):
                 "requestor_id": int(FMS_REQUESTOR_ID),
                 "start_date": fms_start_date,
                 "end_date": fms_end_date,
+                "activity_type_id": 1,  # NEW: Always 1 for media partner loans
 
                 # Optional but helpful fields
                 "activity_to": assignment.get('partner_name', ''),
-                "reason": "Scheduled media partner loan",
+                "reason": partner_data.get('affiliation') or "Scheduled media partner loan",  # NEW: Use partner's affiliation if available
                 "loanee_id": assignment.get('person_id'),
 
                 # Vehicle assignment
@@ -154,6 +164,10 @@ async def create_fms_vehicle_request(assignment_id: int):
                 ]
             }
         }
+
+        # Add optional activity_type_subcategory_id if partner has one
+        if partner_data.get('activity_type_subcategory_id'):
+            fms_payload["request"]["activity_type_subcategory_id"] = partner_data.get('activity_type_subcategory_id')
 
         logger.info(f"Sending FMS request to {FMS_BASE_URL}/api/v1/vehicle_requests")
         logger.info(f"  Vehicle: {vehicle_data.get('make')} {vehicle_data.get('model')} (VIN: {vin}, vehicle_id: {vehicle_id})")

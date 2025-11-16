@@ -855,9 +855,10 @@ async def ingest_media_partners_from_url(
             logger.info(f"Fetched CSV: {response.status_code}, {len(csv_content)} chars, content-type: {response.headers.get('content-type')}")
         
         # Parse CSV without headers since client data doesn't have them
-        # Add the correct column headers manually for media partners (updated format with address)
+        # Add the correct column headers manually for media partners (updated format with address + FMS fields)
         expected_headers = [
-            'Person_ID', 'Name', 'Address', 'Office', 'Default loan region', 'Notes / Instructions'
+            'Person_ID', 'Name', 'Address', 'Office', 'Default loan region', 'Notes / Instructions',
+            'Affiliation', 'Activity_Type_Subcategory_ID'
         ]
         
         df = pd.read_csv(StringIO(csv_content), header=None, names=expected_headers)
@@ -894,7 +895,9 @@ async def ingest_media_partners_from_url(
                     'Address': 'address',
                     'Office': 'office',
                     'Default loan region': 'default_loan_region',
-                    'Notes / Instructions': 'notes_instructions'
+                    'Notes / Instructions': 'notes_instructions',
+                    'Affiliation': 'affiliation',
+                    'Activity_Type_Subcategory_ID': 'activity_type_subcategory_id'
                 }
                 
                 normalized_dict = {}

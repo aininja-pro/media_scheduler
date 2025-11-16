@@ -3361,7 +3361,6 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                   className={`flex-1 text-center text-xs py-2 border-r ${
                                     isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-gray-600'
                                   }`}
-                                  style={{ minWidth: '50px' }}
                                 >
                                   <div className="leading-tight font-semibold">
                                     {monthDay}
@@ -4135,7 +4134,6 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                 className={`flex-1 text-center text-xs py-2 border-r ${
                                   isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-gray-600'
                                 }`}
-                                style={{ minWidth: '50px' }}
                               >
                                 <div className="leading-tight font-semibold">
                                   {monthDay}

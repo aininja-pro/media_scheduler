@@ -197,7 +197,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       try {
         // Load all vehicles for office (empty search_term returns all)
         const response = await fetch(
-          `${API_BASE_URL}/api/chain-builder/search-vehicles?office=${encodeURIComponent(selectedOffice)}&search_term=&limit=500`
+          `${API_BASE_URL}/api/chain-builder/search-vehicles?office=${encodeURIComponent(selectedOffice)}&search_term=&limit=100`
         );
 
         if (!response.ok) {

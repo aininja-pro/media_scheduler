@@ -164,7 +164,7 @@ class DatabaseService:
         # Default upsert columns for each table - use lists for composite keys
         table_upsert_columns = {
             "vehicles": "vin",
-            "media_partners": "person_id,office",  # Composite key (person can be in multiple offices)
+            "media_partners": "person_id",
             "approved_makes": "person_id",  # Use person_id as primary upsert key
             "partner_make_rank": ["partner_id", "make"],
             "loan_history": "activity_id",

@@ -4085,7 +4085,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                         </svg>
                       </button>
                       <span className="text-sm font-medium text-gray-700 px-3 py-1">
-                        {viewStartDate?.toLocaleDateString('en-US', { month: 'numeric' })}
+                        {viewStartDate?.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                       </span>
                       <button
                         onClick={slideForward}

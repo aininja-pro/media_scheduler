@@ -383,6 +383,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
   const [selectedMakes, setSelectedMakes] = useState([]); // Array of makes
   const [showPartnerDropdown, setShowPartnerDropdown] = useState(false);
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+  const [vehicleSearchQuery, setVehicleSearchQuery] = useState(''); // Search term for vehicle filter
 
   // Hover actions for timeline bars
   const [hoveredAssignment, setHoveredAssignment] = useState(null); // assignment_id of hovered bar
@@ -1659,7 +1660,10 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
           <div className="relative multi-select-dropdown w-48">
             <label className="block text-xs font-medium text-gray-700 mb-1">Vehicles</label>
             <button
-              onClick={() => setShowVehicleDropdown(!showVehicleDropdown)}
+              onClick={() => {
+                setShowVehicleDropdown(!showVehicleDropdown);
+                if (showVehicleDropdown) setVehicleSearchQuery('');
+              }}
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-left bg-white hover:bg-gray-50 flex justify-between items-center"
             >
               <span>{selectedVehicles.length > 0 ? `${selectedVehicles.length} selected` : 'All'}</span>
@@ -1670,12 +1674,28 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                 <div className="p-2 border-b sticky top-0 bg-white">
                   <button
                     onClick={() => setSelectedVehicles([])}
-                    className="text-xs text-blue-600 hover:text-blue-800"
+                    className="text-xs text-blue-600 hover:text-blue-800 block mb-2 w-full text-left"
                   >
                     Clear All
                   </button>
+                  <input
+                    type="text"
+                    placeholder="Search vehicles..."
+                    value={vehicleSearchQuery}
+                    onChange={(e) => setVehicleSearchQuery(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
-                {allVehicles.map(vehicle => (
+                {allVehicles.filter(vehicle => {
+                  if (vehicleSearchQuery === '') return true;
+                  const searchLower = vehicleSearchQuery.toLowerCase();
+                  return (
+                    vehicle.make.toLowerCase().includes(searchLower) ||
+                    vehicle.model.toLowerCase().includes(searchLower) ||
+                    vehicle.vin.toLowerCase().includes(searchLower)
+                  );
+                }).map(vehicle => (
                   <label
                     key={vehicle.vin}
                     className="flex items-center px-2 py-1.5 hover:bg-gray-50 cursor-pointer text-xs whitespace-nowrap"

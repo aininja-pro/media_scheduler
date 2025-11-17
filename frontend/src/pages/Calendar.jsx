@@ -1956,8 +1956,8 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
         </div>
       </div>
 
-      {/* Gantt Chart Content */}
-      <div className="p-6">
+      {/* Gantt Chart Content - Scrollable Container */}
+      <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

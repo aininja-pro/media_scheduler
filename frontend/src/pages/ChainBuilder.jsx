@@ -2608,9 +2608,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                             return matchesSearch;
                           })
                           .sort((a, b) => {
-                            // Sort by last name
-                            const aFormatted = formatPartnerName(a.name, 'lastFirst');
-                            const bFormatted = formatPartnerName(b.name, 'lastFirst');
+                            // Sort by last name, removing leading special characters (quotes, parentheses, etc.)
+                            const aFormatted = formatPartnerName(a.name, 'lastFirst').replace(/^[^\w]+/, '');
+                            const bFormatted = formatPartnerName(b.name, 'lastFirst').replace(/^[^\w]+/, '');
                             return aFormatted.localeCompare(bFormatted);
                           })
                           .map((partner) => (

@@ -2470,7 +2470,12 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="!text-base font-semibold text-gray-900">Chain Builder</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="!text-base font-semibold text-gray-900">Chain Builder</h1>
+              <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 border border-blue-200">
+                📍 {selectedOffice}
+              </span>
+            </div>
             <p className="text-sm text-gray-500 mt-1">
               {chainMode === 'partner'
                 ? 'Create sequential vehicle assignments for a media partner'

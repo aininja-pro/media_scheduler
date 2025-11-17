@@ -1978,9 +1978,9 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             <p className="text-xs text-gray-400 mt-1">Try adjusting your filters or select a different month</p>
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow-sm border overflow-x-auto">
+          <div className="bg-white rounded-lg shadow-sm border">
             {/* Gantt Chart Header - Sticky */}
-            <div className="flex border-b bg-gray-50 sticky top-0 z-10">
+            <div className="flex border-b bg-gray-50 sticky top-0 z-10 overflow-x-auto">
               {/* Row label column */}
               <div className="w-64 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700 bg-gray-50">
                 {viewMode === 'vehicle' ? 'Vehicle' : 'Media Partner'}
@@ -2008,7 +2008,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             </div>
 
             {/* Gantt Chart Rows */}
-            <div className="divide-y divide-gray-300">
+            <div className="divide-y divide-gray-300 overflow-x-auto">
               {displayData.map((item) => {
                 // Calculate how many rows we need based on overlapping activities
                 const filteredActs = item.activities.filter(activity => activityOverlapsMonth(activity));

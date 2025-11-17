@@ -158,7 +158,7 @@ function PartnerReviewHistory({ personId, office }) {
                   {review.make} {review.model}
                 </td>
                 <td className="px-4 py-2 text-sm">
-                  <a href="#" className="text-blue-600 hover:text-blue-800 font-mono">
+                  <a href={`https://fms.driveshop.com/vehicles/list_activities/${review.vehicle_id || review.vin}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 hover:underline font-mono">
                     {review.vin.slice(-8)}
                   </a>
                 </td>
@@ -2878,7 +2878,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                               🚗 {loan.make} {loan.model}
                             </div>
                             <div className="text-xs text-gray-600 mt-1">
-                              {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)} • VIN: <a href="#" className="text-blue-600 hover:text-blue-800 font-mono">{loan.vin ? loan.vin.slice(-8) : 'N/A'}</a>
+                              {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)} • VIN: <a href={`https://fms.driveshop.com/vehicles/list_activities/${loan.vehicle_id || loan.vin}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 hover:underline font-mono">{loan.vin ? loan.vin.slice(-8) : 'N/A'}</a>
                             </div>
                           </div>
                         ))}
@@ -2918,7 +2918,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                                     {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)}
                                   </td>
                                   <td className="px-4 py-2 text-xs text-right">
-                                    VIN: <a href="#" className="text-blue-600 hover:text-blue-800 font-mono">{loan.vin ? loan.vin.slice(-8) : 'N/A'}</a>
+                                    VIN: <a href={`https://fms.driveshop.com/vehicles/list_activities/${loan.vehicle_id || loan.vin}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 hover:underline font-mono">{loan.vin ? loan.vin.slice(-8) : 'N/A'}</a>
                                     <span className={`ml-2 font-semibold ${scoreColor}`}>Score: {score}</span>
                                   </td>
                                 </tr>
@@ -2956,7 +2956,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                                   {formatActivityDate(loan.start_date)} - {formatActivityDate(loan.end_date)}
                                 </td>
                                 <td className="px-4 py-2 text-xs text-right">
-                                  VIN: <a href="#" className="text-blue-600 hover:text-blue-800 font-mono">{loan.vin ? loan.vin.slice(-8) : 'N/A'}</a>
+                                  VIN: <a href={`https://fms.driveshop.com/vehicles/list_activities/${loan.vehicle_id || loan.vin}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 hover:underline font-mono">{loan.vin ? loan.vin.slice(-8) : 'N/A'}</a>
                                   <span className="ml-2 text-xs font-semibold text-pink-600">⏳ Pending Approval</span>
                                 </td>
                               </tr>

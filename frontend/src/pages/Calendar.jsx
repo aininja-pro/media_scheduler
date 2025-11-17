@@ -1555,8 +1555,11 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
       {/* Header - Compact */}
       <div className="bg-white border-b px-6 py-2">
         <div className="flex justify-between items-center">
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-center gap-3">
             <h1 className="!text-base font-semibold text-gray-900">📅 Calendar</h1>
+            <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 border border-blue-200">
+              📍 {selectedOffice}
+            </span>
             <p className="text-xs text-gray-500">Vehicle activity timeline</p>
           </div>
 
@@ -1976,10 +1979,10 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
           </div>
         ) : (
           <div className="bg-white rounded-lg shadow-sm border overflow-x-auto">
-            {/* Gantt Chart Header */}
-            <div className="flex border-b bg-gray-50">
+            {/* Gantt Chart Header - Sticky */}
+            <div className="flex border-b bg-gray-50 sticky top-0 z-10">
               {/* Row label column */}
-              <div className="w-64 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700">
+              <div className="w-64 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700 bg-gray-50">
                 {viewMode === 'vehicle' ? 'Vehicle' : 'Media Partner'}
               </div>
               {/* Days column */}
@@ -1994,7 +1997,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                     <div
                       key={idx}
                       className={`flex-1 text-center text-xs py-3 border-r ${
-                        isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-gray-600'
+                        isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'bg-gray-50 text-gray-600'
                       }`}
                     >
                       <div>{monthName} {dayNum}</div>

@@ -815,7 +815,9 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
   const parseLocalDate = (dateStr) => {
     if (!dateStr || typeof dateStr !== 'string') return null;
     try {
-      const parts = dateStr.split('-');
+      // Handle ISO format (2025-11-10T00:00:00) by extracting just the date part
+      const datePart = dateStr.split('T')[0];
+      const parts = datePart.split('-');
       if (parts.length !== 3) return null;
       const [year, month, day] = parts.map(Number);
       if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
@@ -1078,76 +1080,14 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
     setLoadingVehicleContext(true);
 
     try {
-      // Build context from calendar activities data
-      const vehicleActivities = activities.filter(a => a.vin === vin);
-
-      if (vehicleActivities.length > 0) {
-        const firstActivity = vehicleActivities[0];
-        const sortedActivities = [...vehicleActivities].sort((a, b) =>
-          new Date(a.start_date) - new Date(b.start_date)
-        );
-
-        const now = new Date();
-        const previous = sortedActivities.filter(a => new Date(a.end_date) < now).pop();
-        const next = sortedActivities.find(a => new Date(a.start_date) > now);
-        const current = sortedActivities.find(a => {
-          const start = new Date(a.start_date);
-          const end = new Date(a.end_date);
-          return now >= start && now <= end;
-        });
-
-        // Try to get mileage from vehicles table
-        let mileage = 'N/A';
-        try {
-          const vehicleResponse = await fetch(`${API_BASE_URL}/api/ui/phase7/vehicle-context/${vin}`);
-          if (vehicleResponse.ok) {
-            const vehicleData = await vehicleResponse.json();
-            mileage = vehicleData.mileage || 'N/A';
-          }
-        } catch (err) {
-          console.error('Could not fetch mileage:', err);
-        }
-
-        // Build context object with timeline
-        const context = {
-          vin: vin,
-          make: firstActivity.make,
-          model: firstActivity.model,
-          office: firstActivity.office,
-          mileage: mileage,
-          last_known_location: current
-            ? `With ${current.partner_name}`
-            : previous
-              ? `Last with ${previous.partner_name}`
-              : 'Home Office',
-          current_activity: current ? {
-            activity_type: current.activity_type || 'Media Loan',
-            start_date: current.start_date,
-            end_date: current.end_date,
-            partner_name: current.partner_name,
-            status: current.status
-          } : null,
-          previous_activity: previous ? {
-            activity_type: previous.activity_type || 'Media Loan',
-            start_date: previous.start_date,
-            end_date: previous.end_date,
-            partner_name: previous.partner_name,
-            status: previous.status
-          } : null,
-          next_activity: next ? {
-            activity_type: next.activity_type || 'Planned Loan',
-            start_date: next.start_date,
-            end_date: next.end_date,
-            partner_name: next.partner_name,
-            status: next.status
-          } : null,
-          timeline: sortedActivities
-        };
-
-        setVehicleContext(context);
+      // Fetch full enhanced vehicle context from API
+      const vehicleResponse = await fetch(`${API_BASE_URL}/api/ui/phase7/vehicle-context/${vin}`);
+      if (vehicleResponse.ok) {
+        const vehicleData = await vehicleResponse.json();
+        setVehicleContext(vehicleData);
 
         // Fetch chaining opportunities if vehicle has current activity
-        if (current && selectedOffice) {
+        if (vehicleData.current_activity && selectedOffice) {
           setLoadingChains(true);
           try {
             const params = new URLSearchParams({
@@ -1169,8 +1109,12 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
           setChainingOpportunities(null);
         }
       } else {
-        await fetchVehicleContext(vin);
+        console.error('Failed to fetch vehicle context');
+        setVehicleContext(null);
       }
+    } catch (err) {
+      console.error('Error in handleActivityClick:', err);
+      setVehicleContext(null);
     } finally {
       setLoadingVehicleContext(false);
     }
@@ -2210,10 +2154,10 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
         )}
       </div>
 
-      {/* Vehicle Context Side Panel (reuse from Optimizer) */}
+      {/* Vehicle Context Side Panel (Enhanced) */}
       {selectedVin && (
         <div className="fixed right-0 top-0 z-40 h-full">
-          <div className="bg-white w-96 h-full shadow-2xl overflow-y-auto border-l border-gray-200">
+          <div className="bg-white w-[700px] h-full shadow-2xl overflow-y-auto border-l border-gray-200">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
               <h2 className="text-lg font-semibold text-gray-900">Vehicle Context</h2>
               <button
@@ -2236,11 +2180,11 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                 </div>
               ) : vehicleContext ? (
                 <div className="space-y-6">
-                  {/* Vehicle Info */}
+                  {/* Vehicle Info with Intelligence */}
                   <div>
                     <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Vehicle Details</h3>
                     <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">VIN:</span>
                         <a
                           href={`https://fms.driveshop.com/list_activities/${vehicleContext.vin}`}
@@ -2252,19 +2196,48 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                           {vehicleContext.vin}
                         </a>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">Make:</span>
                         <span className="text-sm font-medium text-gray-900">{vehicleContext.make}</span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">Model:</span>
                         <span className="text-sm font-medium text-gray-900">{vehicleContext.model}</span>
                       </div>
-                      <div className="flex justify-between">
+                      {vehicleContext.vehicle_intelligence && (
+                        <>
+                          {vehicleContext.vehicle_intelligence.year && vehicleContext.vehicle_intelligence.year !== 'N/A' && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-600">Year:</span>
+                              <span className="text-sm font-medium text-gray-900">{vehicleContext.vehicle_intelligence.year}</span>
+                            </div>
+                          )}
+                          {vehicleContext.vehicle_intelligence.tier && vehicleContext.vehicle_intelligence.tier !== 'N/A' && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-600">Tier:</span>
+                              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                                vehicleContext.vehicle_intelligence.tier === 'A' ? 'bg-green-100 text-green-800' :
+                                vehicleContext.vehicle_intelligence.tier === 'B' ? 'bg-blue-100 text-blue-800' :
+                                vehicleContext.vehicle_intelligence.tier === 'C' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {vehicleContext.vehicle_intelligence.tier}
+                              </span>
+                            </div>
+                          )}
+                          {vehicleContext.vehicle_intelligence.trim && vehicleContext.vehicle_intelligence.trim !== 'N/A' && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-600">Trim:</span>
+                              <span className="text-sm font-medium text-gray-900">{vehicleContext.vehicle_intelligence.trim}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                      <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">Office:</span>
                         <span className="text-sm font-medium text-gray-900">{vehicleContext.office}</span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">Mileage:</span>
                         <span className="text-sm font-medium text-gray-900">{vehicleContext.mileage}</span>
                       </div>
@@ -2292,7 +2265,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                                 vin: vehicleContext.vin,
                                 make: vehicleContext.make,
                                 model: vehicleContext.model,
-                                year: vehicleContext.year,
+                                year: vehicleContext.vehicle_intelligence?.year || vehicleContext.year,
                                 office: vehicleContext.office
                               });
                             } else {
@@ -2309,6 +2282,105 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
                   {/* Review History */}
                   <VehicleReviewHistory vin={vehicleContext.vin} office={selectedOffice} />
+
+                  {/* Budget Impact */}
+                  {vehicleContext.budget_impact && Object.keys(vehicleContext.budget_impact).length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center justify-between">
+                        <span>Budget Impact</span>
+                        <span className="text-xs font-normal text-gray-400">{vehicleContext.budget_impact.quarter}</span>
+                      </h3>
+                      <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="text-center">
+                            <p className="text-xs text-gray-500 mb-1">Used</p>
+                            <p className="text-lg font-bold text-gray-900">
+                              ${(vehicleContext.budget_impact.office_budget_current || 0).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-gray-500 mb-1">Total Budget</p>
+                            <p className="text-lg font-bold text-gray-900">
+                              ${(vehicleContext.budget_impact.office_budget_total || 0).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-gray-500 mb-1">% Used</p>
+                            <p className={`text-lg font-bold ${
+                              vehicleContext.budget_impact.percent_used >= 75 ? 'text-red-600' :
+                              vehicleContext.budget_impact.percent_used >= 40 ? 'text-amber-600' :
+                              'text-green-600'
+                            }`}>
+                              {vehicleContext.budget_impact.percent_used}%
+                            </p>
+                          </div>
+                        </div>
+                        <div className="border-t pt-3">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm text-gray-600">Cost per Loan:</span>
+                            <span className="text-sm font-semibold text-gray-900">
+                              ${(vehicleContext.budget_impact.cost_per_loan || 0).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Remaining Budget:</span>
+                            <span className="text-sm font-semibold text-gray-900">
+                              ${(vehicleContext.budget_impact.remaining_budget || 0).toLocaleString()}
+                            </span>
+                          </div>
+                          {vehicleContext.budget_impact.impact_if_loaned > 0 && (
+                            <div className="mt-2 pt-2 border-t">
+                              <p className="text-xs text-gray-500">
+                                Loaning this vehicle will use <span className="font-semibold text-gray-900">{vehicleContext.budget_impact.impact_if_loaned}%</span> of remaining budget
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Publication Performance by Partner */}
+                  {vehicleContext.publication_by_partner && Object.keys(vehicleContext.publication_by_partner).length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Publication Performance by Partner</h3>
+                      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Partner</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Total</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Published</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Rate</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {Object.entries(vehicleContext.publication_by_partner)
+                                .sort(([,a], [,b]) => b.total - a.total)
+                                .slice(0, 10)
+                                .map(([partnerName, stats]) => (
+                                  <tr key={partnerName} className="hover:bg-gray-50">
+                                    <td className="px-4 py-2 text-sm text-gray-900">{partnerName}</td>
+                                    <td className="px-4 py-2 text-sm text-center text-gray-700">{stats.total}</td>
+                                    <td className="px-4 py-2 text-sm text-center text-blue-600 font-medium">{stats.published}</td>
+                                    <td className="px-4 py-2 text-center">
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                        stats.rate >= 80 ? 'bg-green-100 text-green-800' :
+                                        stats.rate >= 50 ? 'bg-amber-100 text-amber-800' :
+                                        'bg-red-100 text-red-800'
+                                      }`}>
+                                        {stats.rate}%
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Current Activity */}
                   {vehicleContext.current_activity && (
@@ -2330,52 +2402,103 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                     </div>
                   )}
 
-                  {/* Previous Activity */}
+                  {/* Activity Chain Context */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Previous Activity</h3>
-                    {vehicleContext.previous_activity ? (
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-start">
-                          <svg className="w-5 h-5 text-gray-600 mt-0.5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                          </svg>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-gray-900">{vehicleContext.previous_activity.partner_name}</p>
-                            <p className="text-xs text-gray-600 mt-1">
-                              {formatActivityDate(vehicleContext.previous_activity.start_date)} - {formatActivityDate(vehicleContext.previous_activity.end_date)}
-                            </p>
+                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Activity Chain Context</h3>
+                    <div className="space-y-3">
+                      {/* Coming Off Of (Previous Activity Expanded) */}
+                      <div>
+                        <h4 className="text-xs font-medium text-gray-400 uppercase mb-2">Coming Off Of</h4>
+                        {vehicleContext.previous_activity_expanded ? (
+                          <div className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-300 rounded-lg p-4">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-gray-900">
+                                  {vehicleContext.previous_activity_expanded.partner_name || 'Unknown Partner'}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-0.5">
+                                  {vehicleContext.previous_activity_expanded.partner_office}
+                                </p>
+                              </div>
+                              {vehicleContext.previous_activity_expanded.gap_days !== undefined && (
+                                <div className="ml-3 text-right">
+                                  <p className={`text-xs font-semibold ${
+                                    vehicleContext.previous_activity_expanded.gap_days > 7 ? 'text-red-600' :
+                                    vehicleContext.previous_activity_expanded.gap_days > 3 ? 'text-amber-600' :
+                                    'text-green-600'
+                                  }`}>
+                                    {vehicleContext.previous_activity_expanded.gap_days} days idle
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-gray-600">
+                                📅 {formatActivityDate(vehicleContext.previous_activity_expanded.start_date)} - {formatActivityDate(vehicleContext.previous_activity_expanded.end_date)}
+                              </p>
+                              {vehicleContext.previous_activity_expanded.partner_address && (
+                                <p className="text-xs text-gray-500">
+                                  📍 {vehicleContext.previous_activity_expanded.partner_address}
+                                </p>
+                              )}
+                              {vehicleContext.previous_activity_expanded.published !== undefined && (
+                                <p className="text-xs">
+                                  {vehicleContext.previous_activity_expanded.published ? (
+                                    <span className="text-green-600 font-medium">✓ Published</span>
+                                  ) : (
+                                    <span className="text-gray-500">Not Published</span>
+                                  )}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-500 text-center border-2 border-dashed border-gray-300">
+                            No previous activity
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-500 text-center">
-                        No previous activity
-                      </div>
-                    )}
-                  </div>
 
-                  {/* Next Activity */}
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Next Activity</h3>
-                    {vehicleContext.next_activity ? (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <div className="flex items-start">
-                          <svg className="w-5 h-5 text-green-600 mt-0.5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                          </svg>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-green-900">{vehicleContext.next_activity.partner_name}</p>
-                            <p className="text-xs text-green-700 mt-1">
-                              {formatActivityDate(vehicleContext.next_activity.start_date)} - {formatActivityDate(vehicleContext.next_activity.end_date)}
-                            </p>
+                      {/* Going To (Next Activity Expanded) */}
+                      <div>
+                        <h4 className="text-xs font-medium text-gray-400 uppercase mb-2">Going To</h4>
+                        {vehicleContext.next_activity_expanded ? (
+                          <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-400 rounded-lg p-4">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-blue-900">
+                                  {vehicleContext.next_activity_expanded.partner_name || 'Unknown Partner'}
+                                </p>
+                                <p className="text-xs text-blue-700 mt-0.5">
+                                  {vehicleContext.next_activity_expanded.partner_office}
+                                </p>
+                              </div>
+                              {vehicleContext.next_activity_expanded.days_until !== undefined && (
+                                <div className="ml-3 text-right">
+                                  <p className="text-xs font-semibold text-blue-700">
+                                    in {vehicleContext.next_activity_expanded.days_until} days
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-blue-700">
+                                📅 {formatActivityDate(vehicleContext.next_activity_expanded.start_date)} - {formatActivityDate(vehicleContext.next_activity_expanded.end_date || 'TBD')}
+                              </p>
+                              {vehicleContext.next_activity_expanded.partner_address && (
+                                <p className="text-xs text-blue-600">
+                                  📍 {vehicleContext.next_activity_expanded.partner_address}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-500 text-center border-2 border-dashed border-gray-300">
+                            No upcoming activity
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-500 text-center">
-                        No upcoming activity
-                      </div>
-                    )}
+                    </div>
                   </div>
 
                   {/* Activity Timeline */}
@@ -2385,16 +2508,23 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                       <div className="bg-gray-50 rounded-lg p-4">
                         <div className="space-y-2">
                           {vehicleContext.timeline.map((activity, idx) => {
-                            const isCurrent = vehicleContext.current_activity && activity.start_date === vehicleContext.current_activity.start_date;
+                            // Determine if this activity is past, current, or future
+                            const now = new Date();
+                            const startDate = new Date(activity.start_date);
+                            const endDate = activity.end_date ? new Date(activity.end_date) : null;
+
+                            const isPast = endDate && endDate < now;
+                            const isCurrent = startDate <= now && (!endDate || endDate >= now);
+
                             return (
                               <div key={idx} className={`flex items-center text-sm ${isCurrent ? 'font-medium text-blue-900' : 'text-gray-700'}`}>
                                 <div className={`w-2 h-2 rounded-full mr-2 flex-shrink-0 ${
-                                  activity.status === 'completed' ? 'bg-gray-400' :
-                                  activity.status === 'active' ? 'bg-blue-500' :
-                                  'bg-green-400'
+                                  isPast ? 'bg-gray-400' :
+                                  isCurrent ? 'bg-blue-500' :
+                                  'bg-blue-400'
                                 }`}></div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="truncate">{activity.partner_name}</p>
+                                  <p className="truncate text-xs">{activity.partner_name || 'Unknown Partner'}</p>
                                   <p className="text-xs text-gray-500">
                                     {formatActivityDate(activity.start_date)} - {formatActivityDate(activity.end_date)}
                                   </p>

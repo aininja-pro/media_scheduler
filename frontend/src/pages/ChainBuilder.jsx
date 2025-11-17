@@ -33,6 +33,17 @@ const formatPartnerName = (name, format = 'lastFirst') => {
   }
 };
 
+/**
+ * Format activity date for display
+ * @param {string} dateString - ISO date string
+ * @returns {string} Formatted date (e.g., "Jan 15")
+ */
+const formatActivityDate = (dateString) => {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString + 'T00:00:00');
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
 function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicleLoaded, preloadedPartner, onPartnerLoaded }) {
   // Chain mode: 'partner' (existing) or 'vehicle' (new)
   const [chainMode, setChainMode] = useState('partner');
@@ -137,6 +148,11 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   // Review history filters
   const [vehicleHistoryFilter, setVehicleHistoryFilter] = useState(null); // { vin, reviewHistory }
   const [partnerHistoryFilter, setPartnerHistoryFilter] = useState(null); // { person_id, reviewHistory }
+
+  // Vehicle Context side panel
+  const [selectedVehicleVin, setSelectedVehicleVin] = useState(null);
+  const [vehicleContext, setVehicleContext] = useState(null);
+  const [loadingVehicleContext, setLoadingVehicleContext] = useState(false);
 
   // Update selectedOffice when sharedOffice prop changes
   useEffect(() => {
@@ -556,6 +572,49 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
     loadVehicleBusyPeriods();
   }, [selectedVehicle, selectedOffice, chainMode]);
+
+  // Fetch vehicle context when selectedVehicleVin changes
+  useEffect(() => {
+    const fetchVehicleContext = async () => {
+      if (!selectedVehicleVin) {
+        setVehicleContext(null);
+        return;
+      }
+
+      setLoadingVehicleContext(true);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/ui/phase7/vehicle-context/${encodeURIComponent(selectedVehicleVin)}`
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          setVehicleContext(data);
+        } else {
+          console.error('Failed to load vehicle context');
+          setVehicleContext(null);
+        }
+      } catch (err) {
+        console.error('Error loading vehicle context:', err);
+        setVehicleContext(null);
+      } finally {
+        setLoadingVehicleContext(false);
+      }
+    };
+
+    fetchVehicleContext();
+  }, [selectedVehicleVin]);
+
+  // Function to open vehicle context panel
+  const openVehicleContext = (vin) => {
+    setSelectedVehicleVin(vin);
+  };
+
+  // Function to close vehicle context panel
+  const closeVehicleContext = () => {
+    setSelectedVehicleVin(null);
+    setVehicleContext(null);
+  };
 
   // Handle preloaded vehicle from Calendar navigation
   useEffect(() => {
@@ -3991,7 +4050,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
                       return (<div
                         key={vehicle.slot}
-                        onClick={() => alert(`Click to swap Slot ${vehicle.slot} - Feature coming next!`)}
+                        onClick={() => openVehicleContext(vehicle.vin)}
                         className="border-2 border-gray-200 rounded-lg p-4 hover:shadow-lg transition-all hover:border-blue-400 cursor-pointer relative"
                       >
                         {/* Delete button - only show if saved */}
@@ -4859,6 +4918,353 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                   Clear & Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Vehicle Context Side Panel */}
+      {selectedVehicleVin && (
+        <div className="fixed right-0 top-0 z-50 h-full">
+          <div className="bg-white w-[700px] h-full shadow-2xl overflow-y-auto border-l border-gray-200">
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
+              <h2 className="text-lg font-semibold text-gray-900">Vehicle Context</h2>
+              <button
+                onClick={closeVehicleContext}
+                className="text-gray-400 hover:text-gray-600 focus:outline-none"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6">
+              {loadingVehicleContext ? (
+                <div className="flex items-center justify-center py-12">
+                  <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                </div>
+              ) : vehicleContext ? (
+                <div className="space-y-6">
+                  {/* Vehicle Details with Intelligence */}
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Vehicle Details</h3>
+                    <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">VIN:</span>
+                        <a
+                          href={`https://fms.driveshop.com/list_activities/${vehicleContext.vin}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-mono font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                          title="Open in FMS"
+                        >
+                          {vehicleContext.vin}
+                        </a>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Make:</span>
+                        <span className="text-sm font-medium text-gray-900">{vehicleContext.make}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Model:</span>
+                        <span className="text-sm font-medium text-gray-900">{vehicleContext.model}</span>
+                      </div>
+                      {vehicleContext.vehicle_intelligence && (
+                        <>
+                          {vehicleContext.vehicle_intelligence.year && vehicleContext.vehicle_intelligence.year !== 'N/A' && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-600">Year:</span>
+                              <span className="text-sm font-medium text-gray-900">{vehicleContext.vehicle_intelligence.year}</span>
+                            </div>
+                          )}
+                          {vehicleContext.vehicle_intelligence.tier && vehicleContext.vehicle_intelligence.tier !== 'N/A' && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-600">Tier:</span>
+                              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                                vehicleContext.vehicle_intelligence.tier === 'A' ? 'bg-green-100 text-green-800' :
+                                vehicleContext.vehicle_intelligence.tier === 'B' ? 'bg-blue-100 text-blue-800' :
+                                vehicleContext.vehicle_intelligence.tier === 'C' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {vehicleContext.vehicle_intelligence.tier}
+                              </span>
+                            </div>
+                          )}
+                          {vehicleContext.vehicle_intelligence.trim && vehicleContext.vehicle_intelligence.trim !== 'N/A' && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-600">Trim:</span>
+                              <span className="text-sm font-medium text-gray-900">{vehicleContext.vehicle_intelligence.trim}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Office:</span>
+                        <span className="text-sm font-medium text-gray-900">{vehicleContext.office}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Mileage:</span>
+                        <span className="text-sm font-medium text-gray-900">{vehicleContext.mileage}</span>
+                      </div>
+                      {vehicleContext.last_known_location && (
+                        <div className="border-t pt-2 mt-2">
+                          <div className="flex items-start">
+                            <svg className="w-4 h-4 text-blue-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                            </svg>
+                            <div className="flex-1">
+                              <p className="text-xs text-gray-500 font-medium">Last Known Location</p>
+                              <p className="text-sm text-gray-900 mt-0.5">{vehicleContext.last_known_location}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Budget Impact */}
+                  {vehicleContext.budget_impact && Object.keys(vehicleContext.budget_impact).length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center justify-between">
+                        <span>Budget Impact</span>
+                        <span className="text-xs font-normal text-gray-400">{vehicleContext.budget_impact.quarter}</span>
+                      </h3>
+                      <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="text-center">
+                            <p className="text-xs text-gray-500 mb-1">Used</p>
+                            <p className="text-lg font-bold text-gray-900">
+                              ${(vehicleContext.budget_impact.office_budget_current || 0).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-gray-500 mb-1">Total Budget</p>
+                            <p className="text-lg font-bold text-gray-900">
+                              ${(vehicleContext.budget_impact.office_budget_total || 0).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-gray-500 mb-1">% Used</p>
+                            <p className={`text-lg font-bold ${
+                              vehicleContext.budget_impact.percent_used >= 75 ? 'text-red-600' :
+                              vehicleContext.budget_impact.percent_used >= 40 ? 'text-amber-600' :
+                              'text-green-600'
+                            }`}>
+                              {vehicleContext.budget_impact.percent_used}%
+                            </p>
+                          </div>
+                        </div>
+                        <div className="border-t pt-3">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm text-gray-600">Cost per Loan:</span>
+                            <span className="text-sm font-semibold text-gray-900">
+                              ${(vehicleContext.budget_impact.cost_per_loan || 0).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Remaining Budget:</span>
+                            <span className="text-sm font-semibold text-gray-900">
+                              ${(vehicleContext.budget_impact.remaining_budget || 0).toLocaleString()}
+                            </span>
+                          </div>
+                          {vehicleContext.budget_impact.impact_if_loaned > 0 && (
+                            <div className="mt-2 pt-2 border-t">
+                              <p className="text-xs text-gray-500">
+                                Loaning this vehicle will use <span className="font-semibold text-gray-900">{vehicleContext.budget_impact.impact_if_loaned}%</span> of remaining budget
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Publication Performance by Partner */}
+                  {vehicleContext.publication_by_partner && Object.keys(vehicleContext.publication_by_partner).length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Publication Performance by Partner</h3>
+                      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Partner</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Total</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Published</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Rate</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {Object.entries(vehicleContext.publication_by_partner)
+                                .sort(([,a], [,b]) => b.total - a.total)
+                                .slice(0, 10)
+                                .map(([partnerName, stats]) => (
+                                  <tr key={partnerName} className="hover:bg-gray-50">
+                                    <td className="px-4 py-2 text-sm text-gray-900">{partnerName}</td>
+                                    <td className="px-4 py-2 text-sm text-center text-gray-700">{stats.total}</td>
+                                    <td className="px-4 py-2 text-sm text-center text-blue-600 font-medium">{stats.published}</td>
+                                    <td className="px-4 py-2 text-center">
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                        stats.rate >= 80 ? 'bg-green-100 text-green-800' :
+                                        stats.rate >= 50 ? 'bg-amber-100 text-amber-800' :
+                                        'bg-red-100 text-red-800'
+                                      }`}>
+                                        {stats.rate}%
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Activity Chain Context */}
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Activity Chain Context</h3>
+                    <div className="space-y-3">
+                      {/* Coming Off Of */}
+                      <div>
+                        <h4 className="text-xs font-medium text-gray-400 uppercase mb-2">Coming Off Of</h4>
+                        {vehicleContext.previous_activity_expanded ? (
+                          <div className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-300 rounded-lg p-4">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-gray-900">
+                                  {vehicleContext.previous_activity_expanded.partner_name || 'Unknown Partner'}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-0.5">
+                                  {vehicleContext.previous_activity_expanded.partner_office}
+                                </p>
+                              </div>
+                              {vehicleContext.previous_activity_expanded.gap_days !== undefined && (
+                                <div className="ml-3 text-right">
+                                  <p className={`text-xs font-semibold ${
+                                    vehicleContext.previous_activity_expanded.gap_days > 7 ? 'text-red-600' :
+                                    vehicleContext.previous_activity_expanded.gap_days > 3 ? 'text-amber-600' :
+                                    'text-green-600'
+                                  }`}>
+                                    {vehicleContext.previous_activity_expanded.gap_days} days idle
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-gray-600">
+                                📅 {formatActivityDate(vehicleContext.previous_activity_expanded.start_date)} - {formatActivityDate(vehicleContext.previous_activity_expanded.end_date)}
+                              </p>
+                              {vehicleContext.previous_activity_expanded.partner_address && (
+                                <p className="text-xs text-gray-500">
+                                  📍 {vehicleContext.previous_activity_expanded.partner_address}
+                                </p>
+                              )}
+                              {vehicleContext.previous_activity_expanded.published !== undefined && (
+                                <p className="text-xs">
+                                  {vehicleContext.previous_activity_expanded.published ? (
+                                    <span className="text-green-600 font-medium">✓ Published</span>
+                                  ) : (
+                                    <span className="text-gray-500">Not Published</span>
+                                  )}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-500 text-center border-2 border-dashed border-gray-300">
+                            No previous activity
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Going To */}
+                      <div>
+                        <h4 className="text-xs font-medium text-gray-400 uppercase mb-2">Going To</h4>
+                        {vehicleContext.next_activity_expanded ? (
+                          <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-400 rounded-lg p-4">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-blue-900">
+                                  {vehicleContext.next_activity_expanded.partner_name || 'Unknown Partner'}
+                                </p>
+                                <p className="text-xs text-blue-700 mt-0.5">
+                                  {vehicleContext.next_activity_expanded.partner_office}
+                                </p>
+                              </div>
+                              {vehicleContext.next_activity_expanded.days_until !== undefined && (
+                                <div className="ml-3 text-right">
+                                  <p className="text-xs font-semibold text-blue-700">
+                                    in {vehicleContext.next_activity_expanded.days_until} days
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-blue-700">
+                                📅 {formatActivityDate(vehicleContext.next_activity_expanded.start_date)} - {formatActivityDate(vehicleContext.next_activity_expanded.end_date || 'TBD')}
+                              </p>
+                              {vehicleContext.next_activity_expanded.partner_address && (
+                                <p className="text-xs text-blue-600">
+                                  📍 {vehicleContext.next_activity_expanded.partner_address}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-500 text-center border-2 border-dashed border-gray-300">
+                            No upcoming activity
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Activity Timeline */}
+                  {vehicleContext.timeline && vehicleContext.timeline.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Activity Timeline</h3>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <div className="space-y-2">
+                          {vehicleContext.timeline.slice(0, 10).map((activity, idx) => {
+                            // Determine if this activity is past, current, or future
+                            const now = new Date();
+                            const startDate = new Date(activity.start_date);
+                            const endDate = activity.end_date ? new Date(activity.end_date) : null;
+
+                            const isPast = endDate && endDate < now;
+                            const isCurrent = startDate <= now && (!endDate || endDate >= now);
+
+                            return (
+                              <div key={idx} className={`flex items-center text-sm ${isCurrent ? 'font-medium text-blue-900' : 'text-gray-700'}`}>
+                                <div className={`w-2 h-2 rounded-full mr-2 flex-shrink-0 ${
+                                  isPast ? 'bg-gray-400' :
+                                  isCurrent ? 'bg-blue-500' :
+                                  'bg-blue-400'
+                                }`}></div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="truncate text-xs">{activity.partner_name || 'Unknown Partner'}</p>
+                                  <p className="text-xs text-gray-500">
+                                    {formatActivityDate(activity.start_date)} - {formatActivityDate(activity.end_date)}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <p>Unable to load vehicle context</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

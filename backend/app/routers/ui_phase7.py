@@ -693,7 +693,12 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
 @router.get("/vehicle-context/{vin}")
 async def get_vehicle_context(vin: str) -> Dict[str, Any]:
     """
-    Get context information for a specific vehicle including previous and next activities.
+    Get enhanced context information for a specific vehicle including:
+    - Vehicle intelligence (tier, year, trim, etc.)
+    - Publication performance by partner
+    - Budget impact
+    - Activity chain details
+    - Previous and next activities
     """
     db = DatabaseService()
     await db.initialize()
@@ -701,6 +706,7 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
     try:
         # Get current time for comparison
         now = datetime.now()
+        current_quarter = f"Q{((now.month - 1) // 3) + 1} {now.year}"
 
         # Load current and recent activities for this VIN
         activity_response = db.client.table('current_activity')\
@@ -711,15 +717,26 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
 
         activities_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
 
-        # Load loan history for this VIN
+        # Load scheduled assignments for this VIN
+        scheduled_response = db.client.table('scheduled_assignments')\
+            .select('*')\
+            .eq('vin', vin)\
+            .order('start_day', desc=False)\
+            .execute()
+
+        scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+
+        # Load ALL loan history for this VIN (for publication analysis)
         loan_response = db.client.table('loan_history')\
             .select('*')\
             .eq('vin', vin)\
             .order('start_date', desc=True)\
-            .limit(10)\
             .execute()
 
         loans_df = pd.DataFrame(loan_response.data) if loan_response.data else pd.DataFrame()
+
+        # Build partner name cache for efficient lookup
+        partner_name_cache = {}
 
         # Combine activities and loans into a timeline
         timeline = []
@@ -730,29 +747,112 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
                 start = pd.to_datetime(activity.get('start_date'))
                 end = pd.to_datetime(activity.get('end_date')) if pd.notna(activity.get('end_date')) else None
 
+                # Get partner name from to_field or person_id
+                partner_name = None
+                person_id = activity.get('person_id') or activity.get('to_field')
+
+                if person_id:
+                    # Check cache first
+                    if person_id in partner_name_cache:
+                        partner_name = partner_name_cache[person_id]
+                    else:
+                        try:
+                            # Try using as person_id
+                            partner_response = db.client.table('media_partners')\
+                                .select('name')\
+                                .eq('person_id', int(person_id))\
+                                .execute()
+
+                            if partner_response.data:
+                                partner_name = partner_response.data[0]['name']
+                                partner_name_cache[person_id] = partner_name
+                        except:
+                            # If that fails, to_field might be the name itself
+                            partner_name = activity.get('to_field')
+
                 timeline.append({
                     'type': 'activity',
                     'activity_type': activity.get('activity_type', 'Unknown'),
                     'start_date': start.isoformat() if pd.notna(start) else None,
                     'end_date': end.isoformat() if end else None,
-                    'person_id': activity.get('person_id'),
-                    'to_field': activity.get('to_field')
+                    'person_id': str(person_id) if person_id else None,
+                    'to_field': activity.get('to_field'),
+                    'partner_name': partner_name
                 })
 
-        # Add loan history
+        # Add scheduled assignments
+        if not scheduled_df.empty:
+            for _, assignment in scheduled_df.iterrows():
+                start = pd.to_datetime(assignment.get('start_day'))
+                end = pd.to_datetime(assignment.get('end_day')) if pd.notna(assignment.get('end_day')) else None
+
+                # Get partner name
+                partner_name = None
+                person_id = assignment.get('person_id')
+
+                if person_id:
+                    # Check cache first
+                    if person_id in partner_name_cache:
+                        partner_name = partner_name_cache[person_id]
+                    else:
+                        try:
+                            partner_response = db.client.table('media_partners')\
+                                .select('name')\
+                                .eq('person_id', int(person_id))\
+                                .execute()
+
+                            if partner_response.data:
+                                partner_name = partner_response.data[0]['name']
+                                partner_name_cache[person_id] = partner_name
+                        except:
+                            pass
+
+                timeline.append({
+                    'type': 'scheduled',
+                    'activity_type': 'Scheduled Assignment',
+                    'start_date': start.isoformat() if pd.notna(start) else None,
+                    'end_date': end.isoformat() if end else None,
+                    'person_id': str(person_id) if person_id else None,
+                    'partner_name': partner_name,
+                    'status': assignment.get('status')
+                })
+
+        # Add loan history (limit timeline to last 10 for display)
         if not loans_df.empty:
-            for _, loan in loans_df.iterrows():
+            for idx, loan in loans_df.head(10).iterrows():
                 start = pd.to_datetime(loan.get('start_date'))
                 end = pd.to_datetime(loan.get('end_date')) if pd.notna(loan.get('end_date')) else None
+
+                # Get partner name for loan
+                partner_name = None
+                person_id = loan.get('person_id')
+
+                if person_id:
+                    # Check cache first
+                    if person_id in partner_name_cache:
+                        partner_name = partner_name_cache[person_id]
+                    else:
+                        try:
+                            partner_response = db.client.table('media_partners')\
+                                .select('name')\
+                                .eq('person_id', int(person_id))\
+                                .execute()
+
+                            if partner_response.data:
+                                partner_name = partner_response.data[0]['name']
+                                partner_name_cache[person_id] = partner_name
+                        except:
+                            pass
 
                 timeline.append({
                     'type': 'loan',
                     'activity_type': 'Media Loan',
                     'start_date': start.isoformat() if pd.notna(start) else None,
                     'end_date': end.isoformat() if end else None,
-                    'person_id': loan.get('person_id'),
+                    'person_id': str(person_id) if person_id else None,
                     'make': loan.get('make'),
-                    'published': loan.get('published', False)
+                    'published': loan.get('published', False),
+                    'partner_name': partner_name
                 })
 
         # Sort timeline by start date
@@ -785,6 +885,184 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
             mileage_str = f"{int(current_mileage):,} mi"
         else:
             mileage_str = 'N/A'
+
+        # ===== NEW: Vehicle Intelligence =====
+        vehicle_intelligence = {
+            'tier': vehicle_info.get('tier', 'N/A'),
+            'year': vehicle_info.get('year', 'N/A'),
+            'trim': vehicle_info.get('trim', 'N/A'),
+            'in_service_date': vehicle_info.get('in_service_date', 'N/A')
+        }
+
+        # ===== NEW: Publication Performance by Partner =====
+        publication_by_partner = {}
+        if not loans_df.empty:
+            print(f"[DEBUG] Found {len(loans_df)} loans for VIN {vin}")
+            # Group by person_id and calculate publication stats
+            partner_ids = loans_df['person_id'].unique()
+
+            for person_id in partner_ids:
+                if pd.isna(person_id):
+                    continue
+
+                partner_loans = loans_df[loans_df['person_id'] == person_id]
+                total = len(partner_loans)
+
+                # Check if 'published' column exists
+                if 'published' in partner_loans.columns:
+                    published = len(partner_loans[partner_loans['published'] == True])
+                else:
+                    # Fallback: check for 'is_published' or other variants
+                    published_col = None
+                    for col in ['is_published', 'Published', 'status']:
+                        if col in partner_loans.columns:
+                            published_col = col
+                            break
+
+                    if published_col:
+                        published = len(partner_loans[partner_loans[published_col] == True])
+                    else:
+                        print(f"[DEBUG] No published column found. Available columns: {partner_loans.columns.tolist()}")
+                        published = 0
+
+                rate = (published / total * 100) if total > 0 else 0
+
+                # Get partner name
+                try:
+                    partner_response = db.client.table('media_partners')\
+                        .select('name')\
+                        .eq('person_id', int(person_id))\
+                        .execute()
+
+                    partner_name = partner_response.data[0]['name'] if partner_response.data else f'Partner {person_id}'
+                except Exception as e:
+                    print(f"[DEBUG] Error fetching partner {person_id}: {e}")
+                    partner_name = f'Partner {person_id}'
+
+                publication_by_partner[partner_name] = {
+                    'published': int(published),
+                    'total': int(total),
+                    'rate': round(rate, 1),
+                    'person_id': int(person_id)
+                }
+
+            print(f"[DEBUG] Publication by partner: {publication_by_partner}")
+        else:
+            print(f"[DEBUG] No loans found for VIN {vin}")
+
+        # ===== NEW: Budget Impact =====
+        budget_impact = {}
+        vehicle_make = vehicle_info.get('make')
+        vehicle_office = vehicle_info.get('office')
+
+        if vehicle_make and vehicle_office:
+            # Convert make to fleet name (uppercase)
+            fleet_name = vehicle_make.upper()
+            print(f"[DEBUG] Fetching budget for fleet={fleet_name}, office={vehicle_office}, quarter={current_quarter}")
+
+            # Get budget for this fleet and office for current quarter
+            # Extract year and quarter number from current_quarter (e.g., "Q4 2025")
+            quarter_parts = current_quarter.split()
+            quarter_num = quarter_parts[0] if quarter_parts else None
+            year = int(quarter_parts[1]) if len(quarter_parts) > 1 else now.year
+
+            budget_response = db.client.table('budgets')\
+                .select('*')\
+                .eq('office', vehicle_office)\
+                .eq('fleet', fleet_name)\
+                .eq('year', year)\
+                .eq('quarter', quarter_num)\
+                .execute()
+
+            if budget_response.data:
+                print(f"[DEBUG] Found budget data: {budget_response.data}")
+                budget_data = budget_response.data[0]
+                total_budget = float(budget_data.get('budget_amount', 0) or 0)
+                current_budget = float(budget_data.get('amount_used', 0) or 0)
+                percent_used = (current_budget / total_budget * 100) if total_budget > 0 else 0
+                remaining_budget = total_budget - current_budget
+
+                # Use typical cost per loan
+                # Most media loans cost $325-$400 based on historical data
+                # We use $350 as a reasonable estimate without knowing the specific partner
+                cost_per_loan = 350
+
+                # Calculate impact
+                impact_percent = (cost_per_loan / remaining_budget * 100) if remaining_budget > 0 else 0
+
+                budget_impact = {
+                    'make': vehicle_make,
+                    'office_budget_current': int(current_budget),
+                    'office_budget_total': int(total_budget),
+                    'percent_used': round(percent_used, 1),
+                    'cost_per_loan': int(cost_per_loan),
+                    'remaining_budget': int(remaining_budget),
+                    'impact_if_loaned': round(impact_percent, 1),
+                    'quarter': current_quarter
+                }
+            else:
+                print(f"[DEBUG] No budget data found for make={vehicle_make}, office={vehicle_office}")
+        else:
+            print(f"[DEBUG] Missing make or office: make={vehicle_make}, office={vehicle_office}")
+
+        # ===== NEW: Expanded Activity Chain =====
+        # Get detailed partner info for previous and next activities
+        def expand_activity_details(activity, activity_type="previous"):
+            if not activity:
+                return None
+
+            person_id = activity.get('person_id') or activity.get('to_field')
+
+            # Calculate gap or deadhead
+            start_date = pd.to_datetime(activity.get('start_date')) if activity.get('start_date') else None
+            end_date = pd.to_datetime(activity.get('end_date')) if activity.get('end_date') else None
+
+            extra_info = {}
+            if activity_type == "previous" and end_date:
+                # Calculate gap days since last activity ended
+                gap_days = (now - end_date).days
+                extra_info['gap_days'] = gap_days
+            elif activity_type == "next" and start_date:
+                # Calculate days until next activity
+                days_until = (start_date - now).days
+                extra_info['days_until'] = days_until
+
+            # Default partner info
+            partner_name = f"Partner {person_id}" if person_id else "Unknown Partner"
+            partner_address = None
+            partner_office = vehicle_info.get('office', 'Unknown')
+
+            # Try to get partner details if we have a person_id
+            if person_id:
+                try:
+                    partner_response = db.client.table('media_partners')\
+                        .select('*')\
+                        .eq('person_id', int(person_id))\
+                        .execute()
+
+                    if partner_response.data:
+                        partner = partner_response.data[0]
+                        partner_name = partner.get('name', partner_name)
+                        partner_address = partner.get('address')
+                        partner_office = partner.get('office', partner_office)
+                except Exception as e:
+                    print(f"Error fetching partner {person_id}: {e}")
+
+            return {
+                **activity,
+                'partner_name': partner_name,
+                'partner_address': partner_address,
+                'partner_office': partner_office,
+                **extra_info
+            }
+
+        previous_activity_expanded = expand_activity_details(previous_activity, "previous")
+        next_activity_expanded = expand_activity_details(next_activity, "next")
+
+        print(f"[DEBUG] Previous activity: {previous_activity}")
+        print(f"[DEBUG] Previous activity expanded: {previous_activity_expanded}")
+        print(f"[DEBUG] Next activity: {next_activity}")
+        print(f"[DEBUG] Next activity expanded: {next_activity_expanded}")
 
         # Determine last known location
         # Check if vehicle has current activity (active loan)
@@ -838,7 +1116,13 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
             'location_type': location_type,
             'previous_activity': previous_activity,
             'next_activity': next_activity,
-            'timeline': timeline
+            'timeline': timeline,
+            # NEW FIELDS
+            'vehicle_intelligence': vehicle_intelligence,
+            'publication_by_partner': publication_by_partner,
+            'budget_impact': budget_impact,
+            'previous_activity_expanded': previous_activity_expanded,
+            'next_activity_expanded': next_activity_expanded
         }
 
     except Exception as e:

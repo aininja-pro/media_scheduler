@@ -100,6 +100,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   // Helper: Get selected partner object for Combobox display
   const selectedPartnerObj = partners.find(p => p.person_id === selectedPartner) || null;
 
+  // Slot vehicle search queries (for filtering dropdown options)
+  const [slotVehicleSearchQueries, setSlotVehicleSearchQueries] = useState({});
+
   // Swap modal
   const [swapModalOpen, setSwapModalOpen] = useState(false);
   const [swapSlot, setSwapSlot] = useState(null);
@@ -3771,44 +3774,95 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                 </button>
                               )}
                             </div>
-                            <select
-                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-48 overflow-y-auto"
-                              size="1"
-                              onChange={(e) => {
-                                if (e.target.value) {
-                                  const vehicle = slot.eligible_vehicles.find(v => v.vin === e.target.value);
-                                  if (vehicle) {
-                                    selectVehicleForSlot(index, vehicle);
-                                  }
-                                }
-                              }}
-                              onFocus={() => {
-                                // Load options when dropdown is focused (lazy loading)
-                                if (slot.eligible_vehicles.length === 0) {
-                                  loadSlotOptions(index);
-                                }
-                              }}
-                              value=""
-                            >
-                              <option value="">
-                                {loadingSlotOptions[index] ? 'Loading options...' :
-                                 slot.eligible_vehicles.length === 0 ? 'Click to load options...' :
-                                 'Choose vehicle...'}
-                              </option>
-                              {slot.eligible_vehicles
-                                .sort((a, b) => {
-                                  // Sort by Make alphabetically, then by Score descending
-                                  if (a.make !== b.make) {
-                                    return a.make.localeCompare(b.make);
-                                  }
-                                  return b.score - a.score;
-                                })
-                                .map(vehicle => (
-                                  <option key={vehicle.vin} value={vehicle.vin}>
-                                    {vehicle.make} {vehicle.model} ({vehicle.tier}) - Score: {vehicle.score} - {vehicle.last_4_vin}
-                                  </option>
-                                ))}
-                            </select>
+
+                            {loadingSlotOptions[index] ? (
+                              <div className="w-full border border-gray-300 rounded px-3 py-2 text-xs text-gray-500 bg-gray-50">
+                                Loading options...
+                              </div>
+                            ) : slot.eligible_vehicles.length === 0 ? (
+                              <button
+                                onClick={() => loadSlotOptions(index)}
+                                className="w-full border border-gray-300 rounded px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 bg-white"
+                              >
+                                Click to load options...
+                              </button>
+                            ) : (
+                              <div className="relative">
+                                <div className="border border-gray-300 rounded-md bg-white shadow-sm">
+                                  <div className="p-2 border-b sticky top-0 bg-white">
+                                    <input
+                                      type="text"
+                                      placeholder="Search by make, model, or VIN..."
+                                      value={slotVehicleSearchQueries[index] || ''}
+                                      onChange={(e) => setSlotVehicleSearchQueries({
+                                        ...slotVehicleSearchQueries,
+                                        [index]: e.target.value
+                                      })}
+                                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                  </div>
+                                  <div className="max-h-48 overflow-y-auto">
+                                    {slot.eligible_vehicles
+                                      .filter(vehicle => {
+                                        const searchQuery = slotVehicleSearchQueries[index] || '';
+                                        if (searchQuery === '') return true;
+                                        const searchLower = searchQuery.toLowerCase();
+                                        return (
+                                          vehicle.make.toLowerCase().includes(searchLower) ||
+                                          vehicle.model.toLowerCase().includes(searchLower) ||
+                                          vehicle.vin.toLowerCase().includes(searchLower)
+                                        );
+                                      })
+                                      .sort((a, b) => {
+                                        // Sort by Make alphabetically, then by Score descending
+                                        if (a.make !== b.make) {
+                                          return a.make.localeCompare(b.make);
+                                        }
+                                        return b.score - a.score;
+                                      })
+                                      .map(vehicle => (
+                                      <button
+                                        key={vehicle.vin}
+                                        onClick={() => selectVehicleForSlot(index, vehicle)}
+                                        className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 hover:text-blue-900 transition-colors border-b last:border-b-0 flex items-center justify-between"
+                                      >
+                                        <div>
+                                          <div className="font-medium">
+                                            {vehicle.make} {vehicle.model}
+                                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs font-semibold ${
+                                              vehicle.tier === 'A+' ? 'bg-green-100 text-green-800' :
+                                              vehicle.tier === 'A' ? 'bg-green-100 text-green-700' :
+                                              vehicle.tier === 'B' ? 'bg-blue-100 text-blue-800' :
+                                              'bg-yellow-100 text-yellow-800'
+                                            }`}>
+                                              {vehicle.tier}
+                                            </span>
+                                          </div>
+                                          <div className="text-gray-500 mt-0.5">
+                                            Score: {vehicle.score} • VIN: ...{vehicle.last_4_vin}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    ))}
+                                    {slot.eligible_vehicles.filter(vehicle => {
+                                      const searchQuery = slotVehicleSearchQueries[index] || '';
+                                      if (searchQuery === '') return true;
+                                      const searchLower = searchQuery.toLowerCase();
+                                      return (
+                                        vehicle.make.toLowerCase().includes(searchLower) ||
+                                        vehicle.model.toLowerCase().includes(searchLower) ||
+                                        vehicle.vin.toLowerCase().includes(searchLower)
+                                      );
+                                    }).length === 0 && (
+                                      <div className="px-3 py-4 text-xs text-gray-500 text-center">
+                                        No vehicles match your search
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
                             {slot.available_count === 0 && (
                               <p className="text-xs text-red-600 mt-1">No vehicles available</p>
                             )}
@@ -3826,7 +3880,10 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                 {slot.selected_vehicle.tier}
                               </span>
                               <button
-                                onClick={() => selectVehicleForSlot(index, null)}
+                                onClick={() => {
+                                  selectVehicleForSlot(index, null);
+                                  loadSlotOptions(index);
+                                }}
                                 className="text-xs text-red-600 hover:text-red-800 underline"
                               >
                                 Change

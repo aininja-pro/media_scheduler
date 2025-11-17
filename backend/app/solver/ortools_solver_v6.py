@@ -278,13 +278,15 @@ def solve_with_all_constraints(
             # Calculate week end date
             week_end_date = week_start_date + timedelta(days=6)
 
-            # Query current_activity for activities starting in this week
+            # Query current_activity for activities overlapping this week (start OR end in week)
             # Note: current_activity doesn't have office column, so we get all and filter by VIN later
             print(f"DEBUG: Querying current_activity from {week_start_date.date()} to {week_end_date.date()}")
+
+            # Get activities that start OR end in this week
             existing_response = db_client.table('current_activity')\
-                .select('start_date, vehicle_vin')\
-                .gte('start_date', str(week_start_date.date()))\
-                .lte('start_date', str(week_end_date.date()))\
+                .select('start_date, end_date, vehicle_vin, person_id')\
+                .gte('start_date', str((week_start_date - timedelta(days=90)).date()))\
+                .lte('start_date', str((week_end_date + timedelta(days=90)).date()))\
                 .execute()
 
             print(f"DEBUG: Found {len(existing_response.data) if existing_response.data else 0} current_activity records")
@@ -303,7 +305,10 @@ def solve_with_all_constraints(
                 office_vins = set(office_triples['vin'].unique()) if not office_triples.empty else set()
                 print(f"DEBUG: Office has {len(office_vins)} unique VINs (from triples)")
 
-            # Count by start day (only for this office's vehicles)
+            # Build events by day and partner (to detect same-partner swaps)
+            from collections import defaultdict
+            events_by_day_partner = defaultdict(lambda: {'dropoffs': [], 'pickups': []})
+
             filtered_count = 0
             total_count = 0
             if existing_response.data:
@@ -316,28 +321,89 @@ def solve_with_all_constraints(
                         continue
 
                     filtered_count += 1
+                    person_id = activity.get('person_id')
                     start_date_str = activity.get('start_date')
+                    end_date_str = activity.get('end_date')
+
+                    # Dropoff event (loan starts - we deliver to partner)
                     if start_date_str:
                         start_dt = pd.to_datetime(start_date_str).date()
-                        existing_count_by_day[start_dt] = existing_count_by_day.get(start_dt, 0) + 1
+                        if week_start_date.date() <= start_dt <= week_end_date.date():
+                            events_by_day_partner[(start_dt, person_id)]['dropoffs'].append(vehicle_vin)
+
+                    # Pickup event (loan ends - we retrieve from partner)
+                    if end_date_str:
+                        end_dt = pd.to_datetime(end_date_str).date()
+                        if week_start_date.date() <= end_dt <= week_end_date.date():
+                            events_by_day_partner[(end_dt, person_id)]['pickups'].append(vehicle_vin)
 
                 print(f"DEBUG: Filtered {filtered_count}/{total_count} activities to this office")
 
+            # Count capacity per day (accounting for same-partner swaps)
+            for (day, partner_id), events in events_by_day_partner.items():
+                num_dropoffs = len(events['dropoffs'])
+                num_pickups = len(events['pickups'])
+
+                # Same-day swaps: min(dropoffs, pickups) are swaps (count as 1 each)
+                # Remaining events are standalone (count as 1 each)
+                swaps = min(num_dropoffs, num_pickups)
+                standalone_dropoffs = num_dropoffs - swaps
+                standalone_pickups = num_pickups - swaps
+
+                # Total capacity consumed = swaps + standalone events
+                capacity_consumed = swaps + standalone_dropoffs + standalone_pickups
+
+                existing_count_by_day[day] = existing_count_by_day.get(day, 0) + capacity_consumed
+
+                if swaps > 0:
+                    print(f"DEBUG: {day} Partner {partner_id}: {num_dropoffs} dropoffs + {num_pickups} pickups = {swaps} swaps + {standalone_dropoffs} standalone dropoffs + {standalone_pickups} standalone pickups = {capacity_consumed} capacity")
+
+            print(f"DEBUG: Capacity consumed by existing activities: {dict(existing_count_by_day)}")
+
             # Also count manual scheduled assignments (Chain Builder picks)
             manual_response = db_client.table('scheduled_assignments')\
-                .select('start_day')\
+                .select('start_day, end_day, person_id, vin')\
                 .eq('office', office)\
                 .eq('status', 'manual')\
-                .gte('start_day', str(week_start_date.date()))\
-                .lte('start_day', str(week_end_date.date()))\
+                .gte('start_day', str((week_start_date - timedelta(days=90)).date()))\
+                .lte('start_day', str((week_end_date + timedelta(days=90)).date()))\
                 .execute()
 
             if manual_response.data:
                 for assignment in manual_response.data:
+                    person_id = assignment.get('person_id')
+                    vin = assignment.get('vin')
                     start_date_str = assignment.get('start_day')
+                    end_date_str = assignment.get('end_day')
+
+                    # Dropoff event (loan starts)
                     if start_date_str:
                         start_dt = pd.to_datetime(start_date_str).date()
-                        existing_count_by_day[start_dt] = existing_count_by_day.get(start_dt, 0) + 1
+                        if week_start_date.date() <= start_dt <= week_end_date.date():
+                            events_by_day_partner[(start_dt, person_id)]['dropoffs'].append(vin)
+
+                    # Pickup event (loan ends)
+                    if end_date_str:
+                        end_dt = pd.to_datetime(end_date_str).date()
+                        if week_start_date.date() <= end_dt <= week_end_date.date():
+                            events_by_day_partner[(end_dt, person_id)]['pickups'].append(vin)
+
+            # Recalculate capacity with scheduled assignments included
+            existing_count_by_day = {}
+            for (day, partner_id), events in events_by_day_partner.items():
+                num_dropoffs = len(events['dropoffs'])
+                num_pickups = len(events['pickups'])
+
+                swaps = min(num_dropoffs, num_pickups)
+                standalone_dropoffs = num_dropoffs - swaps
+                standalone_pickups = num_pickups - swaps
+
+                capacity_consumed = swaps + standalone_dropoffs + standalone_pickups
+
+                existing_count_by_day[day] = existing_count_by_day.get(day, 0) + capacity_consumed
+
+                if swaps > 0 and verbose:
+                    print(f"  {day} Partner {partner_id}: {num_dropoffs} dropoffs + {num_pickups} pickups = {swaps} swaps, {standalone_dropoffs} solo dropoffs, {standalone_pickups} solo pickups = {capacity_consumed} capacity")
 
             print(f"DEBUG: existing_count_by_day = {existing_count_by_day}")
             if verbose and existing_count_by_day:

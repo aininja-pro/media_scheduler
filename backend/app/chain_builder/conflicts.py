@@ -285,19 +285,47 @@ def check_capacity_pressure(
             'is_blackout': True
         }
 
-    # Count assignments starting on this day for this office
-    starts_on_day = 0
+    # Count capacity events on this day (dropoffs, pickups, and swaps)
+    capacity_used = 0
     if scheduled_df is not None and not scheduled_df.empty:
         office_scheduled = scheduled_df[scheduled_df['office'] == office].copy()
         office_scheduled['start_day'] = pd.to_datetime(office_scheduled['start_day']).dt.date
-        starts_on_day = len(office_scheduled[office_scheduled['start_day'] == start])
+        office_scheduled['end_day'] = pd.to_datetime(office_scheduled['end_day']).dt.date
 
-    utilization = starts_on_day / capacity if capacity > 0 else 0
+        # Build events by partner for swap detection
+        from collections import defaultdict
+        events_by_partner = defaultdict(lambda: {'dropoffs': [], 'pickups': []})
+
+        for _, assignment in office_scheduled.iterrows():
+            person_id = assignment.get('person_id')
+            start_day = assignment.get('start_day')
+            end_day = assignment.get('end_day')
+
+            # Dropoff (loan starts)
+            if start_day == start:
+                events_by_partner[person_id]['dropoffs'].append(assignment.get('vin'))
+
+            # Pickup (loan ends)
+            if end_day == start:
+                events_by_partner[person_id]['pickups'].append(assignment.get('vin'))
+
+        # Count capacity with swap detection
+        for partner_id, events in events_by_partner.items():
+            num_dropoffs = len(events['dropoffs'])
+            num_pickups = len(events['pickups'])
+
+            swaps = min(num_dropoffs, num_pickups)
+            standalone_dropoffs = num_dropoffs - swaps
+            standalone_pickups = num_pickups - swaps
+
+            capacity_used += swaps + standalone_dropoffs + standalone_pickups
+
+    utilization = capacity_used / capacity if capacity > 0 else 0
 
     return {
         'has_warning': utilization > 0.8,  # 80% threshold
         'utilization': round(utilization, 2),
-        'starts_on_day': starts_on_day,
+        'starts_on_day': capacity_used,
         'capacity': capacity,
         'is_blackout': False
     }

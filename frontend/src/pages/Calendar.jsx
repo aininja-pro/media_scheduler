@@ -1957,7 +1957,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
       </div>
 
       {/* Gantt Chart Content - Scrollable Container */}
-      <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+      <div className="px-6 pb-6 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1980,9 +1980,9 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
         ) : (
           <div className="bg-white rounded-lg shadow-sm border">
             {/* Gantt Chart Header - Sticky */}
-            <div className="flex border-b bg-gray-50 sticky top-0 z-10 overflow-x-auto">
+            <div className="flex border-b-2 bg-gray-50 sticky top-0 z-10 overflow-x-auto shadow-md">
               {/* Row label column */}
-              <div className="w-64 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700 bg-gray-50">
+              <div className="w-64 flex-shrink-0 px-4 py-4 border-r font-medium text-sm text-gray-700 bg-gray-50">
                 {viewMode === 'vehicle' ? 'Vehicle' : 'Media Partner'}
               </div>
               {/* Days column */}
@@ -1996,7 +1996,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                   return (
                     <div
                       key={idx}
-                      className={`flex-1 text-center text-xs py-3 border-r ${
+                      className={`flex-1 text-center text-xs py-4 border-r ${
                         isWeekend ? 'bg-blue-100 text-blue-800 font-semibold' : 'bg-gray-50 text-gray-600'
                       }`}
                     >

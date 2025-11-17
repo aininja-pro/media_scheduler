@@ -3967,7 +3967,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                             <div className="pt-2 border-t border-gray-200">
                               <p className="text-xs text-gray-500 font-medium">VIN</p>
                               <a
-                                href={`https://fms.driveshop.com/list_activities/${slot.selected_vehicle.vin}`}
+                                href={`https://fms.driveshop.com/vehicles/list_activities/${slot.selected_vehicle.vehicle_id || slot.selected_vehicle.vin}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-xs font-mono text-blue-600 hover:text-blue-800 hover:underline"
@@ -4956,7 +4956,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">VIN:</span>
                         <a
-                          href={`https://fms.driveshop.com/list_activities/${vehicleContext.vin}`}
+                          href={`https://fms.driveshop.com/vehicles/list_activities/${vehicleContext.vehicle_id}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-sm font-mono font-medium text-blue-600 hover:text-blue-800 hover:underline"

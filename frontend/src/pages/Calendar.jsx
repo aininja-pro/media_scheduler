@@ -2004,7 +2004,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                             {item.make} {item.model}
                           </h3>
                           <a
-                            href={`https://fms.driveshop.com/list_activities/${item.vin}`}
+                            href={`https://fms.driveshop.com/vehicles/list_activities/${item.vehicle_id || item.vin}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
@@ -2187,7 +2187,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">VIN:</span>
                         <a
-                          href={`https://fms.driveshop.com/list_activities/${vehicleContext.vin}`}
+                          href={`https://fms.driveshop.com/vehicles/list_activities/${vehicleContext.vehicle_id}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-sm font-mono font-medium text-blue-600 hover:text-blue-800 hover:underline"

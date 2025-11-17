@@ -1377,7 +1377,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900 relative">
                                 <div className="flex items-center gap-2">
                                   <a
-                                    href={`https://fms.driveshop.com/list_activities/${assignment.vin}`}
+                                    href={`https://fms.driveshop.com/vehicles/list_activities/${assignment.vehicle_id || assignment.vin}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-blue-600 hover:text-blue-800 hover:underline"

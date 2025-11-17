@@ -12,10 +12,10 @@ import React from 'react';
  */
 const TabNavigation = ({ activeTab, onTabChange }) => {
   const tabs = [
-    { id: 'upload', label: 'Upload Data' },
     { id: 'chain-builder', label: 'Chain Builder' },
     { id: 'calendar', label: 'Calendar' },
-    { id: 'optimizer', label: 'Optimizer' }
+    { id: 'optimizer', label: 'Optimizer' },
+    { id: 'upload', label: 'Upload Data' }
   ];
 
   return (

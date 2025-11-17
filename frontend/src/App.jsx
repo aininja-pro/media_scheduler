@@ -357,16 +357,6 @@ function App() {
 
             <nav className="flex space-x-2">
                 <button
-                  onClick={() => setActiveTab('upload')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    activeTab === 'upload'
-                      ? 'bg-white text-black'
-                      : 'bg-gray-600 text-white hover:bg-gray-500'
-                  }`}
-                >
-                  Upload Data
-                </button>
-                <button
                   onClick={() => setActiveTab('chain-builder')}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     activeTab === 'chain-builder'
@@ -395,6 +385,16 @@ function App() {
                   }`}
                 >
                   Optimizer
+                </button>
+                <button
+                  onClick={() => setActiveTab('upload')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'upload'
+                      ? 'bg-white text-black'
+                      : 'bg-gray-600 text-white hover:bg-gray-500'
+                  }`}
+                >
+                  Upload Data
                 </button>
             </nav>
           </div>

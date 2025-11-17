@@ -1,5 +1,6 @@
-/**
 import { API_BASE_URL } from '../config';
+
+/**
  * ModelSelector Component
  *
  * Checkbox tree UI for selecting vehicle makes/models for Partner Chain preferences.

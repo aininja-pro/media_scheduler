@@ -2085,9 +2085,11 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (viewMode === 'vehicle') {
-                                  handleActivityClick(item.vin);
+                                  // In vehicle view, bars show partners → open Partner Context
+                                  handlePartnerClick(activity.person_id, activity.partner_name);
                                 } else {
-                                  handlePartnerClick(item.person_id, item.partner_name);
+                                  // In partner view, bars show vehicles → open Vehicle Context
+                                  handleActivityClick(activity.vin);
                                 }
                               }}
                               className="flex items-center gap-1 flex-1 cursor-pointer"

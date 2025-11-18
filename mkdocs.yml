@@ -1,0 +1,84 @@
+site_name: Media Scheduler Documentation
+site_description: User and developer documentation for the Media Scheduler vehicle-to-partner assignment optimization system
+site_author: DriveShop
+site_url: https://media-scheduler-docs.onrender.com
+
+# Repository
+repo_name: media-scheduler
+repo_url: https://github.com/aininja-pro/media-scheduler
+
+# Theme configuration
+theme:
+  name: material
+  palette:
+    # Light mode
+    - scheme: default
+      primary: white
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: grey
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+# Navigation structure
+nav:
+  - Home: README.md
+  - User Documentation:
+    - Getting Started: getting-started.md
+    - User Guide: user-guide.md
+    - Optimizer: optimizer.md
+    - Chain Builder: chain-builder.md
+    - Calendar: calendar.md
+    - Partners: partners.md
+    - Troubleshooting: troubleshooting.md
+    - FAQ: faq.md
+  - Developer Documentation:
+    - Overview: developer-overview.md
+    - Setup Development: setup-development.md
+    - API Reference: api-reference.md
+    - Database Schema: database-schema.md
+    - FMS Integration: fms-integration.md
+    - Deployment: deployment.md
+
+# Extensions
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+# Plugins
+plugins:
+  - search
+
+# Extra
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/aininja-pro/media-scheduler

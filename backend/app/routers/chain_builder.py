@@ -1200,6 +1200,7 @@ async def search_vehicles(
                 'model': row['model'],
                 'year': str(row['year']) if pd.notna(row['year']) else '',
                 'trim': row.get('trim', '') if pd.notna(row.get('trim', '')) else '',
+                'color': row.get('color', '') if pd.notna(row.get('color', '')) else '',
                 'office': row['office'],
                 'in_service_date': in_service_date_str,
                 'tier': row.get('tier', '') if pd.notna(row.get('tier', '')) else ''

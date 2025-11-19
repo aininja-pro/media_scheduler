@@ -2820,7 +2820,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                     )}
                                   </div>
                                   <div className="text-xs text-gray-500 mt-0.5">
-                                    VIN: {vehicle.vin} | Tier: {vehicle.tier}{vehicle.color ? ` | ${vehicle.color}` : ''}
+                                    VIN: ...{vehicle.vin.slice(-8)}{vehicle.color ? ` | ${vehicle.color}` : ''}
                                   </div>
                                 </div>
                               )}

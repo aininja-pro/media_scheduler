@@ -881,6 +881,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
         vin: vehicle.vin,
         make: vehicle.make,
         model: vehicle.model,
+        color: vehicle.color,
         office: vehicle.office,
         in_service_date: vehicle.in_service_date,
         expected_turn_in_date: vehicle.expected_turn_in_date,
@@ -2003,6 +2004,9 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                           <h3 className="font-semibold text-sm text-gray-900 group-hover:text-blue-600">
                             {item.make} {item.model}
                           </h3>
+                          {item.color && (
+                            <p className="text-xs text-gray-600">{item.color}</p>
+                          )}
                           <a
                             href={`https://fms.driveshop.com/vehicles/list_activities/${item.vehicle_id || item.vin}`}
                             target="_blank"
@@ -2243,6 +2247,12 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                         <span className="text-sm text-gray-600">Mileage:</span>
                         <span className="text-sm font-medium text-gray-900">{vehicleContext.mileage}</span>
                       </div>
+                      {vehicleContext.color && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Color:</span>
+                          <span className="text-sm font-medium text-gray-900">{vehicleContext.color}</span>
+                        </div>
+                      )}
                       {vehicleContext.last_known_location && (
                         <div className="border-t pt-2 mt-2">
                           <div className="flex items-start">

@@ -432,7 +432,8 @@ async def ingest_vehicles_from_url(
         expected_headers = [
             'vehicle_id', 'Year', 'Make', 'Model', 'Model Short Name', 'Office',
             'VIN', 'Fleet', 'Registration Exp', 'Insurance Exp',
-            'Current Mileage', 'In Service Date', 'Expected Turn In Date', 'Notes'
+            'Current Mileage', 'In Service Date', 'Expected Turn In Date', 'Notes',
+            'Color'
         ]
         
         df = pd.read_csv(StringIO(csv_content), header=None, names=expected_headers)
@@ -477,7 +478,8 @@ async def ingest_vehicles_from_url(
                     'Current Mileage': 'current_mileage',
                     'In Service Date': 'in_service_date',
                     'Expected Turn In Date': 'expected_turn_in_date',
-                    'Notes': 'notes'
+                    'Notes': 'notes',
+                    'Color': 'color'
                 }
                 
                 normalized_dict = {}

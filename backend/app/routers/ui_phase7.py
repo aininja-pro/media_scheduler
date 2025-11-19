@@ -1111,6 +1111,7 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
             'vehicle_id': vehicle_info.get('vehicle_id'),
             'make': vehicle_info.get('make'),
             'model': vehicle_info.get('model'),
+            'color': vehicle_info.get('color'),
             'office': vehicle_info.get('office'),
             'mileage': mileage_str,
             'last_known_location': last_known_location,

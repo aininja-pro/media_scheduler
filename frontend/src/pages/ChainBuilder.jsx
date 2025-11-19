@@ -2820,7 +2820,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                     )}
                                   </div>
                                   <div className="text-xs text-gray-500 mt-0.5">
-                                    VIN: {vehicle.vin} | Tier: {vehicle.tier}
+                                    VIN: {vehicle.vin} | Tier: {vehicle.tier}{vehicle.color ? ` | ${vehicle.color}` : ''}
                                   </div>
                                 </div>
                               )}
@@ -2854,6 +2854,11 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                     <div className="text-gray-600">
                       Trim: {selectedVehicle.trim} | Tier: {selectedVehicle.tier}
                     </div>
+                    {selectedVehicle.color && (
+                      <div className="text-gray-600">
+                        Color: {selectedVehicle.color}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -3624,7 +3629,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                     height: '24px'
                                   }}
                                   title={slot.selected_vehicle
-                                    ? `Slot ${slot.slot}: ${slot.selected_vehicle.make} ${slot.selected_vehicle.model}\n${slot.start_date} - ${slot.end_date}\nScore: ${slot.selected_vehicle.score}`
+                                    ? `Slot ${slot.slot}: ${slot.selected_vehicle.make} ${slot.selected_vehicle.model}${slot.selected_vehicle.color ? ` (${slot.selected_vehicle.color})` : ''}\n${slot.start_date} - ${slot.end_date}\nScore: ${slot.selected_vehicle.score}`
                                     : `Slot ${slot.slot}: Empty\n${slot.start_date} - ${slot.end_date}\nClick dropdown below to select vehicle`
                                   }
                                 >
@@ -3903,7 +3908,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                             </span>
                                           </div>
                                           <div className="text-gray-500 mt-0.5">
-                                            Score: {vehicle.score} • VIN: ...{vehicle.last_4_vin}
+                                            Score: {vehicle.score} • VIN: ...{vehicle.last_4_vin}{vehicle.color ? ` • ${vehicle.color}` : ''}
                                           </div>
                                         </div>
                                       </button>
@@ -3962,6 +3967,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                 {slot.selected_vehicle.model}
                               </p>
                               <p className="text-xs text-gray-400">{slot.selected_vehicle.year}</p>
+                              {slot.selected_vehicle.color && (
+                                <p className="text-xs text-gray-400">{slot.selected_vehicle.color}</p>
+                              )}
                             </div>
 
                             <div className="pt-2 border-t border-gray-200">
@@ -4241,7 +4249,10 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                       {/* Header Row - Day headers */}
                       <div className="flex border-b bg-gray-50">
                         <div className="w-48 flex-shrink-0 px-4 py-3 border-r font-medium text-sm text-gray-700">
-                          {selectedVehicle.make} {selectedVehicle.model}
+                          <div>{selectedVehicle.make} {selectedVehicle.model}</div>
+                          {selectedVehicle.color && (
+                            <div className="text-xs text-gray-500 font-normal">{selectedVehicle.color}</div>
+                          )}
                         </div>
                         <div className="flex-1 flex">
                           {days.map((date, idx) => {
@@ -4461,7 +4472,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                   </h3>
                   {selectedVehicle && (
                     <p className="text-xs text-gray-600 mt-1">
-                      Vehicle: {selectedVehicle.make} {selectedVehicle.model} {selectedVehicle.year} (VIN: ...{selectedVehicle.vin.slice(-4)})
+                      Vehicle: {selectedVehicle.make} {selectedVehicle.model} {selectedVehicle.year}{selectedVehicle.color ? ` - ${selectedVehicle.color}` : ''} (VIN: ...{selectedVehicle.vin.slice(-4)})
                     </p>
                   )}
                 </div>

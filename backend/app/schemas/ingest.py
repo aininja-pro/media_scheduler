@@ -39,6 +39,7 @@ class VehicleIngest(BaseModel):
     in_service_date: Optional[date] = None
     expected_turn_in_date: Optional[date] = None
     notes: Optional[str] = None
+    color: Optional[str] = None  # Vehicle color (column 15)
 
     @field_validator('vin')
     @classmethod

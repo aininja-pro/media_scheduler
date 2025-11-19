@@ -114,6 +114,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   // Slot vehicle search queries (for filtering dropdown options)
   const [slotVehicleSearchQueries, setSlotVehicleSearchQueries] = useState({});
 
+  // Slot partner search queries (for filtering dropdown options in vehicle chain mode)
+  const [slotPartnerSearchQueries, setSlotPartnerSearchQueries] = useState({});
+
   // Swap modal
   const [swapModalOpen, setSwapModalOpen] = useState(false);
   const [swapSlot, setSwapSlot] = useState(null);
@@ -4570,57 +4573,100 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                             </button>
                           )}
                         </div>
-                        <select
-                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-48 overflow-y-auto"
-                          size="1"
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              const partner = slot.eligible_partners.find(p => p.person_id.toString() === e.target.value);
-                              if (partner) {
-                                selectPartnerForSlot(index, partner);
-                              }
-                            }
-                          }}
-                          onFocus={() => {
-                            // Load options when dropdown is focused (lazy loading)
-                            if (!slot.eligible_partners || slot.eligible_partners.length === 0) {
-                              loadPartnerSlotOptions(index);
-                            }
-                          }}
-                          value=""
-                          disabled={index > 0 && !manualPartnerSlots[index - 1]?.selected_partner}
-                        >
-                          <option value="">
+
+                        {loadingPartnerSlotOptions[index] ? (
+                          <div className="w-full border border-gray-300 rounded px-3 py-2 text-xs text-gray-500 bg-gray-50">
+                            Loading options...
+                          </div>
+                        ) : !slot.eligible_partners || slot.eligible_partners.length === 0 ? (
+                          <button
+                            onClick={() => loadPartnerSlotOptions(index)}
+                            disabled={index > 0 && !manualPartnerSlots[index - 1]?.selected_partner}
+                            className={`w-full border border-gray-300 rounded px-3 py-2 text-xs bg-white ${
+                              index > 0 && !manualPartnerSlots[index - 1]?.selected_partner
+                                ? 'text-gray-400 cursor-not-allowed'
+                                : 'text-blue-600 hover:bg-blue-50'
+                            }`}
+                          >
                             {index > 0 && !manualPartnerSlots[index - 1]?.selected_partner
                               ? 'Select previous slot first...'
-                              : loadingPartnerSlotOptions[index]
-                                ? 'Loading options...'
-                                : !slot.eligible_partners || slot.eligible_partners.length === 0
-                                  ? 'Click to load options...'
-                                  : 'Choose partner...'}
-                          </option>
-                          {slot.eligible_partners && slot.eligible_partners.map(partner => {
-                            // Format: "Partner Name ⭐ 159 (3.2 mi from office) [A]" for slot 0
-                            //         "Partner Name ⭐ 159 (3.2 mi) [A]" for slot 1+
-                            //         "Partner Name ⚠️ Location Unknown [B]" if no coords
-                            let distanceText = '';
-                            if (partner.distance_from_previous !== null && partner.distance_from_previous !== undefined) {
-                              const distLabel = index === 0 ? ' from office' : '';
-                              distanceText = ` (${partner.distance_from_previous.toFixed(1)} mi${distLabel})`;
-                            } else {
-                              distanceText = ' ⚠️ Location Unknown';
-                            }
+                              : 'Click to load options...'}
+                          </button>
+                        ) : (
+                          <div className="relative">
+                            <div className="border border-gray-300 rounded-md bg-white shadow-sm">
+                              <div className="p-2 border-b sticky top-0 bg-white">
+                                <input
+                                  type="text"
+                                  placeholder="Search by name..."
+                                  value={slotPartnerSearchQueries[index] || ''}
+                                  onChange={(e) => setSlotPartnerSearchQueries({
+                                    ...slotPartnerSearchQueries,
+                                    [index]: e.target.value
+                                  })}
+                                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div className="max-h-48 overflow-y-auto">
+                                {slot.eligible_partners
+                                  .filter(partner => {
+                                    const searchQuery = slotPartnerSearchQueries[index] || '';
+                                    if (searchQuery === '') return true;
+                                    const searchLower = searchQuery.toLowerCase();
+                                    return partner.name.toLowerCase().includes(searchLower);
+                                  })
+                                  .sort((a, b) => b.final_score - a.final_score)
+                                  .map(partner => {
+                                    // Format distance text
+                                    let distanceText = '';
+                                    if (partner.distance_from_previous !== null && partner.distance_from_previous !== undefined) {
+                                      const distLabel = index === 0 ? ' from office' : '';
+                                      distanceText = `${partner.distance_from_previous.toFixed(1)} mi${distLabel}`;
+                                    } else {
+                                      distanceText = 'Location Unknown';
+                                    }
 
-                            const label = `${partner.name} ⭐ ${partner.final_score}${distanceText} [${partner.tier || 'N/A'}]`;
+                                    return (
+                                      <button
+                                        key={partner.person_id}
+                                        onClick={() => selectPartnerForSlot(index, partner)}
+                                        className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 hover:text-blue-900 transition-colors border-b last:border-b-0"
+                                      >
+                                        <div>
+                                          <div className="font-medium flex items-center">
+                                            {partner.name}
+                                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs font-semibold ${
+                                              partner.tier === 'A+' ? 'bg-purple-100 text-purple-800' :
+                                              partner.tier === 'A' ? 'bg-blue-100 text-blue-800' :
+                                              partner.tier === 'B' ? 'bg-green-100 text-green-800' :
+                                              'bg-yellow-100 text-yellow-800'
+                                            }`}>
+                                              {partner.tier || 'N/A'}
+                                            </span>
+                                          </div>
+                                          <div className="text-gray-500 mt-0.5">
+                                            Score: {partner.final_score} • {distanceText}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                {slot.eligible_partners.filter(partner => {
+                                  const searchQuery = slotPartnerSearchQueries[index] || '';
+                                  if (searchQuery === '') return true;
+                                  const searchLower = searchQuery.toLowerCase();
+                                  return partner.name.toLowerCase().includes(searchLower);
+                                }).length === 0 && (
+                                  <div className="px-3 py-4 text-xs text-gray-500 text-center">
+                                    No partners match your search
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
 
-                            return (
-                              <option key={partner.person_id} value={partner.person_id}>
-                                {label}
-                              </option>
-                            );
-                          })}
-                        </select>
-                        {(!slot.eligible_partners || slot.eligible_partners.length === 0) && !loadingPartnerSlotOptions[index] && (
+                        {slot.eligible_partners && slot.eligible_partners.length === 0 && !loadingPartnerSlotOptions[index] && (
                           <p className="text-xs text-red-600 mt-1">No partners available</p>
                         )}
                       </div>

@@ -2096,7 +2096,11 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       return prevSlots; // Return unchanged since we already updated above
     });
 
-    console.log(`Selected ${partner.name} for slot ${slotIndex}, recalculated downstream distances`);
+    if (partner) {
+      console.log(`Selected ${partner.name} for slot ${slotIndex}, recalculated downstream distances`);
+    } else {
+      console.log(`Cleared partner for slot ${slotIndex}`);
+    }
 
     // Trigger budget calculation for Vehicle Chain mode
     setShouldCalculateBudget(true);
@@ -4510,7 +4514,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
               )}
 
               {/* Manual Partner Slot Cards */}
-              <div className="grid grid-cols-5 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 {manualPartnerSlots.map((slot, index) => (
                   <div
                     key={slot.slot}
@@ -4683,7 +4687,10 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                             {slot.selected_partner.tier || 'N/A'}
                           </span>
                           <button
-                            onClick={() => selectPartnerForSlot(index, null)}
+                            onClick={() => {
+                              selectPartnerForSlot(index, null);
+                              loadPartnerSlotOptions(index);
+                            }}
                             className="text-xs text-red-600 hover:text-red-800 underline"
                           >
                             Change

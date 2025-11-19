@@ -382,6 +382,14 @@ def solve_partner_chain(
                 model_name = str(vehicle_row.get('model', 'Unknown'))
                 year = str(vehicle_row.get('year', ''))
                 rank = str(vehicle_row.get('rank', 'C'))
+
+                # Get color with NaN handling
+                color_val = vehicle_row.get('color', '')
+                if pd.isna(color_val):
+                    color_val = ''
+                else:
+                    color_val = str(color_val)
+
                 score = adjusted_scores[vin]
                 is_preferred = vin in preferred_vins
 
@@ -397,6 +405,7 @@ def solve_partner_chain(
                     'make': make,
                     'model': model_name,
                     'year': year,
+                    'color': color_val,
                     'start_date': smart_slots[slot_idx]['start_date'],
                     'end_date': smart_slots[slot_idx]['end_date'],
                     'score': score,

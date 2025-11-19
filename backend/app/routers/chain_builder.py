@@ -371,6 +371,22 @@ async def suggest_chain(
         suggested_chain = chain_result.chain
         logger.info(f"OR-Tools generated chain with {len(suggested_chain)} vehicles (status: {chain_result.status})")
 
+        # Enrich chain with color from original vehicles_df (scoring function may drop it)
+        for item in suggested_chain:
+            vin = item.get('vin')
+            if vin and 'color' in vehicles_df.columns:
+                vehicle_row = vehicles_df[vehicles_df['vin'] == vin]
+                if not vehicle_row.empty:
+                    color_val = vehicle_row.iloc[0]['color']
+                    if pd.isna(color_val):
+                        item['color'] = ''
+                    else:
+                        item['color'] = str(color_val)
+                else:
+                    item['color'] = ''
+            elif 'color' not in item:
+                item['color'] = ''
+
         return {
             "status": "success",
             "partner_info": {
@@ -815,9 +831,29 @@ async def get_slot_options(
         # Build response list
         # Note: Vehicles with conflicts are already filtered out by availability grid check above
         eligible_vehicles = []
-        for _, vehicle in top_candidates.iterrows():
+
+        # Debug: Log columns in scored_candidates
+        logger.info(f"scored_candidates columns: {list(top_candidates.columns)}")
+        logger.info(f"vehicles_df columns: {list(vehicles_df.columns)}")
+
+        for idx, (_, vehicle) in enumerate(top_candidates.iterrows()):
             vin = vehicle['vin']
             last_4_vin = vin[-4:] if len(vin) >= 4 else vin
+
+            # Get color directly from original vehicles_df (scoring function may drop it)
+            vehicle_row = vehicles_df[vehicles_df['vin'] == vin]
+            if not vehicle_row.empty and 'color' in vehicles_df.columns:
+                color_val = vehicle_row.iloc[0]['color']
+                if pd.isna(color_val):
+                    color_val = ''
+                else:
+                    color_val = str(color_val)
+            else:
+                color_val = ''
+
+            # Debug first vehicle
+            if idx == 0:
+                logger.info(f"First vehicle VIN: {vin}, color from vehicles_df: '{color_val}'")
 
             eligible_vehicles.append({
                 "vin": vin,
@@ -825,6 +861,7 @@ async def get_slot_options(
                 "model": vehicle.get('model', 'Unknown'),
                 "trim": vehicle.get('trim', ''),
                 "year": str(vehicle.get('year', '')),
+                "color": color_val,
                 "score": int(vehicle['score']),
                 "tier": vehicle.get('rank', 'C'),
                 "last_4_vin": last_4_vin

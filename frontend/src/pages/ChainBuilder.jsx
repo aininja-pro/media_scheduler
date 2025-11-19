@@ -1506,6 +1506,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           make: vehicle.make,
           model: vehicle.model,
           year: vehicle.year,
+          color: vehicle.color || '',
           score: vehicle.score,
           tier: vehicle.tier,
           last_4_vin: vehicle.vin.slice(-4)
@@ -3776,11 +3777,11 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                   )}
 
                   {/* Manual Slot Cards */}
-                  <div className="grid grid-cols-5 gap-4">
+                  <div className="grid grid-cols-4 gap-4">
                     {manualSlots.map((slot, index) => (
                       <div
                         key={slot.slot}
-                        className={`border-2 rounded-lg p-4 hover:shadow-lg transition-all relative ${
+                        className={`border-2 rounded-lg p-3 hover:shadow-lg transition-all relative ${
                           slot.selected_vehicle
                             ? 'border-green-500 bg-green-50 shadow-md'
                             : 'border-gray-300 bg-white'
@@ -3799,31 +3800,28 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                           ×
                         </button>
 
-                        {/* Header: Slot + Available Count */}
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-sm font-bold text-gray-700">Slot {slot.slot}</span>
+                        {/* Header: Slot + Dates + Available Count */}
+                        <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-200">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-gray-700">Slot {slot.slot}</span>
+                            <span className="text-xs text-gray-600">
+                              {new Date(slot.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(slot.end_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                          </div>
                           {/* Show actual dropdown count if loaded, otherwise show estimated count */}
                           {loadingSlotOptions[index] ? (
                             <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                              Loading...
+                              ...
                             </span>
                           ) : slot.eligible_vehicles.length > 0 ? (
                             <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                              {slot.eligible_vehicles.length} avail
+                              {slot.eligible_vehicles.length}
                             </span>
                           ) : slot.available_count > 0 ? (
                             <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                              ~{slot.available_count} est
+                              ~{slot.available_count}
                             </span>
                           ) : null}
-                        </div>
-
-                        {/* Dates */}
-                        <div className="mb-3 pb-3 border-b border-gray-200">
-                          <p className="text-xs text-gray-500 font-medium">Dates</p>
-                          <p className="text-xs text-gray-900">
-                            {new Date(slot.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(slot.end_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </p>
                         </div>
 
                         {/* Vehicle Selection Dropdown */}
@@ -3937,10 +3935,11 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                             )}
                           </div>
                         ) : (
-                          /* Show selected vehicle */
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${
+                          /* Show selected vehicle - Condensed layout */
+                          <div className="space-y-1">
+                            {/* Line 1: Tier badge + Make Model Year */}
+                            <div className="flex items-start gap-2">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold flex-shrink-0 ${
                                 slot.selected_vehicle.tier === 'A+' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
                                 slot.selected_vehicle.tier === 'A' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
                                 slot.selected_vehicle.tier === 'B' ? 'bg-green-100 text-green-800 border border-green-300' :
@@ -3948,6 +3947,27 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                               }`}>
                                 {slot.selected_vehicle.tier}
                               </span>
+                              <span className="font-semibold text-gray-900 text-sm leading-tight">
+                                {slot.selected_vehicle.make} {slot.selected_vehicle.model} {slot.selected_vehicle.year}
+                              </span>
+                            </div>
+
+                            {/* Line 2: Color | VIN */}
+                            <div className="text-xs text-gray-600 pl-7">
+                              {slot.selected_vehicle.color && <span>{slot.selected_vehicle.color} | </span>}
+                              VIN: <a
+                                href={`https://fms.driveshop.com/vehicles/list_activities/${slot.selected_vehicle.vehicle_id || slot.selected_vehicle.vin}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-mono text-blue-600 hover:text-blue-800 hover:underline"
+                                title="Open in FMS"
+                              >
+                                ...{slot.selected_vehicle.vin ? slot.selected_vehicle.vin.slice(-8) : slot.selected_vehicle.last_4_vin}
+                              </a>
+                            </div>
+
+                            {/* Change button */}
+                            <div className="text-right">
                               <button
                                 onClick={() => {
                                   selectVehicleForSlot(index, null);
@@ -3957,37 +3977,6 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                               >
                                 Change
                               </button>
-                            </div>
-
-                            <div>
-                              <h4 className="font-semibold text-gray-900 text-sm leading-tight">
-                                {slot.selected_vehicle.make}
-                              </h4>
-                              <p className="text-xs text-gray-600 leading-tight">
-                                {slot.selected_vehicle.model}
-                              </p>
-                              <p className="text-xs text-gray-400">{slot.selected_vehicle.year}</p>
-                              {slot.selected_vehicle.color && (
-                                <p className="text-xs text-gray-400">{slot.selected_vehicle.color}</p>
-                              )}
-                            </div>
-
-                            <div className="pt-2 border-t border-gray-200">
-                              <p className="text-xs text-gray-500 font-medium">VIN</p>
-                              <a
-                                href={`https://fms.driveshop.com/vehicles/list_activities/${slot.selected_vehicle.vehicle_id || slot.selected_vehicle.vin}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs font-mono text-blue-600 hover:text-blue-800 hover:underline"
-                                title="Open in FMS"
-                              >
-                                ...{slot.selected_vehicle.last_4_vin}
-                              </a>
-                            </div>
-
-                            <div className="pt-2 border-t border-gray-200">
-                              <p className="text-xs text-gray-500 font-medium">Score</p>
-                              <p className="text-sm font-bold text-blue-600">{slot.selected_vehicle.score}</p>
                             </div>
                           </div>
                         )}

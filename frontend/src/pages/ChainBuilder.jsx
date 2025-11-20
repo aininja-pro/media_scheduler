@@ -3913,7 +3913,16 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                             </span>
                                           </div>
                                           <div className="text-gray-500 mt-0.5">
-                                            Score: {vehicle.score} • VIN: ...{vehicle.last_4_vin}{vehicle.color ? ` • ${vehicle.color}` : ''}
+                                            VIN: <a
+                                              href={`https://fms.driveshop.com/vehicles/list_activities/${vehicle.vehicle_id || vehicle.vin}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-blue-600 hover:text-blue-800 hover:underline font-mono"
+                                              title="Open in FMS"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              ...{vehicle.vin ? vehicle.vin.slice(-8) : vehicle.last_4_vin}
+                                            </a>{vehicle.color ? ` • ${vehicle.color}` : ''}
                                           </div>
                                         </div>
                                       </button>

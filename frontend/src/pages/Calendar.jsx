@@ -543,10 +543,6 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
   const [sortBy, setSortBy] = useState('make'); // 'make', 'model', 'vin'
   const [sortOrder, setSortOrder] = useState('asc'); // 'asc', 'desc'
 
-  // What-If Mode for drag-drop scenarios
-  const [whatIfMode, setWhatIfMode] = useState(false);
-  const [scenarioChanges, setScenarioChanges] = useState({});
-
   // Vehicle context (reuse existing side panel)
   const [selectedVin, setSelectedVin] = useState(null);
   const [vehicleContext, setVehicleContext] = useState(null);
@@ -1508,67 +1504,12 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
     <div className="w-full min-h-screen bg-gray-50">
       {/* Header - Compact */}
       <div className="bg-white border-b px-6 py-2">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <h1 className="!text-base font-semibold text-gray-900">📅 Calendar</h1>
-            <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 border border-blue-200">
-              📍 {selectedOffice}
-            </span>
-            <p className="text-xs text-gray-500">Vehicle activity timeline</p>
-          </div>
-
-          {/* View Mode Toggle and What-If Mode */}
-          <div className="flex gap-3 items-center">
-            {/* Reload Button */}
-            <button
-              onClick={() => loadActivities()}
-              disabled={isLoading}
-              className="px-3 py-1.5 border border-gray-300 rounded text-sm text-blue-600 hover:bg-blue-50 disabled:opacity-50"
-              title="Reload calendar data"
-            >
-              {isLoading ? 'Loading...' : '🔄 Reload'}
-            </button>
-
-            <div className="flex bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('vehicle')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  viewMode === 'vehicle'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                🚗 By Vehicle
-              </button>
-              <button
-                onClick={() => setViewMode('partner')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  viewMode === 'partner'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                👤 By Media Partner
-              </button>
-            </div>
-
-            {/* What-If Mode Toggle */}
-            <button
-              onClick={() => {
-                setWhatIfMode(!whatIfMode);
-                if (whatIfMode) {
-                  setScenarioChanges({});
-                }
-              }}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                whatIfMode
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {whatIfMode ? '✓ What-If Mode' : '🔄 What-If Mode'}
-            </button>
-          </div>
+        <div className="flex items-center gap-3">
+          <h1 className="!text-base font-semibold text-gray-900">📅 Calendar</h1>
+          <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 border border-blue-200">
+            📍 {selectedOffice}
+          </span>
+          <p className="text-xs text-gray-500">Vehicle activity timeline</p>
         </div>
       </div>
 
@@ -1870,6 +1811,44 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             >
               Clear All
             </button>
+          </div>
+
+          {/* Reload Button */}
+          <div className="flex items-end">
+            <button
+              onClick={() => loadActivities()}
+              disabled={isLoading}
+              className="px-3 py-1.5 border border-gray-300 rounded text-sm text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+              title="Reload calendar data"
+            >
+              {isLoading ? 'Loading...' : '🔄 Reload'}
+            </button>
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex items-end">
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('vehicle')}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === 'vehicle'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                🚗 By Vehicle
+              </button>
+              <button
+                onClick={() => setViewMode('partner')}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === 'partner'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                👤 By Media Partner
+              </button>
+            </div>
           </div>
         </div>
 

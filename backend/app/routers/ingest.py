@@ -150,6 +150,33 @@ async def reconcile_requested_assignments(
     }
 
 
+@router.post("/test-reconciliation")
+async def test_reconciliation(db: DatabaseService = Depends(get_database)):
+    """
+    Test endpoint: Run reconciliation on existing current_activity data.
+    Useful for testing with fake data without triggering full sync.
+    """
+    try:
+        # Get all current_activity records
+        result = db.client.table('current_activity').select('*').execute()
+        records = result.data
+
+        logger.info(f"Found {len(records)} current_activity records for reconciliation test")
+
+        # Run reconciliation
+        reconciliation_result = await reconcile_requested_assignments(db, records)
+
+        return {
+            "success": True,
+            "total_records": len(records),
+            "reconciled_count": reconciliation_result['reconciled_count'],
+            "message": f"Reconciled {reconciliation_result['reconciled_count']} assignments"
+        }
+    except Exception as e:
+        logger.error(f"Error in test reconciliation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/operations_data")
 async def ingest_operations_excel(
     file: UploadFile,

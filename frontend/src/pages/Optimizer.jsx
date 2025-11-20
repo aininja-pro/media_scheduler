@@ -1625,58 +1625,58 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
             </div>
 
             <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Budget Status</h3>
+              <h3 className="text-sm font-medium text-gray-700 mb-3">Available to Spend</h3>
               <div className="bg-gray-50 rounded p-3">
                 {runResult?.budget_summary ? (
                   <div className="space-y-3 text-sm">
-                    {runResult.budget_summary.fleets && Object.entries(runResult.budget_summary.fleets).map(([fleet, data]) => (
-                      <div key={fleet}>
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium text-gray-900">{fleet}:</span>
-                          <div className="flex items-center gap-1">
-                            <span className={data.current > data.budget ? 'text-red-600 font-medium' : 'text-green-600 font-medium'}>
-                              ${data.current?.toLocaleString()}
-                            </span>
-                            <span className="text-gray-400">/</span>
-                            <span className={data.current > data.budget ? 'text-red-600 font-medium' : 'text-green-700 font-semibold'}>
-                              ${data.budget?.toLocaleString()}
+                    {runResult.budget_summary.fleets && Object.entries(runResult.budget_summary.fleets)
+                      .sort((a, b) => a[0].localeCompare(b[0]))
+                      .map(([fleet, data]) => {
+                        const available = data.budget - data.current;
+                        const availableAfterRun = data.budget - data.projected;
+
+                        return (
+                          <div key={fleet}>
+                            <div className="flex justify-between items-center">
+                              <span className="font-medium text-gray-900">{fleet}:</span>
+                              <span className={available >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                                ${available?.toLocaleString()}
+                              </span>
+                            </div>
+                            {data.planned > 0 && (
+                              <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
+                                <span>+${Math.round(data.planned).toLocaleString()} this run → Available: </span>
+                                <span className={availableAfterRun >= 0 ? 'text-green-600 font-medium ml-1' : 'text-red-600 font-medium ml-1'}>
+                                  ${Math.round(availableAfterRun).toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    {runResult.budget_summary.total && (() => {
+                      const totalAvailable = runResult.budget_summary.total.budget - runResult.budget_summary.total.current;
+                      const totalAvailableAfterRun = runResult.budget_summary.total.budget - runResult.budget_summary.total.projected;
+
+                      return (
+                        <div className="border-t pt-2 mt-2">
+                          <div className="flex justify-between items-center font-semibold">
+                            <span className="text-gray-900">Total:</span>
+                            <span className={totalAvailable >= 0 ? 'text-green-600' : 'text-red-600'}>
+                              ${totalAvailable?.toLocaleString()}
                             </span>
                           </div>
+                          {runResult.budget_summary.total.planned > 0 && (
+                            <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
+                              <span>+${Math.round(runResult.budget_summary.total.planned).toLocaleString()} this run → Available: </span>
+                              <span className={totalAvailableAfterRun >= 0 ? 'text-green-600 font-semibold ml-1' : 'text-red-600 font-semibold ml-1'}>
+                                ${Math.round(totalAvailableAfterRun).toLocaleString()}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        {data.planned > 0 && (
-                          <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
-                            <span>+${Math.round(data.planned).toLocaleString()} this run → </span>
-                            <span className={data.projected > data.budget ? 'text-red-600 font-medium ml-1' : 'text-blue-600 font-medium ml-1'}>
-                              ${Math.round(data.projected).toLocaleString()} projected
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {runResult.budget_summary.total && (
-                      <div className="border-t pt-2 mt-2">
-                        <div className="flex justify-between items-center font-semibold">
-                          <span className="text-gray-900">Total:</span>
-                          <div className="flex items-center gap-1">
-                            <span className={runResult.budget_summary.total.current > runResult.budget_summary.total.budget ? 'text-red-600' : 'text-green-600'}>
-                              ${runResult.budget_summary.total.current?.toLocaleString()}
-                            </span>
-                            <span className="text-gray-400">/</span>
-                            <span className={runResult.budget_summary.total.current > runResult.budget_summary.total.budget ? 'text-red-600' : 'text-green-700'}>
-                              ${runResult.budget_summary.total.budget?.toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-                        {runResult.budget_summary.total.planned > 0 && (
-                          <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
-                            <span>+${Math.round(runResult.budget_summary.total.planned).toLocaleString()} this run → </span>
-                            <span className={runResult.budget_summary.total.projected > runResult.budget_summary.total.budget ? 'text-red-600 font-semibold ml-1' : 'text-blue-600 font-semibold ml-1'}>
-                              ${Math.round(runResult.budget_summary.total.projected).toLocaleString()} projected
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="text-sm text-gray-400">Run optimizer to see metrics</div>

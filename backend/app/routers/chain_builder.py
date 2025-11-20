@@ -1120,9 +1120,17 @@ async def calculate_chain_budget(
         # Build budget_summary in same format as Optimizer
         budget_fleets = {}
 
+        # Exclude fleets that are not scheduled
+        excluded_fleets = {'BENTLEY', 'FERRARI', 'MASERATI'}
+
         # First, add all makes from quarter_budgets table
         for _, row in quarter_budgets.iterrows():
             fleet = row['fleet']
+
+            # Skip excluded fleets
+            if fleet in excluded_fleets:
+                continue
+
             current_used = float(row['amount_used']) if pd.notna(row['amount_used']) else 0
             budget_amount = float(row['budget_amount']) if pd.notna(row['budget_amount']) else 0
             planned_spend = planned_by_make.get(fleet, 0)
@@ -1136,7 +1144,7 @@ async def calculate_chain_budget(
 
         # Second, add any makes from the chain that aren't in budgets table
         for make, cost in planned_by_make.items():
-            if make not in budget_fleets:
+            if make not in budget_fleets and make not in excluded_fleets:
                 budget_fleets[make] = {
                     'current': 0,
                     'planned': cost,

@@ -4778,60 +4778,60 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Chain Info</h2>
 
           <div className="space-y-4 text-sm">
-            {/* Budget Status - EXACT COPY from Optimizer */}
+            {/* Budget Status - Shows available to spend */}
             {chainBudget && chainBudget.fleets && (
               <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">Budget Status</h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Available to Spend</h3>
                 <div className="bg-gray-50 rounded p-3">
                   <div className="space-y-3 text-sm">
-                    {Object.entries(chainBudget.fleets).map(([fleet, data]) => (
-                      <div key={fleet}>
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium text-gray-900">{fleet}:</span>
-                          <div className="flex items-center gap-1">
-                            <span className={data.current > data.budget ? 'text-red-600 font-medium' : 'text-green-600 font-medium'}>
-                              ${data.current?.toLocaleString()}
-                            </span>
-                            <span className="text-gray-400">/</span>
-                            <span className={data.current > data.budget ? 'text-red-600 font-medium' : 'text-green-700 font-semibold'}>
-                              ${data.budget?.toLocaleString()}
+                    {Object.entries(chainBudget.fleets)
+                      .sort((a, b) => a[0].localeCompare(b[0]))
+                      .map(([fleet, data]) => {
+                        const available = data.budget - data.current;
+                        const availableAfterChain = data.budget - data.projected;
+
+                        return (
+                          <div key={fleet}>
+                            <div className="flex justify-between items-center">
+                              <span className="font-medium text-gray-900">{fleet}:</span>
+                              <span className={available >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                                ${available?.toLocaleString()}
+                              </span>
+                            </div>
+                            {data.planned > 0 && (
+                              <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
+                                <span>+${Math.round(data.planned).toLocaleString()} this chain → Available: </span>
+                                <span className={availableAfterChain >= 0 ? 'text-green-600 font-medium ml-1' : 'text-red-600 font-medium ml-1'}>
+                                  ${Math.round(availableAfterChain).toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    {chainBudget.total && (() => {
+                      const totalAvailable = chainBudget.total.budget - chainBudget.total.current;
+                      const totalAvailableAfterChain = chainBudget.total.budget - chainBudget.total.projected;
+
+                      return (
+                        <div className="border-t pt-2 mt-2">
+                          <div className="flex justify-between items-center font-semibold">
+                            <span className="text-gray-900">Total:</span>
+                            <span className={totalAvailable >= 0 ? 'text-green-600' : 'text-red-600'}>
+                              ${totalAvailable?.toLocaleString()}
                             </span>
                           </div>
+                          {chainBudget.total.planned > 0 && (
+                            <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
+                              <span>+${Math.round(chainBudget.total.planned).toLocaleString()} this chain → Available: </span>
+                              <span className={totalAvailableAfterChain >= 0 ? 'text-green-600 font-semibold ml-1' : 'text-red-600 font-semibold ml-1'}>
+                                ${Math.round(totalAvailableAfterChain).toLocaleString()}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        {data.planned > 0 && (
-                          <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
-                            <span>+${Math.round(data.planned).toLocaleString()} this chain → </span>
-                            <span className={data.projected > data.budget ? 'text-red-600 font-medium ml-1' : 'text-blue-600 font-medium ml-1'}>
-                              ${Math.round(data.projected).toLocaleString()} projected
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {chainBudget.total && (
-                      <div className="border-t pt-2 mt-2">
-                        <div className="flex justify-between items-center font-semibold">
-                          <span className="text-gray-900">Total:</span>
-                          <div className="flex items-center gap-1">
-                            <span className={chainBudget.total.current > chainBudget.total.budget ? 'text-red-600' : 'text-green-600'}>
-                              ${chainBudget.total.current?.toLocaleString()}
-                            </span>
-                            <span className="text-gray-400">/</span>
-                            <span className={chainBudget.total.current > chainBudget.total.budget ? 'text-red-600' : 'text-green-700'}>
-                              ${chainBudget.total.budget?.toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-                        {chainBudget.total.planned > 0 && (
-                          <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
-                            <span>+${Math.round(chainBudget.total.planned).toLocaleString()} this chain → </span>
-                            <span className={chainBudget.total.projected > chainBudget.total.budget ? 'text-red-600 font-semibold ml-1' : 'text-blue-600 font-semibold ml-1'}>
-                              ${Math.round(chainBudget.total.projected).toLocaleString()} projected
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
               </div>

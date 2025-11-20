@@ -564,8 +564,16 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         budget_total_current = 0
         budget_total_planned = 0
 
+        # Exclude fleets that are not scheduled
+        excluded_fleets = {'BENTLEY', 'FERRARI', 'MASERATI'}
+
         for _, row in quarter_budgets.iterrows():
             fleet = row['fleet']
+
+            # Skip excluded fleets
+            if fleet in excluded_fleets:
+                continue
+
             current_used = float(row['amount_used']) if pd.notna(row['amount_used']) else 0
             budget_amount = float(row['budget_amount']) if pd.notna(row['budget_amount']) else 0
             planned_spend = planned_by_fleet.get(fleet, 0)

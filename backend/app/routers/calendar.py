@@ -250,7 +250,7 @@ async def get_calendar_activity(
         planned_query = db.client.table('scheduled_assignments')\
             .select('*')\
             .eq('office', office)\
-            .in_('status', ['planned', 'manual', 'requested'])\
+            .in_('status', ['planned', 'manual', 'requested', 'active'])\
             .gte('end_day', start_date)\
             .lte('start_day', end_date)
 
@@ -309,8 +309,21 @@ async def get_calendar_activity(
                 'published': loan.get('clips_received') == '1.0'
             })
 
-        # Active loans
+        # Build set of activity_ids from scheduled assignments to prevent duplicates
+        linked_activity_ids = {
+            loan.get('activity_id') 
+            for loan in planned_loans 
+            if loan.get('activity_id')
+        }
+
+        # Active loans from current_activity (BLUE) - skip if already in scheduled_assignments
         for loan in active_loans:
+            activity_id = loan.get('activity_id')
+            
+            # Skip if this activity is already represented in scheduled_assignments
+            if activity_id and activity_id in linked_activity_ids:
+                continue
+            
             activities.append({
                 'vin': loan.get('vehicle_vin') or loan.get('vin'),
                 'make': loan.get('make'),
@@ -354,6 +367,7 @@ async def get_calendar_activity(
             if True:  # Changed from conflict check - always show planned assignments
                 activities.append({
                     'assignment_id': loan.get('assignment_id'),  # CRITICAL for status changes and delete
+                    'activity_id': loan.get('activity_id'),  # Link to FMS current_activity
                     'vin': loan.get('vin'),
                     'make': loan.get('make'),
                     'model': loan.get('model'),
@@ -362,7 +376,7 @@ async def get_calendar_activity(
                     'person_id': loan.get('person_id'),
                     'partner_name': loan.get('partner_name'),
                     'office': loan.get('office'),
-                    'status': loan.get('status', 'planned'),  # Use actual status from DB (planned/manual/requested)
+                    'status': loan.get('status', 'planned'),  # Use actual status from DB (planned/manual/requested/active)
                     'activity_type': 'Planned Loan',
                     'optimizer_run_id': loan.get('optimizer_run_id'),
                     'score': loan.get('score'),

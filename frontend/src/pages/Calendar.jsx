@@ -1077,6 +1077,10 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
   };
 
   const handleActivityClick = async (vin) => {
+    // Clear partner context first
+    setSelectedPartnerId(null);
+    setPartnerContext(null);
+
     setSelectedVin(vin);
     setLoadingVehicleContext(true);
 
@@ -1122,6 +1126,11 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
   };
 
   const handlePartnerClick = async (partnerId, partnerName) => {
+    // Clear vehicle context first
+    setSelectedVin(null);
+    setVehicleContext(null);
+    setChainingOpportunities(null);
+
     setSelectedPartnerId(partnerId);
     setLoadingPartnerContext(true);
 

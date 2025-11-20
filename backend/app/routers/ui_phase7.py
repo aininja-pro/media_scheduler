@@ -735,8 +735,52 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
 
         loans_df = pd.DataFrame(loan_response.data) if loan_response.data else pd.DataFrame()
 
-        # Build partner name cache for efficient lookup
+        # Batch load ALL partners we'll need (avoid N+1 queries)
+        all_person_ids = set()
+
+        # Collect person_ids from activities
+        if not activities_df.empty:
+            for _, activity in activities_df.iterrows():
+                person_id = activity.get('person_id') or activity.get('to_field')
+                if person_id:
+                    try:
+                        all_person_ids.add(int(person_id))
+                    except (ValueError, TypeError):
+                        pass
+
+        # Collect person_ids from scheduled assignments
+        if not scheduled_df.empty:
+            for _, assignment in scheduled_df.iterrows():
+                person_id = assignment.get('person_id')
+                if person_id:
+                    try:
+                        all_person_ids.add(int(person_id))
+                    except (ValueError, TypeError):
+                        pass
+
+        # Collect person_ids from loan history (limit to first 10 for timeline)
+        if not loans_df.empty:
+            for _, loan in loans_df.head(10).iterrows():
+                person_id = loan.get('person_id')
+                if person_id:
+                    try:
+                        all_person_ids.add(int(person_id))
+                    except (ValueError, TypeError):
+                        pass
+
+        # Load all partners in ONE batch query
         partner_name_cache = {}
+        if all_person_ids:
+            partners_response = db.client.table('media_partners')\
+                .select('person_id, name')\
+                .in_('person_id', list(all_person_ids))\
+                .execute()
+
+            if partners_response.data:
+                partner_name_cache = {
+                    int(p['person_id']): p['name']
+                    for p in partners_response.data
+                }
 
         # Combine activities and loans into a timeline
         timeline = []
@@ -752,23 +796,15 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
                 person_id = activity.get('person_id') or activity.get('to_field')
 
                 if person_id:
-                    # Check cache first
-                    if person_id in partner_name_cache:
-                        partner_name = partner_name_cache[person_id]
-                    else:
-                        try:
-                            # Try using as person_id
-                            partner_response = db.client.table('media_partners')\
-                                .select('name')\
-                                .eq('person_id', int(person_id))\
-                                .execute()
+                    # Lookup in pre-loaded cache
+                    try:
+                        partner_name = partner_name_cache.get(int(person_id))
+                    except (ValueError, TypeError):
+                        pass
 
-                            if partner_response.data:
-                                partner_name = partner_response.data[0]['name']
-                                partner_name_cache[person_id] = partner_name
-                        except:
-                            # If that fails, to_field might be the name itself
-                            partner_name = activity.get('to_field')
+                    # If not in cache, to_field might be the name itself
+                    if not partner_name:
+                        partner_name = activity.get('to_field')
 
                 timeline.append({
                     'type': 'activity',
@@ -791,21 +827,11 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
                 person_id = assignment.get('person_id')
 
                 if person_id:
-                    # Check cache first
-                    if person_id in partner_name_cache:
-                        partner_name = partner_name_cache[person_id]
-                    else:
-                        try:
-                            partner_response = db.client.table('media_partners')\
-                                .select('name')\
-                                .eq('person_id', int(person_id))\
-                                .execute()
-
-                            if partner_response.data:
-                                partner_name = partner_response.data[0]['name']
-                                partner_name_cache[person_id] = partner_name
-                        except:
-                            pass
+                    # Lookup in pre-loaded cache
+                    try:
+                        partner_name = partner_name_cache.get(int(person_id))
+                    except (ValueError, TypeError):
+                        pass
 
                 timeline.append({
                     'type': 'scheduled',
@@ -828,21 +854,11 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
                 person_id = loan.get('person_id')
 
                 if person_id:
-                    # Check cache first
-                    if person_id in partner_name_cache:
-                        partner_name = partner_name_cache[person_id]
-                    else:
-                        try:
-                            partner_response = db.client.table('media_partners')\
-                                .select('name')\
-                                .eq('person_id', int(person_id))\
-                                .execute()
-
-                            if partner_response.data:
-                                partner_name = partner_response.data[0]['name']
-                                partner_name_cache[person_id] = partner_name
-                        except:
-                            pass
+                    # Lookup in pre-loaded cache
+                    try:
+                        partner_name = partner_name_cache.get(int(person_id))
+                    except (ValueError, TypeError):
+                        pass
 
                 timeline.append({
                     'type': 'loan',

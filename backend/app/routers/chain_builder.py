@@ -2105,51 +2105,34 @@ async def get_vehicle_review_history(
         # Calculate cutoff date
         cutoff_date = (datetime.now() - timedelta(days=months_back * 30)).strftime('%Y-%m-%d')
 
-        # Load loan history with pagination, filtered by VIN
-        # Note: loan_history doesn't support direct VIN filtering in Supabase,
-        # so we need to load all and filter client-side
-        all_loan_history = []
-        limit = 1000
-        offset = 0
-        while True:
-            loan_response = db.client.table('loan_history').select('*').range(offset, offset + limit - 1).execute()
-            if not loan_response.data:
-                break
-            all_loan_history.extend(loan_response.data)
-            offset += limit
-            if len(loan_response.data) < limit:
-                break
+        # Get total count for this VIN (all time)
+        total_count_response = db.client.table('loan_history')\
+            .select('*', count='exact')\
+            .eq('vin', vin)\
+            .execute()
 
-        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
+        total_historical_reviews = total_count_response.count if hasattr(total_count_response, 'count') else 0
+
+        # Load recent loan history filtered by VIN and date at database level
+        loan_response = db.client.table('loan_history')\
+            .select('*')\
+            .eq('vin', vin)\
+            .gte('start_date', cutoff_date)\
+            .execute()
+
+        loan_history_df = pd.DataFrame(loan_response.data) if loan_response.data else pd.DataFrame()
 
         if loan_history_df.empty:
             return {
                 "vin": vin,
                 "office": office,
                 "reviews": [],
-                "total_historical_reviews": 0,
+                "total_historical_reviews": total_historical_reviews,
                 "cutoff_date": cutoff_date
             }
 
-        # Filter by VIN
-        vehicle_loans = loan_history_df[loan_history_df['vin'] == vin]
-
-        if vehicle_loans.empty:
-            return {
-                "vin": vin,
-                "office": office,
-                "reviews": [],
-                "total_historical_reviews": 0,
-                "cutoff_date": cutoff_date
-            }
-
-        # Get total count before date filtering
-        total_historical_reviews = len(vehicle_loans)
-
-        # Filter by date (last N months) - make a copy to avoid SettingWithCopyWarning
-        vehicle_loans = vehicle_loans.copy()
-        vehicle_loans['start_date'] = pd.to_datetime(vehicle_loans['start_date'])
-        recent_loans = vehicle_loans[vehicle_loans['start_date'] >= cutoff_date]
+        # All results are already for this VIN and within date range
+        recent_loans = loan_history_df
 
         # Load media partners for name lookup
         partners_response = db.client.table('media_partners').select('person_id, name').execute()
@@ -2251,58 +2234,39 @@ async def get_partner_review_history(
         # Calculate cutoff date
         cutoff_date = (datetime.now() - timedelta(days=months_back * 30)).strftime('%Y-%m-%d')
 
-        # Load loan history with pagination
-        all_loan_history = []
-        limit = 1000
-        offset = 0
-        while True:
-            loan_response = db.client.table('loan_history').select('*').range(offset, offset + limit - 1).execute()
-            if not loan_response.data:
-                break
-            all_loan_history.extend(loan_response.data)
-            offset += limit
-            if len(loan_response.data) < limit:
-                break
-
-        loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
-
-        if loan_history_df.empty:
-            return {
-                "person_id": person_id,
-                "partner_name": f"Partner {person_id}",
-                "office": office,
-                "reviews": [],
-                "total_historical_reviews": 0,
-                "cutoff_date": cutoff_date
-            }
-
-        # Filter by person_id
-        if 'person_id' in loan_history_df.columns:
-            loan_history_df['person_id'] = loan_history_df['person_id'].astype(int)
-
-        partner_loans = loan_history_df[loan_history_df['person_id'] == int(person_id)]
-
-        # Get partner name
+        # Get partner name first
         partners_response = db.client.table('media_partners').select('person_id, name').eq('person_id', person_id).execute()
         partner_name = partners_response.data[0]['name'] if partners_response.data else f"Partner {person_id}"
 
-        if partner_loans.empty:
+        # Get total count for this person_id (all time)
+        total_count_response = db.client.table('loan_history')\
+            .select('*', count='exact')\
+            .eq('person_id', int(person_id))\
+            .execute()
+
+        total_historical_reviews = total_count_response.count if hasattr(total_count_response, 'count') else 0
+
+        # Load recent loan history filtered by person_id and date at database level
+        loan_response = db.client.table('loan_history')\
+            .select('*')\
+            .eq('person_id', int(person_id))\
+            .gte('start_date', cutoff_date)\
+            .execute()
+
+        loan_history_df = pd.DataFrame(loan_response.data) if loan_response.data else pd.DataFrame()
+
+        if loan_history_df.empty:
             return {
                 "person_id": person_id,
                 "partner_name": partner_name,
                 "office": office,
                 "reviews": [],
-                "total_historical_reviews": 0,
+                "total_historical_reviews": total_historical_reviews,
                 "cutoff_date": cutoff_date
             }
 
-        # Get total count before date filtering
-        total_historical_reviews = len(partner_loans)
-
-        # Filter by date (last N months) - make a copy to avoid SettingWithCopyWarning
-        partner_loans = partner_loans.copy()
-        partner_loans['start_date'] = pd.to_datetime(partner_loans['start_date'])
-        recent_loans = partner_loans[partner_loans['start_date'] >= cutoff_date]
+        # All results are already for this person_id and within date range
+        recent_loans = loan_history_df
 
         # Build reviews list
         reviews = []

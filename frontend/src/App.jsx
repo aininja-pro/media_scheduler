@@ -31,12 +31,14 @@ function App() {
   const [approvedRanksUrl, setApprovedRanksUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/approved_makes.rpt&init=csv')
   const [loanHistoryUrl, setLoanHistoryUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/loan_history.rpt&init=csv')
   const [currentActivityUrl, setCurrentActivityUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/current_vehicle_activity.rpt&init=csv')
+  const [budgetSpendingUrl, setBudgetSpendingUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/current_spend.rpt&init=csv&exportreportdataonly=true&columnnames=true')
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingMediaPartners, setIsLoadingMediaPartners] = useState(false)
   const [mediaPartnersProgress, setMediaPartnersProgress] = useState({ step: '', progress: 0 })
   const [isLoadingApprovedRanks, setIsLoadingApprovedRanks] = useState(false)
   const [isLoadingLoanHistory, setIsLoadingLoanHistory] = useState(false)
   const [isLoadingCurrentActivity, setIsLoadingCurrentActivity] = useState(false)
+  const [isLoadingBudgetSpending, setIsLoadingBudgetSpending] = useState(false)
   const [isLoadingOperationsData, setIsLoadingOperationsData] = useState(false)
   const [isLoadingBudgets, setIsLoadingBudgets] = useState(false)
 
@@ -185,9 +187,9 @@ function App() {
           'Content-Type': 'application/json',
         },
       })
-      
+
       const result = await response.json()
-      
+
       if (response.ok) {
         alert(`Success! Processed ${result.rows_processed} current activity records`)
       } else {
@@ -197,6 +199,30 @@ function App() {
       alert(`Network error: ${error.message}`)
     } finally {
       setIsLoadingCurrentActivity(false)
+    }
+  }
+
+  const handleBudgetSpendingUpdate = async () => {
+    setIsLoadingBudgetSpending(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/ingest/budget_spending/url?url=${encodeURIComponent(budgetSpendingUrl)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        alert(`Success! Updated ${result.rows_affected} budget spending records`)
+      } else {
+        alert(`Error: ${result.detail}`)
+      }
+    } catch (error) {
+      alert(`Network error: ${error.message}`)
+    } finally {
+      setIsLoadingBudgetSpending(false)
     }
   }
 
@@ -333,8 +359,9 @@ function App() {
     { id: 'approved_makes', name: 'Approved Ranks', description: 'A+/A/B/C rankings per partner/make', icon: '⭐', autoSync: true },
     { id: 'loan_history', name: 'Loan History', description: 'Historical assignment data', icon: '📊', autoSync: true },
     { id: 'current_activity', name: 'Current Activity', description: 'Active bookings and holds', icon: '📅', autoSync: true },
-    { id: 'budgets', name: 'Budgets', description: 'Office/fleet budget tracking by quarter', icon: '💰', autoSync: false },
-    { id: 'operations_data', name: 'Operations Data', description: 'Rules, capacity limits, holiday dates', icon: '📊', autoSync: false }
+    { id: 'budget_spending', name: 'Budget Spending', description: 'Office/fleet spending (daily)', icon: '💰', autoSync: true },
+    { id: 'budgets', name: 'Budgets', description: 'Quarterly budget allocations', icon: '📊', autoSync: false },
+    { id: 'operations_data', name: 'Operations Data', description: 'Rules, capacity limits, holiday dates', icon: '📋', autoSync: false }
   ]
   
   return (
@@ -494,7 +521,7 @@ function App() {
                       </div>
                     )}
                     <div className="text-xs text-gray-600">
-                      Auto-syncs: Vehicles, Media Partners, Loan History, Current Activity, Approved Makes
+                      Auto-syncs: Vehicles, Media Partners, Loan History, Current Activity, Approved Makes, Budget Spending
                     </div>
                   </div>
                 </div>
@@ -658,12 +685,35 @@ function App() {
                             placeholder="Enter DriveShop current activity URL..."
                           />
                         </div>
-                        <button 
+                        <button
                           onClick={handleCurrentActivityUpdate}
                           disabled={isLoadingCurrentActivity}
                           className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
                         >
                           {isLoadingCurrentActivity ? 'Fetching...' : 'Update Current Activity Data'}
+                        </button>
+                      </div>
+                    ) : csvType.id === 'budget_spending' ? (
+                      /* Special handling for Budget Spending - URL input */
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Data Source URL:
+                          </label>
+                          <input
+                            type="text"
+                            value={budgetSpendingUrl}
+                            onChange={(e) => setBudgetSpendingUrl(e.target.value)}
+                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            placeholder="Enter FMS budget spending URL..."
+                          />
+                        </div>
+                        <button
+                          onClick={handleBudgetSpendingUpdate}
+                          disabled={isLoadingBudgetSpending}
+                          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                        >
+                          {isLoadingBudgetSpending ? 'Updating...' : 'Update Budget Spending'}
                         </button>
                       </div>
                     ) : csvType.id === 'operations_data' ? (
@@ -707,7 +757,7 @@ function App() {
                           </div>
                         </label>
                         <div className="text-xs text-gray-500">
-                          Budget data by quarter, fleet allocations
+                          Columns: Office, Fleet, Year, Quarter, Budget
                         </div>
                       </div>
                     ) : (

@@ -35,6 +35,7 @@ SYNC_URLS = {
     'loan_history': os.getenv('FMS_LOAN_HISTORY_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/loan_history.rpt&init=csv'),
     'current_activity': os.getenv('FMS_CURRENT_ACTIVITY_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/current_vehicle_activity.rpt&init=csv'),
     'approved_makes': os.getenv('FMS_APPROVED_MAKES_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/approved_makes.rpt&init=csv'),
+    'budget_spending': os.getenv('FMS_BUDGET_SPENDING_CSV_URL', ''),  # User will provide URL
 }
 
 # API base URL (internal Docker network or localhost)

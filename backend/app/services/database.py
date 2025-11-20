@@ -243,6 +243,146 @@ class DatabaseService:
             logger.error(f"Error marking assignment active: {e}")
             return False
 
+    async def update_budget_allocations(self, budget_records: List) -> Dict[str, Any]:
+        """
+        Update budget_amount field only, preserving amount_used from FMS sync.
+
+        Uses UPSERT: creates new rows or updates existing budget_amount.
+
+        Args:
+            budget_records: List of BudgetIngest Pydantic models
+
+        Returns:
+            Dict with rows_affected count
+        """
+        try:
+            # Convert Pydantic models to dicts
+            record_dicts = [
+                record.model_dump() if hasattr(record, 'model_dump') else record.dict()
+                for record in budget_records
+            ]
+
+            # For each record, we'll do an upsert that only updates budget_amount
+            rows_affected = 0
+            for record in record_dicts:
+                try:
+                    # First, try to find existing row
+                    existing = self.client.table('budgets')\
+                        .select('*')\
+                        .eq('office', record['office'])\
+                        .eq('fleet', record['fleet'])\
+                        .eq('year', record['year'])\
+                        .eq('quarter', record['quarter'])\
+                        .limit(1)\
+                        .execute()
+
+                    if existing.data:
+                        # Update only budget_amount, preserve amount_used
+                        result = self.client.table('budgets')\
+                            .update({'budget_amount': record['budget_amount']})\
+                            .eq('office', record['office'])\
+                            .eq('fleet', record['fleet'])\
+                            .eq('year', record['year'])\
+                            .eq('quarter', record['quarter'])\
+                            .execute()
+                    else:
+                        # Insert new row (amount_used will be NULL)
+                        result = self.client.table('budgets')\
+                            .insert({
+                                'office': record['office'],
+                                'fleet': record['fleet'],
+                                'year': record['year'],
+                                'quarter': record['quarter'],
+                                'budget_amount': record['budget_amount'],
+                                'amount_used': None
+                            })\
+                            .execute()
+
+                    if result.data:
+                        rows_affected += len(result.data)
+
+                except Exception as e:
+                    logger.warning(f"Error updating budget allocation: {e}")
+                    continue
+
+            return {"rows_affected": rows_affected}
+
+        except Exception as e:
+            logger.error(f"Error in update_budget_allocations: {e}")
+            raise
+
+    async def update_budget_spending(self, spending_records: List) -> Dict[str, Any]:
+        """
+        Update amount_used field only, preserving budget_amount from manual upload.
+
+        Uses UPSERT: creates new rows (budget_amount=NULL) or updates existing amount_used.
+
+        Args:
+            spending_records: List of BudgetSpendingIngest Pydantic models
+
+        Returns:
+            Dict with rows_affected count
+        """
+        try:
+            # Convert Pydantic models to dicts
+            record_dicts = [
+                record.model_dump() if hasattr(record, 'model_dump') else record.dict()
+                for record in spending_records
+            ]
+
+            # For each record, upsert with only amount_used
+            rows_affected = 0
+            for record in record_dicts:
+                try:
+                    # First, try to find existing row
+                    existing = self.client.table('budgets')\
+                        .select('*')\
+                        .eq('office', record['office'])\
+                        .eq('fleet', record['fleet'])\
+                        .eq('year', record['year'])\
+                        .eq('quarter', record['quarter'])\
+                        .limit(1)\
+                        .execute()
+
+                    if existing.data:
+                        # Update only amount_used, preserve budget_amount
+                        result = self.client.table('budgets')\
+                            .update({'amount_used': record['amount_used']})\
+                            .eq('office', record['office'])\
+                            .eq('fleet', record['fleet'])\
+                            .eq('year', record['year'])\
+                            .eq('quarter', record['quarter'])\
+                            .execute()
+                    else:
+                        # Insert new row (budget_amount will be NULL)
+                        logger.info(
+                            f"Creating new budget row for {record['office']}/{record['fleet']}"
+                            f"/{record['year']}/{record['quarter']} with NULL budget_amount"
+                        )
+                        result = self.client.table('budgets')\
+                            .insert({
+                                'office': record['office'],
+                                'fleet': record['fleet'],
+                                'year': record['year'],
+                                'quarter': record['quarter'],
+                                'budget_amount': None,
+                                'amount_used': record['amount_used']
+                            })\
+                            .execute()
+
+                    if result.data:
+                        rows_affected += len(result.data)
+
+                except Exception as e:
+                    logger.warning(f"Error updating budget spending: {e}")
+                    continue
+
+            return {"rows_affected": rows_affected}
+
+        except Exception as e:
+            logger.error(f"Error in update_budget_spending: {e}")
+            raise
+
 
     def _split_composite_columns(self, upsert_column: str) -> List[str]:
         """Split composite column string into individual column names"""

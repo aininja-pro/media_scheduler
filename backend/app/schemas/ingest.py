@@ -371,13 +371,13 @@ class RulesIngest(BaseModel):
 
 
 class BudgetIngest(BaseModel):
-    """Schema for budgets Excel upload"""
+    """Schema for budgets Excel upload - Budget Allocations (manual)"""
     office: str
-    fleet: str  # Changed from 'make' to 'fleet'
+    fleet: str
     year: int
-    quarter: str  # Changed to string for "Q1", "Q2", etc.
-    budget_amount: Optional[float] = None  # Changed from budget_used/remaining
-    amount_used: Optional[float] = None
+    quarter: str  # "Q1", "Q2", "Q3", "Q4"
+    budget_amount: Optional[float] = None  # Quarterly budget allocation
+    amount_used: Optional[float] = None  # Kept for backward compatibility, but not expected
 
     @field_validator('office', 'fleet', 'quarter')
     @classmethod
@@ -413,6 +413,55 @@ class BudgetIngest(BaseModel):
         return v
 
 
+class BudgetSpendingIngest(BaseModel):
+    """Schema for FMS budget spending CSV sync - Amount Used (auto-sync)"""
+    office: str
+    fleet: str
+    year: int
+    quarter: str  # "Q1", "Q2", "Q3", "Q4"
+    amount_used: float  # Current spending for this office/fleet/quarter
+
+    @field_validator('fleet', 'quarter')
+    @classmethod
+    def validate_fleet_quarter(cls, v: str) -> str:
+        if not v or len(v.strip()) == 0:
+            raise ValueError("Field cannot be empty")
+        return v.strip().upper()
+
+    @field_validator('office')
+    @classmethod
+    def validate_office(cls, v: str) -> str:
+        if not v or len(v.strip()) == 0:
+            raise ValueError("Field cannot be empty")
+        return v.strip()  # Preserve original case for office names
+
+    @field_validator('amount_used', mode='before')
+    @classmethod
+    def parse_currency(cls, v):
+        if v is None or pd.isna(v):
+            return 0.0  # Default to 0 if missing
+        if isinstance(v, str):
+            v_stripped = v.strip()
+            if not v_stripped:
+                return 0.0
+            # Remove $ and commas from currency strings
+            cleaned = v_stripped.replace('$', '').replace(',', '')
+            try:
+                return float(cleaned)
+            except ValueError:
+                return 0.0
+        if isinstance(v, (int, float)):
+            return float(v)
+        return 0.0
+
+    @field_validator('amount_used')
+    @classmethod
+    def validate_amount(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("Amount used must be non-negative")
+        return v
+
+
 # Mapping of table names to their corresponding schemas
 INGEST_SCHEMAS = {
     "vehicles": VehicleIngest,
@@ -425,4 +474,5 @@ INGEST_SCHEMAS = {
     "holiday_blackout_dates": HolidayBlackoutDatesIngest,
     "rules": RulesIngest,
     "budgets": BudgetIngest,
+    "budget_spending": BudgetSpendingIngest,
 }

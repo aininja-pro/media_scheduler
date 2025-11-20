@@ -354,11 +354,14 @@ async def ingest_budgets_excel(
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """
-    Ingest Budgets Excel file with office/fleet budget data.
-    
+    Ingest Budgets Excel file with quarterly budget allocations.
+
+    NEW FORMAT (5 columns): Office, Fleet, Year, Quarter, Budget
+    Only updates budget_amount field, preserves amount_used from FMS sync.
+
     Args:
-        file: Excel file upload with budget data
-        
+        file: Excel file upload with budget allocation data
+
     Returns:
         Dict with ingestion results
     """
@@ -368,56 +371,59 @@ async def ingest_budgets_excel(
             status_code=400,
             detail="File must be an Excel file (.xlsx or .xls)"
         )
-    
+
     try:
         # Read Excel content
         content = await file.read()
-        
+
         # Wrap bytes in BytesIO for pandas
         excel_buffer = BytesIO(content)
-        
-        # Read the first sheet (assuming budget data is on first sheet)
+
+        # Read the first sheet
         df = pd.read_excel(excel_buffer)
         df = df.fillna('')
-        
+
         logger.info(f"Processing budgets Excel with columns: {list(df.columns)}")
-        
+
         validated_budgets = []
         for index, row in df.iterrows():
             try:
+                # Handle both "Budget" and "Budget #" column names
+                budget_col = 'Budget #' if 'Budget #' in row.index else 'Budget'
+
                 row_dict = {
                     'office': str(row['Office']).strip(),
                     'fleet': str(row['Fleet']).strip(),
                     'year': int(row['Year']) if pd.notna(row['Year']) else None,
                     'quarter': str(row['Quarter']).strip(),
-                    'budget_amount': row['Budget #'] if pd.notna(row['Budget #']) else None,
-                    'amount_used': row['Amount Used'] if pd.notna(row['Amount Used']) else None
+                    'budget_amount': row[budget_col] if pd.notna(row[budget_col]) else None,
+                    'amount_used': None  # Not included in new format
                 }
                 validated_row = INGEST_SCHEMAS["budgets"](**row_dict)
                 validated_budgets.append(validated_row)
             except Exception as e:
                 logger.warning(f"Skipping budgets row {index + 2}: {str(e)}")
-        
+
         if not validated_budgets:
             logger.error("No valid budget rows after validation. Check column headers & schema.")
             raise HTTPException(
                 status_code=422,
-                detail="No valid budget records found. Check Excel column headers."
+                detail="No valid budget records found. Check Excel column headers (Office, Fleet, Year, Quarter, Budget)."
             )
-        
-        # Upload to database
-        logger.info("Upserting budget data to database...")
-        result = await db.upsert_records(table_name="budgets", records=validated_budgets)
-        
-        logger.info(f"Successfully processed {len(validated_budgets)} budget records")
-        
+
+        # Upload to database - only update budget_amount field
+        logger.info("Updating budget allocations in database...")
+        result = await db.update_budget_allocations(validated_budgets)
+
+        logger.info(f"Successfully processed {len(validated_budgets)} budget allocation records")
+
         return {
             "status": "success",
-            "message": f"Successfully processed budget data from Excel file",
+            "message": f"Successfully processed budget allocations from Excel file",
             "total_rows_processed": len(validated_budgets),
             "rows_affected": result.get("rows_affected", 0)
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -425,6 +431,117 @@ async def ingest_budgets_excel(
         raise HTTPException(
             status_code=500,
             detail=f"Error processing Excel file: {str(e)}"
+        )
+
+
+@router.post("/budget_spending/url")
+async def ingest_budget_spending_from_url(
+    url: str = Query(..., description="FMS budget spending CSV URL"),
+    db: DatabaseService = Depends(get_database)
+) -> Dict[str, Any]:
+    """
+    Sync budget spending (amount_used) from FMS CSV.
+
+    CSV Format: office, fleet, year, quarter, amount_used
+    Updates only amount_used field, preserves budget_amount from manual upload.
+    Creates rows with NULL budget_amount if office/fleet/quarter doesn't exist.
+
+    Args:
+        url: FMS CSV URL for budget spending data
+
+    Returns:
+        Dict with sync results
+    """
+    try:
+        # Decode URL if FastAPI encoded it
+        from urllib.parse import unquote
+        decoded_url = unquote(url)
+        logger.info(f"Fetching budget spending CSV from: {decoded_url}")
+
+        # Fetch CSV from URL with proper headers (match other FMS endpoints)
+        headers = {
+            'User-Agent': 'curl/8.7.1',
+            'Accept': '*/*',
+        }
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            response = await client.get(decoded_url, headers=headers)
+            response.raise_for_status()
+            csv_content = response.text
+
+            # Log response info
+            logger.info(f"Fetched CSV: {response.status_code}, {len(csv_content)} chars")
+            logger.info(f"First 200 chars: {csv_content[:200]}")
+
+        # Parse CSV - FMS format has NO HEADER, columns: fleet,office,year,quarter,amount_used
+        df = pd.read_csv(StringIO(csv_content), header=None, names=['fleet', 'office', 'year', 'quarter', 'amount_used'])
+        df = df.fillna('')
+
+        logger.info(f"Processing {len(df)} budget spending records from FMS CSV")
+
+        # Fleet normalization mapping (match optimizer logic)
+        fleet_aliases = {
+            'VW': 'VOLKSWAGEN',
+            'CHEVY': 'CHEVROLET',
+            'CHEV': 'CHEVROLET',
+            'GMC': 'GMC',
+            'CADILLAC': 'CADILLAC'
+        }
+
+        validated_spending = []
+        for index, row in df.iterrows():
+            try:
+                # Normalize fleet name
+                fleet_raw = str(row['fleet']).strip().upper() if pd.notna(row['fleet']) else ''
+                fleet_normalized = fleet_aliases.get(fleet_raw, fleet_raw)
+
+                # Parse year - FMS uses "2,025" format with comma
+                year_str = str(row['year']).replace(',', '').strip()
+                year_int = int(year_str) if year_str else None
+
+                # Parse amount_used - has quotes and commas from FMS
+                amount_str = str(row['amount_used']).replace(',', '').strip()
+
+                row_dict = {
+                    'office': str(row['office']).strip(),
+                    'fleet': fleet_normalized,
+                    'year': year_int,
+                    'quarter': str(row['quarter']).strip().upper(),
+                    'amount_used': amount_str
+                }
+                validated_row = INGEST_SCHEMAS["budget_spending"](**row_dict)
+                validated_spending.append(validated_row)
+            except Exception as e:
+                logger.warning(f"Skipping budget spending row {index + 1}: {str(e)}")
+                logger.warning(f"  Row data: {row.to_dict()}")
+                logger.warning(f"  Attempted dict: {row_dict}")
+
+        if not validated_spending:
+            raise HTTPException(
+                status_code=422,
+                detail="No valid budget spending records found in CSV"
+            )
+
+        # Update database - only amount_used field
+        logger.info(f"Updating budget spending for {len(validated_spending)} records...")
+        result = await db.update_budget_spending(validated_spending)
+
+        logger.info(f"Successfully updated {result.get('rows_affected', 0)} budget spending records")
+
+        return {
+            "table": "budget_spending",
+            "status": "success",
+            "message": f"Successfully synced budget spending from FMS CSV",
+            "total_rows_processed": len(validated_spending),
+            "rows_affected": result.get("rows_affected", 0)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing budget spending: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error syncing budget spending: {str(e)}"
         )
 
 

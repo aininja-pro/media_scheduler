@@ -3,7 +3,7 @@ Database service using Supabase Python client.
 """
 import os
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from supabase import create_client, Client
 
@@ -149,6 +149,101 @@ class DatabaseService:
             logger.error(f"Error upserting records to {table_name}: {e}")
             raise
     
+    async def find_requested_assignment(
+        self,
+        vin: str,
+        person_id: int,
+        start_day: str = None
+    ) -> Optional[Dict]:
+        """
+        Find a requested assignment that matches FMS activity.
+
+        Simplified matching: VIN + person_id + status='requested'
+        Optionally also matches start_day if provided.
+
+        Args:
+            vin: Vehicle VIN
+            person_id: Partner person_id
+            start_day: Optional start date (ISO format YYYY-MM-DD)
+
+        Returns:
+            Matching assignment dict or None
+        """
+        try:
+            # Ensure person_id is int for matching
+            person_id_int = int(person_id) if person_id else None
+
+            logger.info(f"🔍 Looking for requested assignment: VIN={vin}, person_id={person_id_int}, start_day={start_day}")
+
+            # Build query - match on VIN + person_id + status
+            query = self.client.table('scheduled_assignments')\
+                .select('*')\
+                .eq('vin', vin)\
+                .eq('person_id', person_id_int)\
+                .eq('status', 'requested')
+
+            # Optionally also match start_day if provided
+            if start_day:
+                query = query.eq('start_day', start_day)
+
+            result = query.order('created_at', desc=True).limit(1).execute()
+
+            if result.data:
+                logger.info(f"✅ Found matching assignment: {result.data[0].get('assignment_id')}")
+            else:
+                logger.info(f"❌ No matching requested assignment found")
+
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Error finding requested assignment: {e}")
+            return None
+
+    async def mark_assignment_active(
+        self,
+        assignment_id: int,
+        activity_id: str,
+        end_day: Optional[str] = None
+    ) -> bool:
+        """
+        Update a requested assignment to active status with FMS link.
+
+        Args:
+            assignment_id: Scheduled assignment ID
+            activity_id: FMS Activity_ID from current_activity
+            end_day: Optional end date if it shifted in FMS
+
+        Returns:
+            True if successful
+        """
+        try:
+            update_data = {
+                'status': 'active',
+                'activity_id': activity_id
+            }
+
+            # Update end_day if provided and different
+            if end_day:
+                update_data['end_day'] = end_day
+
+            logger.info(f"📝 Updating assignment {assignment_id}: {update_data}")
+
+            result = self.client.table('scheduled_assignments')\
+                .update(update_data)\
+                .eq('assignment_id', assignment_id)\
+                .execute()
+
+            if result.data:
+                logger.info(f"✅ Successfully updated assignment {assignment_id} to active with activity_id={activity_id}")
+                return True
+            else:
+                logger.warning(f"❌ Update returned no data for assignment {assignment_id}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error marking assignment active: {e}")
+            return False
+
+
     def _split_composite_columns(self, upsert_column: str) -> List[str]:
         """Split composite column string into individual column names"""
         return [c.strip() for c in upsert_column.split(',') if c.strip()]

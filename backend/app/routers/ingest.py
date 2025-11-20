@@ -20,8 +20,134 @@ from ..services.database import get_database, DatabaseService
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..', '..'))
 from analyze_preferred_days import analyze_preferred_days
 
+from datetime import datetime
+from dateutil import parser as date_parser
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+
+
+
+def normalize_date_to_iso(value) -> str:
+    """
+    Convert any date-like value to ISO format string YYYY-MM-DD.
+    Handles: date objects, datetime objects, and strings.
+    """
+    if not value:
+        return None
+
+    # If it's already a date/datetime object, use isoformat
+    if hasattr(value, 'isoformat'):
+        result = value.isoformat()
+        # If datetime, extract just the date part
+        if 'T' in result:
+            result = result.split('T')[0]
+        return result
+
+    # If it's a string, try to parse it
+    if isinstance(value, str):
+        # If already in ISO format, return as-is
+        if len(value) == 10 and value.count('-') == 2:
+            return value
+        # Otherwise parse and convert
+        try:
+            return date_parser.parse(value).date().isoformat()
+        except Exception:
+            return None
+
+    return None
+
+
+async def reconcile_requested_assignments(
+    db: DatabaseService,
+    records: List[Dict]
+) -> Dict[str, int]:
+    """
+    Reconcile incoming current_activity records with requested assignments.
+
+    When FMS approves a magenta request, it appears in current_activity.
+    This function finds matching requested assignments and updates them to 'active'
+    to prevent duplicates in the calendar.
+
+    Matching logic (simplified): VIN + person_id
+    - If multiple matches, uses most recently created
+    - Optionally also matches on start_day if dates parse correctly
+
+    Args:
+        db: Database service instance
+        records: Validated current_activity records
+
+    Returns:
+        Dict with reconciliation statistics
+    """
+    reconciled_count = 0
+    reconciled_ids = set()
+
+    logger.info(f"🔄 Starting reconciliation for {len(records)} current_activity records")
+
+    for row in records:
+        try:
+            # Extract key fields
+            vin = row.get('vehicle_vin', '')
+            if isinstance(vin, str):
+                vin = vin.strip()
+
+            person_id = row.get('person_id')
+            activity_id = row.get('activity_id')
+
+            # Skip if missing required fields
+            if not vin or not person_id or not activity_id:
+                continue
+
+            # Convert person_id to int for matching
+            try:
+                person_id_int = int(person_id)
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid person_id: {person_id}")
+                continue
+
+            # Normalize dates - handle both date objects and strings
+            start_date = row.get('start_date')
+            end_date = row.get('end_date')
+
+            start_day = normalize_date_to_iso(start_date)
+            end_day = normalize_date_to_iso(end_date)
+
+            logger.debug(f"Processing: VIN={vin}, person_id={person_id_int}, activity_id={activity_id}, start_day={start_day}")
+
+            # Look for matching requested assignment
+            # Try with date first, then without if no match
+            matching_assignment = await db.find_requested_assignment(vin, person_id_int, start_day)
+
+            if not matching_assignment and start_day:
+                # Try without date matching (in case dates shifted slightly)
+                logger.debug(f"No match with date, trying without date...")
+                matching_assignment = await db.find_requested_assignment(vin, person_id_int, None)
+
+            if matching_assignment:
+                assignment_id = matching_assignment['assignment_id']
+                success = await db.mark_assignment_active(assignment_id, activity_id, end_day)
+
+                if success:
+                    reconciled_count += 1
+                    reconciled_ids.add(activity_id)
+                    logger.info(
+                        f"✅ Reconciled assignment {assignment_id}: "
+                        f"VIN={vin}, Partner={person_id_int}, Date={start_day} → Active (activity_id={activity_id})"
+                    )
+                else:
+                    logger.warning(f"❌ Failed to mark assignment {assignment_id} as active")
+
+        except Exception as e:
+            logger.warning(f"Error processing row for reconciliation: {e}, row keys: {row.keys()}")
+            continue
+
+    logger.info(f"✅ Reconciliation complete: {reconciled_count} assignments updated to active")
+
+    return {
+        'reconciled_count': reconciled_count,
+        'reconciled_ids': reconciled_ids
+    }
 
 
 @router.post("/operations_data")
@@ -1254,6 +1380,22 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
         
         logger.info(f"Validation complete! {len(validated_rows)} valid records, {skipped_count} records skipped")
 
+        # Convert validated Pydantic models to dicts for reconciliation
+        # Use model_dump() for Pydantic v2, fall back to dict() for v1
+        validated_dicts = [
+            row.model_dump() if hasattr(row, 'model_dump') else row.dict() if hasattr(row, 'dict') else row
+            for row in validated_rows
+        ]
+        
+        # ===== RECONCILIATION STEP =====
+        logger.info("🔄 Reconciling with requested assignments...")
+        reconciliation_result = await reconcile_requested_assignments(db, validated_dicts)
+        logger.info(
+            f"✓ Reconciliation complete: {reconciliation_result['reconciled_count']} "
+            f"requested assignments updated to active"
+        )
+        # ================================
+
         # Clear existing data first to avoid stale records
         logger.info("Clearing existing current_activity data...")
         delete_result = db.client.table('current_activity').delete().neq('activity_id', '').execute()
@@ -1267,8 +1409,9 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
             "table": "current_activity",
             "rows_processed": len(validated_rows),
             "rows_affected": upsert_result.get("rows_affected", 0),
+            "reconciled_assignments": reconciliation_result['reconciled_count'],
             "status": "success",
-            "message": f"Successfully processed {len(validated_rows)} current activity records"
+            "message": f"Successfully processed {len(validated_rows)} current activity records, reconciled {reconciliation_result['reconciled_count']} assignments"
         }
         
     except Exception as e:

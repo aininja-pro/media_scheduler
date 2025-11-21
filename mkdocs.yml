@@ -10,6 +10,7 @@ repo_url: https://github.com/aininja-pro/media-scheduler
 # Theme configuration
 theme:
   name: material
+  logo: assets/DriveShop_WebLogo.png
   palette:
     # Light mode
     - scheme: default

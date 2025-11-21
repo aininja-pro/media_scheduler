@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import driveShopLogo from '../assets/DriveShop_WebLogo.png';
-import backgroundImage from '../assets/locations.jpeg';
+import backgroundImage from '../assets/locations-2.jpg';
 
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');

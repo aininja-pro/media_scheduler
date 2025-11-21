@@ -1,0 +1,5 @@
+# MkDocs Requirements for Documentation Site
+# Used by Render to build the static documentation site
+
+mkdocs==1.6.1
+mkdocs-material==9.5.47

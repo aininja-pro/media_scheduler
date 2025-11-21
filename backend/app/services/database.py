@@ -9,18 +9,18 @@ from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
-# Supabase configuration
-SUPABASE_URL = "https://akhiqayfjmnrzsofmwrv.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFraGlxYXlmam1ucnpzb2Ztd3J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5OTI5NjcsImV4cCI6MjA3MjU2ODk2N30.nfKgjSQoJPWr2qn8LQyLF8QYMeOrxwkikBc3opKhY5Y"
+# Supabase configuration from environment variables
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 
 class DatabaseService:
     """Database service using Supabase Python client"""
     
     def __init__(self):
-        self.client: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        self.client: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
         self._initialized = True
-        logger.info("Supabase client initialized")
+        logger.info("Supabase client initialized with service role key")
     
     async def initialize(self):
         """No-op - client is ready immediately"""

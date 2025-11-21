@@ -38,9 +38,9 @@ SYNC_URLS = {
     'budget_spending': os.getenv('FMS_BUDGET_SPENDING_CSV_URL', ''),  # User will provide URL
 }
 
-# API base URL (internal Docker network or localhost)
-# Use 'backend' for Docker internal calls, 'localhost:8081' for local dev
-API_BASE_URL = os.getenv('INTERNAL_API_URL', 'http://backend:8000')
+# API base URL (for Render deployment or localhost)
+# Default to localhost, override with INTERNAL_API_URL env var for production
+API_BASE_URL = os.getenv('INTERNAL_API_URL', 'http://localhost:8000')
 
 # Global variable to track last successful sync
 last_sync_result = None

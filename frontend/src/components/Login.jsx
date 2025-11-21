@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import driveShopLogo from '../assets/DriveShop_WebLogo.png';
+import backgroundImage from '../../assets/locations.jpg';
 
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
@@ -28,8 +29,11 @@ const Login = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md">
+    <div
+      className="min-h-screen flex items-center justify-center bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: `url(${backgroundImage})` }}
+    >
+      <div className="max-w-md w-full space-y-8 p-8 bg-white/95 backdrop-blur-sm rounded-lg shadow-xl">
         {/* Logo */}
         <div className="text-center">
           <div className="bg-black rounded-lg p-4 mx-auto inline-block mb-4">

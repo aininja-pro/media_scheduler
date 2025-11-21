@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import driveShopLogo from '../assets/DriveShop_WebLogo.png';
 
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
@@ -31,11 +32,13 @@ const Login = ({ onLogin }) => {
       <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md">
         {/* Logo */}
         <div className="text-center">
-          <img
-            src="/assets/DriveShop_WebLogo.png"
-            alt="DriveShop"
-            className="mx-auto h-16 w-auto mb-4"
-          />
+          <div className="bg-black rounded-lg p-4 mx-auto inline-block mb-4">
+            <img
+              src={driveShopLogo}
+              alt="DriveShop"
+              className="h-16 w-auto"
+            />
+          </div>
           <h2 className="text-3xl font-bold text-gray-900">
             Media Scheduler
           </h2>

@@ -60,9 +60,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3001",
         "http://localhost:5173",
-        "https://fms.driveshop.com",              # FMS production
-        "https://staging.driveshop.com",          # FMS staging
-        "https://media-scheduler.onrender.com",   # Frontend production
+        "https://fms.driveshop.com",                    # FMS production
+        "https://staging.driveshop.com",                # FMS staging
+        "https://media-scheduler.onrender.com",         # Frontend production (primary)
+        "https://media-scheduler-04o5.onrender.com",    # Frontend production (actual URL)
     ],
     allow_credentials=True,
     allow_methods=["*"],

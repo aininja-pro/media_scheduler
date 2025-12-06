@@ -64,6 +64,7 @@ app.add_middleware(
         "https://staging.driveshop.com",                # FMS staging
         "https://media-scheduler.onrender.com",         # Frontend production (primary)
         "https://media-scheduler-04o5.onrender.com",    # Frontend production (actual URL)
+        "https://scheduler.driveshop.com",              # Frontend custom domain
     ],
     allow_credentials=True,
     allow_methods=["*"],

@@ -875,6 +875,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
       grouped[vehicle.vin] = {
         vin: vehicle.vin,
+        vehicle_id: vehicle.vehicle_id,
         make: vehicle.make,
         model: vehicle.model,
         color: vehicle.color,
@@ -1804,24 +1805,24 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             </select>
           </div>
 
+          {/* Reload Button */}
+          <div className="flex items-end">
+            <button
+              onClick={() => loadActivities()}
+              disabled={isLoading}
+              className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium disabled:opacity-50"
+              title="Reload calendar data"
+            >
+              {isLoading ? 'Loading...' : '🔄 Reload'}
+            </button>
+          </div>
+
           <div className="flex items-end">
             <button
               onClick={clearAllFilters}
               className="px-3 py-1.5 bg-red-50 border border-red-300 text-red-700 rounded-md hover:bg-red-100 text-xs font-medium"
             >
               Clear All
-            </button>
-          </div>
-
-          {/* Reload Button */}
-          <div className="flex items-end">
-            <button
-              onClick={() => loadActivities()}
-              disabled={isLoading}
-              className="px-3 py-1.5 border border-gray-300 rounded text-sm text-blue-600 hover:bg-blue-50 disabled:opacity-50"
-              title="Reload calendar data"
-            >
-              {isLoading ? 'Loading...' : '🔄 Reload'}
             </button>
           </div>
 
@@ -2650,7 +2651,14 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">Media ID:</span>
-                        <span className="text-sm font-mono font-medium text-gray-900">{partnerContext.person_id}</span>
+                        <a
+                          href={`https://fms.driveshop.com/people/list_activities/${partnerContext.person_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-mono font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          {partnerContext.person_id}
+                        </a>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">Office:</span>

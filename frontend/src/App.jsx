@@ -15,7 +15,7 @@ function AppContent() {
   const { logout } = useAuth();
   const [selectedOffice, setSelectedOffice] = useState('')
   const [selectedWeek, setSelectedWeek] = useState('')
-  const [activeTab, setActiveTab] = useState('upload')
+  const [activeTab, setActiveTab] = useState('calendar')
   const [optimizerOffice, setOptimizerOffice] = useState('Los Angeles') // Shared office state
   const [chainBuilderVehicle, setChainBuilderVehicle] = useState(null) // For Calendar→ChainBuilder navigation
   const [chainBuilderPartner, setChainBuilderPartner] = useState(null) // For Calendar→ChainBuilder partner navigation

@@ -224,11 +224,11 @@ async def get_calendar_activity(
             active_response = active_query.execute()
             active_data = active_response.data if active_response.data else []
 
-            # Join with vehicles to get make/model
+            # Join with vehicles to get make/model and vehicle_id
             active_df = pd.DataFrame(active_data) if active_data else pd.DataFrame()
             if not active_df.empty and not vehicles_df.empty:
                 active_df = active_df.merge(
-                    vehicles_df[['vin', 'make', 'model', 'office']],
+                    vehicles_df[['vin', 'vehicle_id', 'make', 'model', 'office']],
                     left_on='vehicle_vin',
                     right_on='vin',
                     how='left'
@@ -267,6 +267,11 @@ async def get_calendar_activity(
         # 4. Format responses
         activities = []
 
+        # Build VIN to vehicle_id lookup from vehicles_df
+        vin_to_vehicle_id = {}
+        if not vehicles_df.empty and 'vehicle_id' in vehicles_df.columns:
+            vin_to_vehicle_id = dict(zip(vehicles_df['vin'], vehicles_df['vehicle_id']))
+
         # Build a set of (vin, start_date) from active loans to avoid duplicates
         active_loan_keys = set()
         for loan in active_loans:
@@ -295,6 +300,7 @@ async def get_calendar_activity(
 
             activities.append({
                 'vin': loan.get('vin'),
+                'vehicle_id': vin_to_vehicle_id.get(loan.get('vin')),
                 'make': loan.get('make'),
                 'model': loan.get('model'),
                 'start_date': loan.get('start_date'),
@@ -326,6 +332,7 @@ async def get_calendar_activity(
             
             activities.append({
                 'vin': loan.get('vehicle_vin') or loan.get('vin'),
+                'vehicle_id': loan.get('vehicle_id'),
                 'make': loan.get('make'),
                 'model': loan.get('model'),
                 'start_date': loan.get('start_date'),
@@ -369,6 +376,7 @@ async def get_calendar_activity(
                     'assignment_id': loan.get('assignment_id'),  # CRITICAL for status changes and delete
                     'activity_id': loan.get('activity_id'),  # Link to FMS current_activity
                     'vin': loan.get('vin'),
+                    'vehicle_id': loan.get('vehicle_id') or vin_to_vehicle_id.get(loan.get('vin')),
                     'make': loan.get('make'),
                     'model': loan.get('model'),
                     'start_date': loan.get('start_day'),

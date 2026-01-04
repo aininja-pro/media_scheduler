@@ -1205,7 +1205,14 @@ export default function Partners({ office }) {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-600">Media ID:</span>
-                          <span className="text-sm font-mono font-medium text-gray-900">{partnerContext.person_id}</span>
+                          <a
+                            href={`https://fms.driveshop.com/people/list_activities/${partnerContext.person_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-mono font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                          >
+                            {partnerContext.person_id}
+                          </a>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-600">Office:</span>

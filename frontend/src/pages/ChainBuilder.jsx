@@ -108,6 +108,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   // Tier filter for Vehicle Chain (NEW)
   const [selectedTiers, setSelectedTiers] = useState(['A+', 'A', 'B', 'C']); // Default: all tiers
 
+
   // Helper: Get selected partner object for Combobox display
   const selectedPartnerObj = partners.find(p => p.person_id === selectedPartner) || null;
 
@@ -4107,11 +4108,6 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                             </p>
                           </div>
 
-                          {/* Score */}
-                          <div className="pt-2 border-t border-gray-200">
-                            <p className="text-xs text-gray-500 font-medium">Score</p>
-                            <p className="text-sm font-bold text-blue-600">{vehicle.score}</p>
-                          </div>
                         </div>
                       </div>);
                     })}
@@ -4706,12 +4702,6 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                           </div>
                         )}
 
-                        {/* Score */}
-                        <div className="pt-2 border-t border-gray-200">
-                          <p className="text-xs text-gray-500 font-medium">Score</p>
-                          <p className="text-sm font-bold text-blue-600">{slot.selected_partner.final_score}</p>
-                        </div>
-
                         {/* Engagement Level - Only show if NOT neutral */}
                         {slot.selected_partner.engagement_level && slot.selected_partner.engagement_level !== 'neutral' && (
                           <div className="pt-2 border-t border-gray-200">
@@ -4725,38 +4715,6 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                 ))}
               </div>
 
-              {/* Logistics Summary - Show when auto-generated chain exists */}
-              {vehicleChain && vehicleChain.logistics_summary && (
-                <div className="mt-6 bg-blue-50 rounded-lg p-4 border border-blue-200">
-                  <h4 className="text-sm font-semibold text-blue-900 mb-3">Chain Logistics</h4>
-                  <div className="grid grid-cols-4 gap-4 text-xs">
-                    <div>
-                      <p className="text-blue-600 font-medium">Total Distance</p>
-                      <p className="text-blue-900 font-bold text-lg">
-                        {(vehicleChain.logistics_summary.total_distance_miles || 0).toFixed(1)} mi
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-blue-600 font-medium">Drive Time</p>
-                      <p className="text-blue-900 font-bold text-lg">
-                        {vehicleChain.logistics_summary.total_drive_time_min || 0} min
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-blue-600 font-medium">Logistics Cost</p>
-                      <p className="text-blue-900 font-bold text-lg">
-                        ${(vehicleChain.logistics_summary.total_logistics_cost || 0).toFixed(2)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-blue-600 font-medium">Avg per Hop</p>
-                      <p className="text-blue-900 font-bold text-lg">
-                        {(vehicleChain.logistics_summary.average_hop_distance || 0).toFixed(1)} mi
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>

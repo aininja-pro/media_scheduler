@@ -1971,12 +1971,12 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
                 const maxRows = Math.max(1, ...activitiesWithRows.map(a => (a.rowIndex || 0) + 1));
                 const rowHeight = maxRows * 32; // 32px per row (h-8)
-                const totalHeight = rowHeight + 40; // Add padding
+                const totalHeight = rowHeight + 24; // Add padding
 
                 return (
                 <div key={viewMode === 'vehicle' ? item.vin : item.person_id} className="flex hover:bg-gray-50" style={{ minHeight: `${totalHeight}px` }}>
                   {/* Row info */}
-                  <div className="w-64 flex-shrink-0 px-4 py-3 border-r flex items-start min-h-full">
+                  <div className="w-64 flex-shrink-0 px-4 py-1.5 border-r flex items-start min-h-full">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -2619,8 +2619,8 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
       {selectedPartnerId && (
         <div className="fixed right-0 top-0 z-40 h-full">
           <div className="bg-white w-[700px] h-full shadow-2xl overflow-y-auto border-l border-gray-200">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-900">Media Partner Context</h2>
+            <div className="sticky top-0 bg-white px-6 py-4 flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-gray-900">Media Partner Details</h2>
               <button
                 onClick={closeSidePanel}
                 className="text-gray-400 hover:text-gray-600 focus:outline-none"
@@ -2643,33 +2643,24 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                 <div className="space-y-6">
                   {/* Media Partner Info */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Media Partner Details</h3>
                     <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">Name:</span>
-                        <span className="text-sm font-medium text-gray-900">{partnerContext.partner_name}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Media ID:</span>
                         <a
                           href={`https://fms.driveshop.com/people/list_activities/${partnerContext.person_id}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-sm font-mono font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                          className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
                         >
-                          {partnerContext.person_id}
+                          {partnerContext.partner_name}
                         </a>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Office:</span>
-                        <span className="text-sm font-medium text-gray-900">{partnerContext.office}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Region:</span>
-                        <span className="text-sm font-medium text-gray-900">{partnerContext.region}</span>
+                        <span className="text-sm text-gray-600">Office: {partnerContext.office}</span>
+                        <span className="text-sm text-gray-600">Region: {partnerContext.region}</span>
                       </div>
                       {partnerContext.distance_info && partnerContext.distance_info.success && (
-                        <div className="flex justify-between items-center border-t pt-2 mt-2">
+                        <div className="flex justify-between items-center">
                           <span className="text-sm text-gray-600">Distance:</span>
                           <div className="flex items-center gap-2">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
@@ -2736,9 +2727,9 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                           <thead className="bg-gray-50">
                             <tr>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Make</th>
-                              <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Tier</th>
+                              <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Rank</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Office Budget ({partnerContext.current_quarter || 'Q4'})</th>
-                              <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">%</th>
+                              <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Pub %</th>
                               <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Cost/Loan</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Partner Usage</th>
                             </tr>

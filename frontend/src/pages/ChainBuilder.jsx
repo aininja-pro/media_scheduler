@@ -69,7 +69,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   const [selectedPartner, setSelectedPartner] = useState('');
   const [startDate, setStartDate] = useState('');
   const [numVehicles, setNumVehicles] = useState(4);
-  const [daysPerLoan, setDaysPerLoan] = useState(8);
+  const [daysPerLoan, setDaysPerLoan] = useState(7);
   const [isLoading, setIsLoading] = useState(false);
   const [chain, setChain] = useState(null);
   const [error, setError] = useState('');
@@ -2551,41 +2551,6 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
-              <label className="text-sm text-gray-600">Office</label>
-              <select
-                value={selectedOffice}
-                onChange={(e) => handleOfficeChange(e.target.value)}
-                className="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {offices.map(office => (
-                  <option key={office} value={office}>{office}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Refresh Button */}
-            {selectedPartner && (
-              <button
-                onClick={refreshPartnerIntelligence}
-                disabled={loadingIntelligence}
-                className="px-3 py-1.5 border border-gray-300 rounded text-sm text-blue-600 hover:bg-blue-50 disabled:opacity-50"
-                title="Refresh partner calendar data"
-              >
-                {loadingIntelligence ? 'Refreshing...' : '🔄 Refresh'}
-              </button>
-            )}
-
-            {/* Clear/Reset Button */}
-            {selectedPartner && (
-              <button
-                onClick={clearChainBuilder}
-                className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50"
-                title="Clear and start fresh"
-              >
-                Clear
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -2625,6 +2590,43 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Chain Parameters</h2>
 
           <div className="space-y-4">
+            {/* Office Selector */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Office
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedOffice}
+                  onChange={(e) => handleOfficeChange(e.target.value)}
+                  className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {offices.map(office => (
+                    <option key={office} value={office}>{office}</option>
+                  ))}
+                </select>
+                {selectedPartner && (
+                  <button
+                    onClick={refreshPartnerIntelligence}
+                    disabled={loadingIntelligence}
+                    className="px-3 py-2 border border-gray-300 rounded text-sm text-blue-600 hover:bg-blue-50 disabled:opacity-50 whitespace-nowrap"
+                    title="Refresh partner calendar data"
+                  >
+                    {loadingIntelligence ? 'Refreshing...' : '🔄 Refresh'}
+                  </button>
+                )}
+                {selectedPartner && (
+                  <button
+                    onClick={clearChainBuilder}
+                    className="px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50"
+                    title="Clear and start fresh"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Partner Chain Mode - Partner Selector */}
             {chainMode === 'partner' && (
               <div>
@@ -3128,55 +3130,32 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                 </div>
 
                 <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Preference Mode
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className={`flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer text-xs ${
-                      preferenceMode === 'prioritize'
-                        ? 'bg-blue-50 border-blue-500 text-blue-700'
-                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                    }`}>
-                      <input
-                        type="radio"
-                        name="preferenceMode"
-                        value="prioritize"
-                        checked={preferenceMode === 'prioritize'}
-                        onChange={(e) => setPreferenceMode(e.target.value)}
-                        className="text-blue-600"
-                      />
-                      <div>
-                        <div className="font-medium">Prioritize</div>
-                        <div className="text-gray-500">Boost +800</div>
-                      </div>
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-gray-700">
+                      Strict
                     </label>
-
-                    <label className={`flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer text-xs ${
-                      preferenceMode === 'strict'
-                        ? 'bg-blue-50 border-blue-500 text-blue-700'
-                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                    }`}>
-                      <input
-                        type="radio"
-                        name="preferenceMode"
-                        value="strict"
-                        checked={preferenceMode === 'strict'}
-                        onChange={(e) => setPreferenceMode(e.target.value)}
-                        className="text-blue-600"
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={preferenceMode === 'strict'}
+                      onClick={() => setPreferenceMode(preferenceMode === 'strict' ? 'prioritize' : 'strict')}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                        preferenceMode === 'strict' ? 'bg-blue-600' : 'bg-gray-200'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          preferenceMode === 'strict' ? 'translate-x-5' : 'translate-x-0'
+                        }`}
                       />
-                      <div>
-                        <div className="font-medium">Strict</div>
-                        <div className="text-gray-500">Only these</div>
-                      </div>
-                    </label>
+                    </button>
                   </div>
-
-                  <div className="mt-2 text-xs text-gray-500">
-                    {preferenceMode === 'prioritize' && modelPreferences.length > 0 && (
-                      <span>✓ Selected models will receive +800 score boost</span>
-                    )}
+                  <div className="mt-1 text-xs text-gray-500">
                     {preferenceMode === 'strict' && modelPreferences.length > 0 && (
-                      <span>⚠️ Chain will ONLY include selected models</span>
+                      <span>Only selected models will be used</span>
+                    )}
+                    {preferenceMode !== 'strict' && modelPreferences.length > 0 && (
+                      <span>Selected models will be prioritized</span>
                     )}
                     {modelPreferences.length === 0 && (
                       <span>No models selected - preferences will not apply</span>

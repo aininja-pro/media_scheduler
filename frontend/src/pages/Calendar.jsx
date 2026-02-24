@@ -275,35 +275,39 @@ function VehicleReviewHistory({ vin, office }) {
 
   const displayedReviews = showAll ? reviewHistory.reviews : reviewHistory.reviews.slice(0, 5);
 
+  const formatShortDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
   return (
     <div>
-      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">📋 Review History</h3>
-      <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-        {displayedReviews.map((review, idx) => (
-          <div key={idx} className="bg-white rounded border border-gray-200 p-2 hover:border-blue-300 transition-colors">
-            <div className="flex justify-between items-start">
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900">{review.partner_name}</p>
-                <p className="text-xs text-gray-500" title={`${review.start_date} to ${review.end_date}`}>
-                  {formatRelativeDate(review.start_date)}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-base ${review.published ? 'text-green-600' : 'text-gray-400'}`}>
-                  {review.published ? '✓' : '✗'}
-                </span>
-                {review.clips_count > 0 && (
-                  <span className="text-xs font-bold text-blue-600">
-                    {review.clips_count} clip{review.clips_count !== 1 ? 's' : ''}
+      <h3 className="text-sm font-medium text-gray-700 mb-2">Review History</h3>
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Start</th>
+              <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">End</th>
+              <th className="px-3 py-1.5 text-center text-xs font-medium text-gray-500 uppercase">Published</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {displayedReviews.map((review, idx) => (
+              <tr key={idx} className="hover:bg-gray-50">
+                <td className="px-3 py-1.5 text-sm text-gray-900">{review.partner_name}</td>
+                <td className="px-3 py-1.5 text-xs text-gray-600">{formatShortDate(review.start_date)}</td>
+                <td className="px-3 py-1.5 text-xs text-gray-600">{formatShortDate(review.end_date)}</td>
+                <td className="px-3 py-1.5 text-center">
+                  <span className={`text-base ${review.published ? 'text-green-600' : 'text-gray-400'}`}>
+                    {review.published ? '✓' : '✗'}
                   </span>
-                )}
-              </div>
-            </div>
-            {!review.published && (
-              <p className="text-xs text-gray-400 mt-1">Not Published</p>
-            )}
-          </div>
-        ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
         {reviewHistory.total_historical_reviews > 5 && !showAll && (
           <button
@@ -2153,8 +2157,8 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
       {selectedVin && (
         <div className="fixed right-0 top-0 z-40 h-full">
           <div className="bg-white w-[700px] h-full shadow-2xl overflow-y-auto border-l border-gray-200">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-900">Vehicle Context</h2>
+            <div className="sticky top-0 bg-white px-6 py-4 flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-gray-900">Vehicle Details</h2>
               <button
                 onClick={closeSidePanel}
                 className="text-gray-400 hover:text-gray-600 focus:outline-none"
@@ -2174,87 +2178,46 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                   </svg>
                 </div>
               ) : vehicleContext ? (
-                <div className="space-y-6">
+                <div className="space-y-4">
                   {/* Vehicle Info with Intelligence */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Vehicle Details</h3>
-                    <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">VIN:</span>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      {/* VIN row */}
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs text-gray-500">VIN:</span>
                         <a
                           href={`https://fms.driveshop.com/vehicles/list_activities/${vehicleContext.vehicle_id}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-sm font-mono font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                          className="text-xs font-mono font-medium text-blue-600 hover:text-blue-800 hover:underline"
                           title="Open in FMS"
                         >
                           {vehicleContext.vin}
                         </a>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Make:</span>
-                        <span className="text-sm font-medium text-gray-900">{vehicleContext.make}</span>
+                      {/* Compact multi-column grid */}
+                      <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-sm">
+                        <div><span className="text-gray-500 text-xs">Make:</span> <span className="font-medium text-gray-900">{vehicleContext.make}</span></div>
+                        <div><span className="text-gray-500 text-xs">Model:</span> <span className="font-medium text-gray-900">{vehicleContext.model}</span></div>
+                        <div><span className="text-gray-500 text-xs">Year:</span> <span className="font-medium text-gray-900">{vehicleContext.vehicle_intelligence?.year || 'N/A'}</span></div>
+                        <div><span className="text-gray-500 text-xs">Office:</span> <span className="font-medium text-gray-900">{vehicleContext.office}</span></div>
+                        <div><span className="text-gray-500 text-xs">Mileage:</span> <span className="font-medium text-gray-900">{vehicleContext.mileage}</span></div>
+                        {vehicleContext.color && (
+                          <div><span className="text-gray-500 text-xs">Color:</span> <span className="font-medium text-gray-900">{vehicleContext.color}</span></div>
+                        )}
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Model:</span>
-                        <span className="text-sm font-medium text-gray-900">{vehicleContext.model}</span>
+                      {/* Last Known Location */}
+                      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200">
+                        <svg className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                        </svg>
+                        <span className="text-xs text-gray-500">Last Known Location:</span>
+                        <span className="text-sm text-gray-900">
+                          {vehicleContext.last_known_location && !vehicleContext.last_known_location.toLowerCase().includes('unknown')
+                            ? vehicleContext.last_known_location
+                            : 'In Storage'}
+                        </span>
                       </div>
-                      {vehicleContext.vehicle_intelligence && (
-                        <>
-                          {vehicleContext.vehicle_intelligence.year && vehicleContext.vehicle_intelligence.year !== 'N/A' && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-600">Year:</span>
-                              <span className="text-sm font-medium text-gray-900">{vehicleContext.vehicle_intelligence.year}</span>
-                            </div>
-                          )}
-                          {vehicleContext.vehicle_intelligence.tier && vehicleContext.vehicle_intelligence.tier !== 'N/A' && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-600">Tier:</span>
-                              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                                vehicleContext.vehicle_intelligence.tier === 'A' ? 'bg-green-100 text-green-800' :
-                                vehicleContext.vehicle_intelligence.tier === 'B' ? 'bg-blue-100 text-blue-800' :
-                                vehicleContext.vehicle_intelligence.tier === 'C' ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-gray-100 text-gray-800'
-                              }`}>
-                                {vehicleContext.vehicle_intelligence.tier}
-                              </span>
-                            </div>
-                          )}
-                          {vehicleContext.vehicle_intelligence.trim && vehicleContext.vehicle_intelligence.trim !== 'N/A' && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-600">Trim:</span>
-                              <span className="text-sm font-medium text-gray-900">{vehicleContext.vehicle_intelligence.trim}</span>
-                            </div>
-                          )}
-                        </>
-                      )}
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Office:</span>
-                        <span className="text-sm font-medium text-gray-900">{vehicleContext.office}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Mileage:</span>
-                        <span className="text-sm font-medium text-gray-900">{vehicleContext.mileage}</span>
-                      </div>
-                      {vehicleContext.color && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Color:</span>
-                          <span className="text-sm font-medium text-gray-900">{vehicleContext.color}</span>
-                        </div>
-                      )}
-                      {vehicleContext.last_known_location && (
-                        <div className="border-t pt-2 mt-2">
-                          <div className="flex items-start">
-                            <svg className="w-4 h-4 text-blue-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                            </svg>
-                            <div className="flex-1">
-                              <p className="text-xs text-gray-500 font-medium">Last Known Location</p>
-                              <p className="text-sm text-gray-900 mt-0.5">{vehicleContext.last_known_location}</p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
 
                       {/* Build Chain Button */}
                       <div className="border-t pt-3 mt-3">
@@ -2336,48 +2299,6 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                               </p>
                             </div>
                           )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Publication Performance by Partner */}
-                  {vehicleContext.publication_by_partner && Object.keys(vehicleContext.publication_by_partner).length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Publication Performance by Partner</h3>
-                      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                        <div className="overflow-x-auto">
-                          <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                              <tr>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Partner</th>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Total</th>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Published</th>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Rate</th>
-                              </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                              {Object.entries(vehicleContext.publication_by_partner)
-                                .sort(([,a], [,b]) => b.total - a.total)
-                                .slice(0, 10)
-                                .map(([partnerName, stats]) => (
-                                  <tr key={partnerName} className="hover:bg-gray-50">
-                                    <td className="px-4 py-2 text-sm text-gray-900">{partnerName}</td>
-                                    <td className="px-4 py-2 text-sm text-center text-gray-700">{stats.total}</td>
-                                    <td className="px-4 py-2 text-sm text-center text-blue-600 font-medium">{stats.published}</td>
-                                    <td className="px-4 py-2 text-center">
-                                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                        stats.rate >= 80 ? 'bg-green-100 text-green-800' :
-                                        stats.rate >= 50 ? 'bg-amber-100 text-amber-800' :
-                                        'bg-red-100 text-red-800'
-                                      }`}>
-                                        {stats.rate}%
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </table>
                         </div>
                       </div>
                     </div>

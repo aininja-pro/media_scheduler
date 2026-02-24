@@ -586,7 +586,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
       {/* Compact Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
-          <h1 className="!text-base font-semibold text-gray-900">Schedule Optimizer</h1>
+          <h1 className="!text-base font-semibold text-gray-900">Loan Recommendations</h1>
 
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
@@ -681,10 +681,6 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                 </>
               )}
 
-              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                Seed: 42
-              </span>
-
               <button
                 onClick={runOptimizer}
                 disabled={isLoading || !metrics}
@@ -754,16 +750,6 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-semibold text-gray-900">{getWeekdayCapacity()}</span>
                 <span className="text-sm text-gray-500">slots</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Possible Schedules</div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-sm text-gray-500">{metrics.feasible_triples_pre_cooldown.toLocaleString()}</span>
-                <span className="text-sm text-gray-500">→ Ready:</span>
-                <span className="text-2xl font-semibold text-gray-900">{metrics.feasible_triples_post_cooldown.toLocaleString()}</span>
-                <span className="text-sm text-red-600">(-{metrics.cooldown_removed_triples.toLocaleString()})</span>
               </div>
             </div>
 
@@ -1500,130 +1486,11 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
           )}
         </div>
 
-        {/* Right Panel - Audit & Reports */}
+        {/* Right Panel - Budget Impacts */}
         <div className="w-80 bg-white border-l p-6 overflow-y-auto">
-          <h2 className="text-lg font-semibold text-gray-900 mb-6">Audit & Reports</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-6">Budget Impacts</h2>
 
           <div className="space-y-6">
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Fairness Metrics</h3>
-              <div className="bg-gray-50 rounded p-3">
-                {runResult?.fairness_summary ? (
-                  <div className="space-y-3 text-sm">
-                    {/* Basic Stats */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Partners Used:</span>
-                        <span className="font-medium text-gray-900">{runResult.fairness_summary.partners_assigned || 0}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Max per Media:</span>
-                        <span className="font-medium text-gray-900">{runResult.fairness_summary.max_per_partner || 0}</span>
-                      </div>
-                      {runResult.fairness_summary.num_partners !== undefined && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Multiple Vehicles:</span>
-                          <span className="font-medium text-gray-900">{runResult.fairness_summary.partners_with_multiple || 0}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Gini Coefficient */}
-                    <div className="border-t pt-2">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs font-medium text-gray-500 uppercase">Gini Coefficient</span>
-                        <span className="text-sm font-semibold text-gray-900">
-                          {runResult.fairness_summary.gini_coefficient !== undefined
-                            ? runResult.fairness_summary.gini_coefficient.toFixed(2)
-                            : (runResult.fairness_summary.gini || 0).toFixed(2)}
-                        </span>
-                      </div>
-                      <div className="flex items-center">
-                        <div className="flex-1 bg-gray-200 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full ${
-                              (runResult.fairness_summary.gini_coefficient || runResult.fairness_summary.gini || 0) < 0.3
-                                ? 'bg-green-500'
-                                : (runResult.fairness_summary.gini_coefficient || runResult.fairness_summary.gini || 0) < 0.5
-                                  ? 'bg-yellow-500'
-                                  : 'bg-orange-500'
-                            }`}
-                            style={{ width: `${((runResult.fairness_summary.gini_coefficient || runResult.fairness_summary.gini || 0) * 100)}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                      <div className="flex justify-between text-xs text-gray-400 mt-1">
-                        <span>Equal</span>
-                        <span>Concentrated</span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        {(runResult.fairness_summary.gini_coefficient || runResult.fairness_summary.gini || 0) < 0.3
-                          ? '✓ Well distributed'
-                          : (runResult.fairness_summary.gini_coefficient || runResult.fairness_summary.gini || 0) < 0.5
-                            ? '⚠ Moderate concentration'
-                            : '⚠ High concentration'}
-                      </p>
-                    </div>
-
-                    {/* Additional Metrics if available */}
-                    {(runResult.fairness_summary.hhi !== undefined ||
-                      runResult.fairness_summary.top_5_share !== undefined ||
-                      runResult.fairness_summary.top_1_share !== undefined) && (
-                      <div className="border-t pt-2 space-y-1">
-                        <p className="text-xs font-medium text-gray-500 uppercase mb-1.5">Concentration</p>
-                        {runResult.fairness_summary.hhi !== undefined && (
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-600">HHI Index:</span>
-                            <span className="font-medium text-gray-900">{(runResult.fairness_summary.hhi * 10000).toFixed(0)}</span>
-                          </div>
-                        )}
-                        {runResult.fairness_summary.top_1_share !== undefined && (
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-600">Top Media:</span>
-                            <span className="font-medium text-gray-900">{(runResult.fairness_summary.top_1_share * 100).toFixed(0)}%</span>
-                          </div>
-                        )}
-                        {runResult.fairness_summary.top_5_share !== undefined && (
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-600">Top 5 Media:</span>
-                            <span className="font-medium text-gray-900">{(runResult.fairness_summary.top_5_share * 100).toFixed(0)}%</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-400">Run optimizer to see metrics</div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Cap Violations</h3>
-              <div className="bg-gray-50 rounded p-3">
-                {runResult?.cap_summary ? (
-                  <div className="space-y-2 text-sm">
-                    {runResult.cap_summary.violations && runResult.cap_summary.violations.length > 0 ? (
-                      <>
-                        {runResult.cap_summary.violations.map((violation, idx) => (
-                          <div key={idx} className="text-red-600">
-                            {violation.tier}: {violation.count} (cap: {violation.cap})
-                          </div>
-                        ))}
-                        <div className="text-xs text-gray-500">
-                          Penalty: {runResult.cap_summary.total_penalty || 0}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="text-green-600">✓ No cap violations</div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-400">Run optimizer to see metrics</div>
-                )}
-              </div>
-            </div>
-
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-3">Available to Spend</h3>
               <div className="bg-gray-50 rounded p-3">
@@ -1684,128 +1551,6 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
               </div>
             </div>
 
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Cost Analysis</h3>
-              <div className="bg-gray-50 rounded p-3">
-                {runResult?.cost_breakdown ? (
-                  <div className="space-y-3 text-sm">
-                    {/* Total Cost */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-700 font-semibold">Total Cost:</span>
-                        <span className="text-lg font-bold text-blue-600">
-                          ${runResult.cost_breakdown.total_cost?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-600">Average per assignment:</span>
-                        <span className="font-medium text-gray-900">
-                          ${runResult.cost_breakdown.average_cost?.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Tier Breakdown */}
-                    <div className="border-t pt-2">
-                      <p className="text-xs font-medium text-gray-500 uppercase mb-1.5">Cost Data Quality</p>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-600">Exact matches:</span>
-                          <span className="font-medium text-green-600">
-                            {runResult.cost_breakdown.tier_breakdown?.exact || 0} assignments
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-600">Partner averages:</span>
-                          <span className="font-medium text-yellow-600">
-                            {runResult.cost_breakdown.tier_breakdown?.partner_avg || 0} assignments
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-600">Default ($400):</span>
-                          <span className="font-medium text-gray-600">
-                            {runResult.cost_breakdown.tier_breakdown?.default || 0} assignments
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        {runResult.cost_breakdown.tier_breakdown?.exact === runResult.assignments_count
-                          ? '✓ All costs from exact data'
-                          : `${Math.round((runResult.cost_breakdown.tier_breakdown?.exact / runResult.assignments_count) * 100)}% exact matches`}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-400">Run optimizer to see cost analysis</div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Objective Breakdown</h3>
-              <div className="bg-gray-50 rounded p-3">
-                {runResult?.objective_breakdown ? (
-                  <div className="space-y-3 text-sm">
-                    {/* Positive Score */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Raw Score:</span>
-                        <span className="font-medium text-green-600">+{runResult.objective_breakdown.raw_score?.toLocaleString() || 0}</span>
-                      </div>
-                      <p className="text-xs text-gray-500">Points from good matches (quality, location, publication rate)</p>
-                    </div>
-
-                    {/* Penalties */}
-                    <div className="border-t pt-2 space-y-1.5">
-                      <p className="text-xs font-medium text-gray-500 uppercase">Penalties</p>
-
-                      {runResult.objective_breakdown.cap_penalty > 0 && (
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-600">Tier Cap Violations:</span>
-                          <span className="font-medium text-red-600">-{runResult.objective_breakdown.cap_penalty?.toLocaleString()}</span>
-                        </div>
-                      )}
-
-                      {runResult.objective_breakdown.fairness_penalty > 0 && (
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-600">Fairness Concentration:</span>
-                          <span className="font-medium text-red-600">-{runResult.objective_breakdown.fairness_penalty?.toLocaleString()}</span>
-                        </div>
-                      )}
-
-                      {runResult.objective_breakdown.budget_penalty > 0 && (
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-600">Budget Overages:</span>
-                          <span className="font-medium text-red-600">-{runResult.objective_breakdown.budget_penalty?.toLocaleString()}</span>
-                        </div>
-                      )}
-
-                      {runResult.objective_breakdown.total_penalties === 0 && (
-                        <div className="text-xs text-green-600">✓ No penalties applied</div>
-                      )}
-
-                      {runResult.objective_breakdown.total_penalties > 0 && (
-                        <div className="flex justify-between text-xs font-medium border-t pt-1 mt-1">
-                          <span className="text-gray-700">Total Penalties:</span>
-                          <span className="text-red-600">-{runResult.objective_breakdown.total_penalties?.toLocaleString()}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Net Score */}
-                    <div className="border-t pt-2">
-                      <div className="flex justify-between items-center">
-                        <span className="font-semibold text-gray-700">Net Score:</span>
-                        <span className="text-lg font-bold text-blue-600">{runResult.objective_breakdown.net_score?.toLocaleString() || 0}</span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">Final optimized score</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-400">Run optimizer to see breakdown</div>
-                )}
-              </div>
-            </div>
           </div>
         </div>
       </div>

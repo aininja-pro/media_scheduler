@@ -14,7 +14,7 @@ const TabNavigation = ({ activeTab, onTabChange }) => {
   const tabs = [
     { id: 'chain-builder', label: 'Chain Builder' },
     { id: 'calendar', label: 'Calendar' },
-    { id: 'optimizer', label: 'Optimizer' },
+    { id: 'optimizer', label: 'Loan Recommendations' },
     { id: 'upload', label: 'Upload Data' }
   ];
 

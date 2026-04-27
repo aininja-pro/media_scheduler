@@ -1724,37 +1724,42 @@ async def suggest_vehicle_chain(
             office=office
         )
 
-        # Filter out partners who are busy during ANY slot in the chain
+        # Keep partners who are available for at least one slot. Slot-specific
+        # availability is passed into the solver so it cannot assign a partner
+        # to a busy slot.
         available_partner_ids = []
         unavailable_partners = []
+        partner_slot_availability = {}
         for partner_id in eligible_partner_ids:
-            # Check availability for each slot
-            all_slots_available = True
-            for slot in slot_dates:
+            has_available_slot = False
+            for slot_index, slot in enumerate(slot_dates):
                 availability_check = check_partner_slot_availability(
                     person_id=partner_id,
                     slot_start=slot.start_date,
                     slot_end=slot.end_date,
                     availability_df=partner_availability_grid
                 )
-                if not availability_check['available']:
-                    all_slots_available = False
+                is_available = availability_check['available']
+                partner_slot_availability[(int(partner_id), slot_index)] = is_available
+
+                if is_available:
+                    has_available_slot = True
+                else:
                     unavailable_partners.append({
                         'person_id': partner_id,
                         'conflict_slot': f"{slot.start_date} to {slot.end_date}",
                         'reason': availability_check.get('reason', 'unknown')
                     })
-                    break  # No need to check remaining slots
 
-            if all_slots_available:
+            if has_available_slot:
                 available_partner_ids.append(partner_id)
 
-        logger.info(f"Availability filtering: {len(available_partner_ids)} available across all slots, {len(unavailable_partners)} have conflicts")
+        logger.info(f"Availability filtering: {len(available_partner_ids)} partners available for at least one slot, {len(unavailable_partners)} slot conflicts")
 
         if not available_partner_ids:
             raise HTTPException(
                 status_code=404,
-                detail=f"No partners available for entire chain period ({chain_start} to {chain_end}). All {len(eligible_partner_ids)} eligible partners have scheduling conflicts."
+                detail=f"No partners available for any chain slot ({chain_start} to {chain_end}). All {len(eligible_partner_ids)} eligible partners have scheduling conflicts."
             )
 
         # Update eligible list to only include available partners
@@ -1812,6 +1817,7 @@ async def suggest_vehicle_chain(
             distance_weight=distance_weight,
             max_distance_per_hop=max_distance_per_hop,
             distance_cost_per_mile=distance_cost_per_mile,
+            partner_slot_availability=partner_slot_availability,
             solver_timeout_seconds=30.0
         )
 

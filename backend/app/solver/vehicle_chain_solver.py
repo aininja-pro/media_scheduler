@@ -146,6 +146,7 @@ def solve_vehicle_chain(
     distance_weight: float = 0.7,
     max_distance_per_hop: float = 50.0,
     distance_cost_per_mile: float = 2.0,
+    partner_slot_availability: Optional[Dict[Tuple[int, int], bool]] = None,
     solver_timeout_seconds: float = 30.0
 ) -> VehicleChainResult:
     """
@@ -233,7 +234,17 @@ def solve_vehicle_chain(
         for candidate in candidates_with_coords:
             model.Add(sum(x[candidate.person_id, slot] for slot in range(num_partners)) <= 1)
 
-        # Constraint 3: Flow linking - flow[p1,p2,s] = 1 IFF x[p1,s]=1 AND x[p2,s+1]=1
+        # Constraint 3: Partners can only be assigned to slots where they are available.
+        if partner_slot_availability:
+            unavailable_assignments = 0
+            for candidate in candidates_with_coords:
+                for slot in range(num_partners):
+                    if not partner_slot_availability.get((candidate.person_id, slot), True):
+                        model.Add(x[candidate.person_id, slot] == 0)
+                        unavailable_assignments += 1
+            logger.info(f"Partner slot availability constraints: blocked {unavailable_assignments} assignments")
+
+        # Constraint 4: Flow linking - flow[p1,p2,s] = 1 IFF x[p1,s]=1 AND x[p2,s+1]=1
         for slot in range(num_partners - 1):
             for c1 in candidates_with_coords:
                 for c2 in candidates_with_coords:
@@ -247,7 +258,7 @@ def solve_vehicle_chain(
                             x[c1.person_id, slot] + x[c2.person_id, slot + 1] - 1
                         )
 
-        # Constraint 4: Flow conservation - each slot (except last) has exactly one outgoing flow
+        # Constraint 5: Flow conservation - each slot (except last) has exactly one outgoing flow
         for slot in range(num_partners - 1):
             model.Add(
                 sum(flow[c1.person_id, c2.person_id, slot]
@@ -256,7 +267,7 @@ def solve_vehicle_chain(
                     if c1.person_id != c2.person_id) == 1
             )
 
-        # Constraint 5: CRITICAL - Max distance per hop (hard constraint)
+        # Constraint 6: CRITICAL - Max distance per hop (hard constraint)
         infeasible_pairs = 0
         for slot in range(num_partners - 1):
             for c1 in candidates_with_coords:

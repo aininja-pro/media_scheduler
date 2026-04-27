@@ -2391,26 +2391,28 @@ async def get_partner_intelligence(
             logger.error(f"Error fetching budget data: {e}")
             # Continue without budget data
 
-        # 3c. Calculate per-make publication rates
+        # 3c. Calculate selected-partner per-make publication rates for the same 12-month window.
         publication_by_make = {}
         try:
-            if not loan_history_df.empty:
-                pub_rate_df = compute_publication_rate_24m(
-                    loan_history_df=loan_history_df,
-                    as_of_date=None,  # Use today
-                    window_months=24,
-                    min_observed=1
-                )
+            if not summary_df.empty and 'make' in summary_df.columns:
+                for make, make_loans in summary_df.groupby('make'):
+                    if pd.isna(make):
+                        continue
 
-                # Filter to this partner
-                partner_pub_rates = pub_rate_df[pub_rate_df['person_id'] == person_id]
+                    has_clip_data = 'clips_received' in make_loans.columns and make_loans['clips_received'].notna().any()
+                    published = 0
+                    if has_clip_data:
+                        published = make_loans['clips_received'].apply(
+                            lambda x: str(x).strip().lower() in {'1', '1.0', 'true', 'yes', 'y'} if pd.notna(x) else False
+                        ).sum()
 
-                for _, row in partner_pub_rates.iterrows():
-                    publication_by_make[row['make']] = {
-                        'rate': round(float(row['publication_rate']), 3) if pd.notna(row['publication_rate']) else None,
-                        'published': int(row['publications_24m']),
-                        'total': int(row['loans_total_24m']),
-                        'has_data': bool(row['has_clip_data'])
+                    total = len(make_loans)
+                    publication_by_make[make] = {
+                        'rate': round(float(published / total), 3) if has_clip_data and total > 0 else None,
+                        'published': int(published),
+                        'total': int(total),
+                        'has_data': bool(has_clip_data),
+                        'window_label': 'Last 12 months'
                     }
         except Exception as e:
             logger.error(f"Error calculating publication rates: {e}")

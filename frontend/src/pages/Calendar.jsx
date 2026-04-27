@@ -2670,15 +2670,16 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                             {[...partnerContext.approved_makes].sort((a, b) => a.make.localeCompare(b.make)).map((item, idx) => {
                               const makeUpper = item.make.toUpperCase();
                               const budget = partnerContext.budget_status?.[makeUpper];
-                              const percentUsed = budget?.percent_used || null;
+                              const publicationData = partnerContext.publication_by_make?.[item.make];
+                              const publicationRate = publicationData?.rate ?? null;
                               const loanCount = item.loan_count || 0;
                               const totalCost = item.total_spend || (loanCount * (item.media_cost || 400));
                               
                               // Color code budget percentage
                               let percentColor = 'text-gray-500';
-                              if (percentUsed !== null) {
-                                if (percentUsed < 40) percentColor = 'text-green-600 font-semibold';
-                                else if (percentUsed < 75) percentColor = 'text-amber-600 font-semibold';
+                              if (publicationRate !== null) {
+                                if (publicationRate >= 0.75) percentColor = 'text-green-600 font-semibold';
+                                else if (publicationRate >= 0.50) percentColor = 'text-amber-600 font-semibold';
                                 else percentColor = 'text-red-600 font-semibold';
                               }
                               
@@ -2702,7 +2703,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                                     )}
                                   </td>
                                   <td className={`px-4 py-2 text-sm text-center ${percentColor}`}>
-                                    {percentUsed !== null ? `${Math.round(percentUsed)}%` : '-'}
+                                    {publicationRate !== null ? `${Math.round(publicationRate * 100)}%` : '-'}
                                   </td>
                                   <td className="px-4 py-2 text-sm text-center text-gray-600">
                                     ${Math.round(item.media_cost || 400).toLocaleString()}
@@ -2754,7 +2755,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                       {/* Per-make breakdown */}
                       {partnerContext.publication_by_make && Object.keys(partnerContext.publication_by_make).length > 0 && (
                         <div className="bg-white rounded-lg border border-gray-200 p-3">
-                          <p className="text-xs text-gray-500 font-medium mb-2">By Make (24-month):</p>
+                          <p className="text-xs text-gray-500 font-medium mb-2">By Make (Last 12 months):</p>
                           <div className="space-y-1.5">
                             {Object.entries(partnerContext.publication_by_make)
                               .sort(([, a], [, b]) => (b.rate || 0) - (a.rate || 0))

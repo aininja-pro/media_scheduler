@@ -20,9 +20,108 @@ from ..solver.ortools_solver_v2 import add_score_to_triples
 from ..etl.publication import compute_publication_rate_24m, compute_recency_scores
 from ..utils.geocoding import get_distance_from_office
 from ..utils.media_costs import get_cost_for_assignment, calculate_assignment_costs
+from ..solver.budget_constraints import normalize_fleet_name, get_quarter_from_date
 
 router = APIRouter(prefix="/ui/phase7", tags=["UI Phase 7"])
 logger = logging.getLogger(__name__)
+
+
+# Fleets excluded from budget display (not actively scheduled)
+_EXCLUDED_BUDGET_FLEETS = {'BENTLEY', 'FERRARI', 'MASERATI'}
+
+
+def _next_quarter(year: int, quarter: str) -> tuple:
+    """Return (year, quarter) for the quarter immediately after the given one."""
+    qnum = int(quarter[1])
+    if qnum == 4:
+        return year + 1, 'Q1'
+    return year, f'Q{qnum + 1}'
+
+
+def _build_budget_summary_for_quarter(
+    office: str,
+    year: int,
+    quarter: str,
+    planned_by_fleet: Dict[str, float],
+    fleet_sources_seed: Dict[str, List[str]],
+    budgets_df: pd.DataFrame,
+) -> Optional[Dict[str, Any]]:
+    """
+    Build the budget_summary dict ({fleets, total}) for one (office, year, quarter).
+
+    planned_by_fleet keys must already be normalized fleet names (via normalize_fleet_name)
+    and partitioned to this specific quarter by the caller.
+    Returns None if the budgets table has no rows for this quarter.
+    """
+    if budgets_df.empty:
+        return None
+
+    quarter_budgets = budgets_df[
+        (budgets_df['office'] == office)
+        & (budgets_df['year'] == year)
+        & (budgets_df['quarter'] == quarter)
+    ]
+
+    if quarter_budgets.empty:
+        return None
+
+    budget_fleets: Dict[str, Dict[str, float]] = {}
+    fleet_sources: Dict[str, List[str]] = {k: list(v) for k, v in fleet_sources_seed.items()}
+
+    for _, row in quarter_budgets.iterrows():
+        raw_fleet = str(row['fleet']) if pd.notna(row['fleet']) else ''
+        fleet = normalize_fleet_name(raw_fleet)
+
+        if fleet in _EXCLUDED_BUDGET_FLEETS:
+            continue
+
+        current_used = float(row['amount_used']) if pd.notna(row['amount_used']) else 0
+        budget_amount = float(row['budget_amount']) if pd.notna(row['budget_amount']) else 0
+
+        if fleet in budget_fleets:
+            budget_fleets[fleet]['current'] += int(current_used)
+            budget_fleets[fleet]['budget'] += int(budget_amount)
+        else:
+            planned_spend = planned_by_fleet.get(fleet, 0)
+            budget_fleets[fleet] = {
+                'current': int(current_used),
+                'planned': planned_spend,
+                'projected': int(current_used) + planned_spend,
+                'budget': int(budget_amount),
+            }
+
+        # Recompute projected after possible aggregation of a sibling row
+        budget_fleets[fleet]['projected'] = (
+            budget_fleets[fleet]['current'] + budget_fleets[fleet]['planned']
+        )
+
+        fleet_sources.setdefault(fleet, []).append(raw_fleet.upper())
+
+    # Relabel merged buckets so the UI shows e.g. "TOYOTA/LEXUS"
+    relabeled_fleets: Dict[str, Dict[str, float]] = {}
+    for fleet, data in budget_fleets.items():
+        sources = fleet_sources.get(fleet, [fleet])
+        unique_sources = sorted(dict.fromkeys(sources))
+        label = '/'.join(unique_sources) if len(unique_sources) > 1 else fleet
+        relabeled_fleets[label] = data
+    budget_fleets = relabeled_fleets
+
+    if not budget_fleets:
+        return None
+
+    total_current = sum(f['current'] for f in budget_fleets.values())
+    total_planned = sum(f['planned'] for f in budget_fleets.values())
+    total_budget = sum(f['budget'] for f in budget_fleets.values())
+
+    return {
+        'fleets': budget_fleets,
+        'total': {
+            'current': total_current,
+            'planned': total_planned,
+            'projected': total_current + total_planned,
+            'budget': total_budget,
+        },
+    }
 
 
 def calculate_cost_per_make(budgets_df: pd.DataFrame, loan_history_df: pd.DataFrame, office: str) -> Dict[str, float]:
@@ -533,81 +632,7 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             'total_penalty': int(cap_summary_df.attrs.get('total_penalty', 0)) if hasattr(cap_summary_df, 'attrs') else 0
         }
 
-        # Budget summary - show ALL fleets from budgets table for current quarter
-        # Determine quarter from week_start
-        week_start_dt = datetime.strptime(request.week_start, '%Y-%m-%d')
-        current_year = week_start_dt.year
-        current_month = week_start_dt.month
-        current_quarter = f'Q{((current_month - 1) // 3) + 1}'
-
-        budget_fleets = {}
-        budget_total = {'used': 0, 'budget': 0}
-
-        # Get ALL budgets for this office and quarter
-        quarter_budgets = budgets_df[
-            (budgets_df['office'] == request.office) &
-            (budgets_df['year'] == current_year) &
-            (budgets_df['quarter'] == current_quarter)
-        ]
-
-        # Create a lookup for planned spend by fleet from solver results (normalize so
-        # Lexus rolls into Toyota, etc.)
-        from app.solver.budget_constraints import normalize_fleet_name
-        planned_by_fleet = {}
-        budget_summary_df = solver_result.get('budget_summary', pd.DataFrame())
-        if not budget_summary_df.empty:
-            for _, row in budget_summary_df.iterrows():
-                fleet = normalize_fleet_name(row.get('fleet', 'Unknown'))
-                planned_spend = float(row.get('planned_spend', 0))
-                planned_by_fleet[fleet] = planned_by_fleet.get(fleet, 0) + planned_spend
-
-        # Build budget summary for ALL fleets in the quarter
-        # Track totals separately for current, planned, and projected
-        budget_total_current = 0
-        budget_total_planned = 0
-
-        # Exclude fleets that are not scheduled
-        excluded_fleets = {'BENTLEY', 'FERRARI', 'MASERATI'}
-
-        # Track raw source names per canonical bucket so merged rows can be
-        # rendered as e.g. "TOYOTA/LEXUS" instead of just "TOYOTA"
-        fleet_sources = {}
-
-        for _, row in quarter_budgets.iterrows():
-            raw_fleet = str(row['fleet']) if pd.notna(row['fleet']) else ''
-            fleet = normalize_fleet_name(raw_fleet)
-
-            # Skip excluded fleets
-            if fleet in excluded_fleets:
-                continue
-
-            current_used = float(row['amount_used']) if pd.notna(row['amount_used']) else 0
-            budget_amount = float(row['budget_amount']) if pd.notna(row['budget_amount']) else 0
-            planned_spend = planned_by_fleet.get(fleet, 0)
-
-            if fleet in budget_fleets:
-                # Aggregate sibling row (e.g. LEXUS into existing TOYOTA bucket)
-                budget_fleets[fleet]['current'] += int(current_used)
-                budget_fleets[fleet]['budget'] += int(budget_amount)
-                budget_fleets[fleet]['projected'] = (
-                    budget_fleets[fleet]['current'] + budget_fleets[fleet]['planned']
-                )
-                budget_total_current += int(current_used)
-                budget_total['budget'] += int(budget_amount)
-            else:
-                budget_fleets[fleet] = {
-                    'current': int(current_used),
-                    'planned': int(planned_spend),
-                    'projected': int(current_used + planned_spend),
-                    'budget': int(budget_amount)
-                }
-                budget_total_current += int(current_used)
-                budget_total_planned += int(planned_spend)
-                budget_total['budget'] += int(budget_amount)
-
-            fleet_sources.setdefault(fleet, []).append(raw_fleet.upper())
-
-        # Calculate actual cost breakdown using real media cost data FIRST
+        # Calculate actual cost breakdown using real media cost data
         print(f"\n=== CALCULATING REAL MEDIA COSTS FOR {len(assignments)} ASSIGNMENTS ===")
         cost_breakdown = calculate_assignment_costs(assignments)
         print(f"REAL COST TOTAL: ${cost_breakdown['total_cost']:.2f}")
@@ -615,47 +640,60 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
                    f"${cost_breakdown['average_cost']:.2f} avg, "
                    f"Tiers: {cost_breakdown['tier_breakdown']}")
 
-        # Calculate actual planned spend by fleet/make from assignments with real costs.
-        # Normalize so Lexus rolls into Toyota, etc.
-        planned_by_fleet_real = {}
+        # Determine current and next quarter from the selected week start
+        week_start_dt = datetime.strptime(request.week_start, '%Y-%m-%d')
+        current_year, current_quarter = get_quarter_from_date(request.week_start)
+        next_year, next_quarter = _next_quarter(current_year, current_quarter)
+
+        # Boundary check: does the 7-day week land in two different quarters?
+        week_end_str = (week_start_dt + timedelta(days=6)).strftime('%Y-%m-%d')
+        end_year, end_quarter = get_quarter_from_date(week_end_str)
+        spans_quarter_boundary = (end_year != current_year) or (end_quarter != current_quarter)
+
+        # Partition real assignment costs by each loan's start_date quarter so the
+        # current/next-quarter tabs each only count items that actually charge there.
+        planned_current: Dict[str, float] = {}
+        planned_next: Dict[str, float] = {}
+        sources_current: Dict[str, List[str]] = {}
+        sources_next: Dict[str, List[str]] = {}
+
         for assignment in assignments:
             raw_make = assignment['make']
             fleet_key = normalize_fleet_name(raw_make)
             cost = assignment.get('cost', 0)
-            planned_by_fleet_real[fleet_key] = planned_by_fleet_real.get(fleet_key, 0) + cost
-            # Record raw make so a Lexus in the run shows up as a source on TOYOTA
-            fleet_sources.setdefault(fleet_key, []).append(str(raw_make).upper())
+            a_year, a_quarter = get_quarter_from_date(assignment['start_day'])
 
-        logger.info(f"Planned spend by fleet (real costs): {planned_by_fleet_real}")
+            if a_year == current_year and a_quarter == current_quarter:
+                planned_current[fleet_key] = planned_current.get(fleet_key, 0) + cost
+                sources_current.setdefault(fleet_key, []).append(str(raw_make).upper())
+            elif a_year == next_year and a_quarter == next_quarter:
+                planned_next[fleet_key] = planned_next.get(fleet_key, 0) + cost
+                sources_next.setdefault(fleet_key, []).append(str(raw_make).upper())
 
-        # Update budget_fleets with real costs instead of solver estimates
-        for fleet in budget_fleets.keys():
-            real_planned = planned_by_fleet_real.get(fleet, 0)
-            budget_fleets[fleet]['planned'] = real_planned  # Keep as float for accuracy
-            budget_fleets[fleet]['projected'] = budget_fleets[fleet]['current'] + real_planned
-            logger.info(f"  {fleet}: planned=${real_planned:.2f}, projected=${budget_fleets[fleet]['projected']:.2f}")
+        logger.info(
+            f"Planned spend partition — current ({current_quarter} {current_year}): "
+            f"{planned_current}; next ({next_quarter} {next_year}): {planned_next}"
+        )
 
-        # Update totals with real planned costs
-        real_total_planned = sum(planned_by_fleet_real.values())
-        budget_total_current = sum(budget_fleets[f]['current'] for f in budget_fleets.keys())
-        budget_total['current'] = budget_total_current
-        budget_total['planned'] = real_total_planned
-        budget_total['projected'] = budget_total_current + real_total_planned
-
-        # Rename merged buckets so the UI label reflects all contributing fleets
-        # (e.g. {'TOYOTA': {...}} -> {'TOYOTA/LEXUS': {...}} when both rows were summed)
-        relabeled_fleets = {}
-        for fleet, data in budget_fleets.items():
-            sources = fleet_sources.get(fleet, [fleet])
-            unique_sources = sorted(dict.fromkeys(sources))
-            label = '/'.join(unique_sources) if len(unique_sources) > 1 else fleet
-            relabeled_fleets[label] = data
-        budget_fleets = relabeled_fleets
-
-        # NOW create budget_summary with updated values
-        budget_summary = {
-            'fleets': budget_fleets,
-            'total': budget_total if budget_fleets else None
+        budget_summary = _build_budget_summary_for_quarter(
+            office=request.office,
+            year=current_year,
+            quarter=current_quarter,
+            planned_by_fleet=planned_current,
+            fleet_sources_seed=sources_current,
+            budgets_df=budgets_df,
+        )
+        next_budget_summary = _build_budget_summary_for_quarter(
+            office=request.office,
+            year=next_year,
+            quarter=next_quarter,
+            planned_by_fleet=planned_next,
+            fleet_sources_seed=sources_next,
+            budgets_df=budgets_df,
+        )
+        quarter_labels = {
+            'current': f"{current_quarter} {current_year}",
+            'next': f"{next_quarter} {next_year}",
         }
 
         result = {
@@ -670,6 +708,9 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             'cap_summary': cap_summary,
             'fairness_summary': fairness_summary,
             'budget_summary': budget_summary,
+            'next_budget_summary': next_budget_summary,
+            'quarter_labels': quarter_labels,
+            'spans_quarter_boundary': spans_quarter_boundary,
             'cost_breakdown': cost_breakdown,  # Real media costs with 3-tier lookup
             'objective_breakdown': solver_result.get('objective_breakdown', {})
         }

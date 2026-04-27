@@ -43,6 +43,9 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
   const [hoveredVin, setHoveredVin] = useState(null);
   const [hoverContext, setHoverContext] = useState(null);
 
+  // Available-to-Spend tab: 'current' or 'next' quarter
+  const [budgetTab, setBudgetTab] = useState('current');
+
   // Daily capacity settings
   const [dailyCapacities, setDailyCapacities] = useState({
     mon: 15,
@@ -1493,62 +1496,117 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
           <div className="space-y-6">
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-3">Available to Spend</h3>
-              <div className="bg-gray-50 rounded p-3">
-                {runResult?.budget_summary ? (
-                  <div className="space-y-3 text-sm">
-                    {runResult.budget_summary.fleets && Object.entries(runResult.budget_summary.fleets)
-                      .sort((a, b) => a[0].localeCompare(b[0]))
-                      .map(([fleet, data]) => {
-                        const available = data.budget - data.current;
-                        const availableAfterRun = data.budget - data.projected;
+              {(() => {
+                if (!runResult?.budget_summary && !runResult?.next_budget_summary) {
+                  return (
+                    <div className="bg-gray-50 rounded p-3">
+                      <div className="text-sm text-gray-400">Run optimizer to see metrics</div>
+                    </div>
+                  );
+                }
 
-                        return (
-                          <div key={fleet}>
-                            <div className="flex justify-between items-center">
-                              <span className="font-medium text-gray-900">{fleet}:</span>
-                              <span className={available >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                                ${available?.toLocaleString()}
-                              </span>
-                            </div>
-                            {data.planned > 0 && (
-                              <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
-                                <span>+${Math.round(data.planned).toLocaleString()} this run → Available: </span>
-                                <span className={availableAfterRun >= 0 ? 'text-green-600 font-medium ml-1' : 'text-red-600 font-medium ml-1'}>
-                                  ${Math.round(availableAfterRun).toLocaleString()}
-                                </span>
+                const labels = runResult?.quarter_labels || { current: 'Current Quarter', next: 'Next Quarter' };
+                const activeSummary = budgetTab === 'current'
+                  ? runResult?.budget_summary
+                  : runResult?.next_budget_summary;
+                const activeLabel = budgetTab === 'current' ? labels.current : labels.next;
+
+                return (
+                  <div>
+                    {runResult?.spans_quarter_boundary && (
+                      <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        ⚠️ This week spans {labels.current} → {labels.next}
+                      </div>
+                    )}
+                    <div className="flex gap-1 mb-2 text-xs" role="tablist">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={budgetTab === 'current'}
+                        onClick={() => setBudgetTab('current')}
+                        className={`flex-1 px-2 py-1 rounded border ${
+                          budgetTab === 'current'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {labels.current}
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={budgetTab === 'next'}
+                        onClick={() => setBudgetTab('next')}
+                        className={`flex-1 px-2 py-1 rounded border ${
+                          budgetTab === 'next'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {labels.next}
+                      </button>
+                    </div>
+                    <div className="bg-gray-50 rounded p-3">
+                      {activeSummary ? (
+                        <div className="space-y-3 text-sm">
+                          {activeSummary.fleets && Object.entries(activeSummary.fleets)
+                            .sort((a, b) => a[0].localeCompare(b[0]))
+                            .map(([fleet, data]) => {
+                              const available = data.budget - data.current;
+                              const availableAfterRun = data.budget - data.projected;
+
+                              return (
+                                <div key={fleet}>
+                                  <div className="flex justify-between items-center">
+                                    <span className="font-medium text-gray-900">{fleet}:</span>
+                                    <span className={available >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                                      ${available?.toLocaleString()}
+                                    </span>
+                                  </div>
+                                  {data.planned > 0 && (
+                                    <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
+                                      <span>+${Math.round(data.planned).toLocaleString()} this run → Available: </span>
+                                      <span className={availableAfterRun >= 0 ? 'text-green-600 font-medium ml-1' : 'text-red-600 font-medium ml-1'}>
+                                        ${Math.round(availableAfterRun).toLocaleString()}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          {activeSummary.total && (() => {
+                            const totalAvailable = activeSummary.total.budget - activeSummary.total.current;
+                            const totalAvailableAfterRun = activeSummary.total.budget - activeSummary.total.projected;
+
+                            return (
+                              <div className="border-t pt-2 mt-2">
+                                <div className="flex justify-between items-center font-semibold">
+                                  <span className="text-gray-900">Total:</span>
+                                  <span className={totalAvailable >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                    ${totalAvailable?.toLocaleString()}
+                                  </span>
+                                </div>
+                                {activeSummary.total.planned > 0 && (
+                                  <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
+                                    <span>+${Math.round(activeSummary.total.planned).toLocaleString()} this run → Available: </span>
+                                    <span className={totalAvailableAfterRun >= 0 ? 'text-green-600 font-semibold ml-1' : 'text-red-600 font-semibold ml-1'}>
+                                      ${Math.round(totalAvailableAfterRun).toLocaleString()}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    {runResult.budget_summary.total && (() => {
-                      const totalAvailable = runResult.budget_summary.total.budget - runResult.budget_summary.total.current;
-                      const totalAvailableAfterRun = runResult.budget_summary.total.budget - runResult.budget_summary.total.projected;
-
-                      return (
-                        <div className="border-t pt-2 mt-2">
-                          <div className="flex justify-between items-center font-semibold">
-                            <span className="text-gray-900">Total:</span>
-                            <span className={totalAvailable >= 0 ? 'text-green-600' : 'text-red-600'}>
-                              ${totalAvailable?.toLocaleString()}
-                            </span>
-                          </div>
-                          {runResult.budget_summary.total.planned > 0 && (
-                            <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
-                              <span>+${Math.round(runResult.budget_summary.total.planned).toLocaleString()} this run → Available: </span>
-                              <span className={totalAvailableAfterRun >= 0 ? 'text-green-600 font-semibold ml-1' : 'text-red-600 font-semibold ml-1'}>
-                                ${Math.round(totalAvailableAfterRun).toLocaleString()}
-                              </span>
-                            </div>
-                          )}
+                            );
+                          })()}
                         </div>
-                      );
-                    })()}
+                      ) : (
+                        <div className="text-sm text-gray-500">
+                          No budget data available for {activeLabel}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                ) : (
-                  <div className="text-sm text-gray-400">Run optimizer to see metrics</div>
-                )}
-              </div>
+                );
+              })()}
             </div>
 
           </div>

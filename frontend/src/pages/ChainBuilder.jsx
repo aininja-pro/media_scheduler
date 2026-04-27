@@ -156,6 +156,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   // Budget calculation for chain
   const [chainBudget, setChainBudget] = useState(null);
 
+  // Available-to-Spend tab: 'current' or 'next' quarter
+  const [budgetTab, setBudgetTab] = useState('current');
+
   // Assignment details panel
   const [selectedAssignment, setSelectedAssignment] = useState(null); // For details panel
 
@@ -4799,63 +4802,113 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
           <div className="space-y-4 text-sm">
             {/* Budget Status - Shows available to spend */}
-            {chainBudget && chainBudget.fleets && (
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">Available to Spend</h3>
-                <div className="bg-gray-50 rounded p-3">
-                  <div className="space-y-3 text-sm">
-                    {Object.entries(chainBudget.fleets)
-                      .sort((a, b) => a[0].localeCompare(b[0]))
-                      .map(([fleet, data]) => {
-                        const available = data.budget - data.current;
-                        const availableAfterChain = data.budget - data.projected;
+            {chainBudget && (chainBudget.fleets || chainBudget.next_budget_summary) && (() => {
+              const labels = chainBudget.quarter_labels || { current: 'Current Quarter', next: 'Next Quarter' };
+              const currentSummary = chainBudget.fleets
+                ? { fleets: chainBudget.fleets, total: chainBudget.total }
+                : null;
+              const activeSummary = budgetTab === 'current'
+                ? currentSummary
+                : chainBudget.next_budget_summary;
+              const activeLabel = budgetTab === 'current' ? labels.current : labels.next;
 
-                        return (
-                          <div key={fleet}>
-                            <div className="flex justify-between items-center">
-                              <span className="font-medium text-gray-900">{fleet}:</span>
-                              <span className={available >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                                ${available?.toLocaleString()}
-                              </span>
-                            </div>
-                            {data.planned > 0 && (
-                              <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
-                                <span>+${Math.round(data.planned).toLocaleString()} this chain → Available: </span>
-                                <span className={availableAfterChain >= 0 ? 'text-green-600 font-medium ml-1' : 'text-red-600 font-medium ml-1'}>
-                                  ${Math.round(availableAfterChain).toLocaleString()}
+              return (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">Available to Spend</h3>
+                  {chainBudget.spans_quarter_boundary && (
+                    <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                      ⚠️ This chain spans {labels.current} → {labels.next}
+                    </div>
+                  )}
+                  <div className="flex gap-1 mb-2 text-xs" role="tablist">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={budgetTab === 'current'}
+                      onClick={() => setBudgetTab('current')}
+                      className={`flex-1 px-2 py-1 rounded border ${
+                        budgetTab === 'current'
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {labels.current}
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={budgetTab === 'next'}
+                      onClick={() => setBudgetTab('next')}
+                      className={`flex-1 px-2 py-1 rounded border ${
+                        budgetTab === 'next'
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {labels.next}
+                    </button>
+                  </div>
+                  <div className="bg-gray-50 rounded p-3">
+                    {activeSummary && activeSummary.fleets && Object.keys(activeSummary.fleets).length > 0 ? (
+                      <div className="space-y-3 text-sm">
+                        {Object.entries(activeSummary.fleets)
+                          .sort((a, b) => a[0].localeCompare(b[0]))
+                          .map(([fleet, data]) => {
+                            const available = data.budget - data.current;
+                            const availableAfterChain = data.budget - data.projected;
+
+                            return (
+                              <div key={fleet}>
+                                <div className="flex justify-between items-center">
+                                  <span className="font-medium text-gray-900">{fleet}:</span>
+                                  <span className={available >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                                    ${available?.toLocaleString()}
+                                  </span>
+                                </div>
+                                {data.planned > 0 && (
+                                  <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
+                                    <span>+${Math.round(data.planned).toLocaleString()} this chain → Available: </span>
+                                    <span className={availableAfterChain >= 0 ? 'text-green-600 font-medium ml-1' : 'text-red-600 font-medium ml-1'}>
+                                      ${Math.round(availableAfterChain).toLocaleString()}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        {activeSummary.total && (() => {
+                          const totalAvailable = activeSummary.total.budget - activeSummary.total.current;
+                          const totalAvailableAfterChain = activeSummary.total.budget - activeSummary.total.projected;
+
+                          return (
+                            <div className="border-t pt-2 mt-2">
+                              <div className="flex justify-between items-center font-semibold">
+                                <span className="text-gray-900">Total:</span>
+                                <span className={totalAvailable >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                  ${totalAvailable?.toLocaleString()}
                                 </span>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    {chainBudget.total && (() => {
-                      const totalAvailable = chainBudget.total.budget - chainBudget.total.current;
-                      const totalAvailableAfterChain = chainBudget.total.budget - chainBudget.total.projected;
-
-                      return (
-                        <div className="border-t pt-2 mt-2">
-                          <div className="flex justify-between items-center font-semibold">
-                            <span className="text-gray-900">Total:</span>
-                            <span className={totalAvailable >= 0 ? 'text-green-600' : 'text-red-600'}>
-                              ${totalAvailable?.toLocaleString()}
-                            </span>
-                          </div>
-                          {chainBudget.total.planned > 0 && (
-                            <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
-                              <span>+${Math.round(chainBudget.total.planned).toLocaleString()} this chain → Available: </span>
-                              <span className={totalAvailableAfterChain >= 0 ? 'text-green-600 font-semibold ml-1' : 'text-red-600 font-semibold ml-1'}>
-                                ${Math.round(totalAvailableAfterChain).toLocaleString()}
-                              </span>
+                              {activeSummary.total.planned > 0 && (
+                                <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
+                                  <span>+${Math.round(activeSummary.total.planned).toLocaleString()} this chain → Available: </span>
+                                  <span className={totalAvailableAfterChain >= 0 ? 'text-green-600 font-semibold ml-1' : 'text-red-600 font-semibold ml-1'}>
+                                    ${Math.round(totalAvailableAfterChain).toLocaleString()}
+                                  </span>
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-500">
+                        No budget data available for {activeLabel}
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           <div className="space-y-4 text-sm mt-4">

@@ -96,7 +96,7 @@ def _period_overlaps_slot(slot_start: datetime, slot_end: datetime, period_start
 def _is_real_partner_blocker(status) -> bool:
     if status is None or pd.isna(status):
         return True
-    return str(status).strip().lower() in {'manual', 'requested', 'active'}
+    return str(status).strip().lower() in {'planned', 'manual', 'requested', 'active'}
 
 
 def _is_partner_available_for_vehicle_slot(

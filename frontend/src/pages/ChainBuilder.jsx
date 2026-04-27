@@ -140,6 +140,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   const [slotOptions, setSlotOptions] = useState([]); // Partner options for editing slot
   const [chainModified, setChainModified] = useState(false); // Track if chain has been edited
 
+  // Respect Budget Limits toggle (default ON)
+  const [respectBudgetLimits, setRespectBudgetLimits] = useState(true);
+
   // Budget calculation for chain
   const [chainBudget, setChainBudget] = useState(null);
 
@@ -1469,7 +1472,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         start_date: startDate,
         num_vehicles: numVehicles,
         days_per_loan: daysPerLoan,
-        preference_mode: preferenceMode
+        preference_mode: preferenceMode,
+        respect_budget_limits: respectBudgetLimits
       });
 
       // Add selected makes filter if any are selected (DEPRECATED - keeping for backward compat)
@@ -1756,7 +1760,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         num_partners: numVehicles,  // Reusing numVehicles slider for num_partners
         days_per_loan: daysPerLoan,
         distance_weight: 0.7,
-        max_distance_per_hop: 50.0
+        max_distance_per_hop: 50.0,
+        respect_budget_limits: respectBudgetLimits
       });
 
       // Add tier filter if any tiers are deselected
@@ -1771,6 +1776,14 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
       if (!response.ok) {
         throw new Error(data.detail || data.message || 'Failed to generate vehicle chain');
+      }
+
+      // Surface budget-blocked status as a friendly error/warning instead of an empty chain
+      if (data.status === 'BUDGET_BLOCKED') {
+        setError(data.warning || data.message || 'This vehicle is over budget for the quarter.');
+        setVehicleChain(null);
+        setIsLoading(false);
+        return;
       }
 
       setVehicleChain(data);
@@ -3165,6 +3178,37 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                 </div>
               </div>
             )}
+
+            {/* Respect Budget Limits toggle (applies to both modes) */}
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">
+                    Respect Budget Limits
+                  </label>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {respectBudgetLimits
+                      ? 'Vehicles from over-budget makes are excluded'
+                      : 'All makes shown — overrides quarterly budget caps'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={respectBudgetLimits}
+                  onClick={() => setRespectBudgetLimits(!respectBudgetLimits)}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                    respectBudgetLimits ? 'bg-blue-600' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      respectBudgetLimits ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
 
             {/* Mode Toggle - Partner Chain */}
             {chainMode === 'partner' && (

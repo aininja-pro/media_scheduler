@@ -27,7 +27,9 @@ FLEET_ALIASES = {
     'MERCEDES BENZ': 'MERCEDES-BENZ',
     'ROLLS ROYCE': 'ROLLS-ROYCE',
     'LAND ROVER': 'LANDROVER',
-    'ALFA ROMEO': 'ALFAROMEO'
+    'ALFA ROMEO': 'ALFAROMEO',
+    # Toyota and Lexus share a single budget bucket
+    'LEXUS': 'TOYOTA',
 }
 
 
@@ -135,11 +137,20 @@ def load_budgets_for_week(
                 remaining = max(0, budget_amount - amount_used)
 
                 key = (office, fleet, year, quarter)
-                budgets[key] = {
-                    'budget_amount': budget_amount,
-                    'amount_used': amount_used,
-                    'remaining': remaining
-                }
+                if key in budgets:
+                    # Aggregate when fleet aliases collapse (e.g., LEXUS -> TOYOTA)
+                    budgets[key]['budget_amount'] += budget_amount
+                    budgets[key]['amount_used'] += amount_used
+                    budgets[key]['remaining'] = max(
+                        0,
+                        budgets[key]['budget_amount'] - budgets[key]['amount_used']
+                    )
+                else:
+                    budgets[key] = {
+                        'budget_amount': budget_amount,
+                        'amount_used': amount_used,
+                        'remaining': remaining
+                    }
 
     return budgets
 

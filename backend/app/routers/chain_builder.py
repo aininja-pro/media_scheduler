@@ -39,9 +39,32 @@ from ..solver.partner_chain_solver import (
     solve_partner_chain,
     ModelPreference
 )
+from ..solver.budget_constraints import normalize_fleet_name, load_budgets_for_week
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chain-builder", tags=["chain-builder"])
+
+
+def _over_budget_makes(db: DatabaseService, office: str, start_date: str) -> set:
+    """Return normalized fleet names whose amount_used >= budget_amount for the office/quarter of start_date.
+
+    Reuses load_budgets_for_week so Toyota/Lexus (and any other aliased) rows are aggregated
+    the same way the main optimizer aggregates them.
+    """
+    try:
+        resp = db.client.table('budgets').select('*').eq('office', office).execute()
+        if not resp.data:
+            return set()
+        budgets_df = pd.DataFrame(resp.data)
+        bucket = load_budgets_for_week(budgets_df, office, start_date)
+        over = set()
+        for (_office, fleet, _year, _quarter), info in bucket.items():
+            if info['budget_amount'] > 0 and info['amount_used'] >= info['budget_amount']:
+                over.add(fleet)
+        return over
+    except Exception as e:
+        logger.warning(f"Budget check failed for {office} on {start_date}: {e}")
+        return set()
 
 
 @router.get("/suggest-chain")
@@ -54,6 +77,7 @@ async def suggest_chain(
     preferred_makes: Optional[str] = Query(None, description="DEPRECATED: Use model_preferences instead"),
     model_preferences: Optional[str] = Query(None, description='JSON array of model preferences: [{"make":"Honda","model":"Accord"}]'),
     preference_mode: str = Query("prioritize", description="Preference mode: prioritize | strict | ignore"),
+    respect_budget_limits: bool = Query(True, description="Exclude vehicles whose make is over budget for the office/quarter"),
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """
@@ -325,6 +349,29 @@ async def suggest_chain(
         # Rename 'office' column to avoid conflict
         if 'office' in candidate_vehicles_df.columns:
             candidate_vehicles_df = candidate_vehicles_df.rename(columns={'office': 'vehicle_office'})
+
+        # Budget filter: drop vehicles whose make is at or over budget for this office/quarter.
+        if respect_budget_limits and not candidate_vehicles_df.empty:
+            over_budget = _over_budget_makes(db, office, start_date)
+            if over_budget:
+                before_count = len(candidate_vehicles_df)
+                candidate_vehicles_df = candidate_vehicles_df[
+                    ~candidate_vehicles_df['make'].apply(normalize_fleet_name).isin(over_budget)
+                ].reset_index(drop=True)
+                excluded = before_count - len(candidate_vehicles_df)
+                if excluded:
+                    logger.info(
+                        f"Budget filter excluded {excluded} vehicle(s) from over-budget makes "
+                        f"({sorted(over_budget)}) for {office}"
+                    )
+                if candidate_vehicles_df.empty:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "No vehicles remain after budget filter. All eligible makes are over budget "
+                            "for this quarter. Toggle off 'Respect Budget Limits' to override."
+                        )
+                    )
 
         # Score ALL candidates using optimizer logic
         scored_candidates = compute_candidate_scores(
@@ -1418,6 +1465,7 @@ async def suggest_vehicle_chain(
     max_distance_per_hop: float = 50.0,
     distance_cost_per_mile: float = 2.0,
     partner_tier_filter: Optional[str] = None,
+    respect_budget_limits: bool = True,
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """
@@ -1495,6 +1543,36 @@ async def suggest_vehicle_chain(
         vehicle_model = vehicle.get('model', '')
 
         logger.info(f"Vehicle: {vehicle_make} {vehicle_model}")
+
+        # Budget check: if this vehicle's make is at/over budget for the quarter, return early.
+        if respect_budget_limits:
+            over_budget = _over_budget_makes(db, office, start_date)
+            if normalize_fleet_name(vehicle_make) in over_budget:
+                logger.info(
+                    f"Vehicle {vin} ({vehicle_make}) blocked by budget filter "
+                    f"(fleet {normalize_fleet_name(vehicle_make)} over budget)"
+                )
+                return {
+                    "status": "BUDGET_BLOCKED",
+                    "vehicle_info": {
+                        "vin": vin,
+                        "make": vehicle_make,
+                        "model": vehicle_model,
+                        "office": office
+                    },
+                    "chain_params": {
+                        "start_date": start_date,
+                        "num_partners": num_partners,
+                        "days_per_loan": days_per_loan
+                    },
+                    "optimal_chain": [],
+                    "diagnostics": {"reason": "make_over_budget", "fleet": normalize_fleet_name(vehicle_make)},
+                    "warning": (
+                        f"{vehicle_make} is over budget for this quarter in {office}. "
+                        f"Toggle off 'Respect Budget Limits' to override."
+                    ),
+                    "message": f"{vehicle_make} is over budget for this quarter."
+                }
 
         # 3. Load all necessary data with pagination
 

@@ -1387,6 +1387,35 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
     }
   };
 
+  const getCalendarBarLabel = (activity) => {
+    const activityType = (activity.activity_type || getActivityLabel(activity.status) || '').trim();
+    const name = (activity.partner_name || activity.person_name || '').trim();
+
+    if (!activityType) return name;
+    if (!name) return activityType;
+
+    return `${activityType} ${name}`;
+  };
+
+  const getCalendarBarFallbackLabel = (activity) => {
+    if (viewMode === 'vehicle') {
+      return activity.partner_name || '';
+    }
+    return `${activity.make || ''} ${activity.model || ''}`.trim();
+  };
+
+  const isProposedCalendarBar = (activity) => {
+    const status = String(activity.status || '').toLowerCase();
+    const source = String(activity.source || '').toLowerCase();
+    return ['planned', 'manual', 'proposed', 'recommended', 'suggested'].includes(status) ||
+      ['optimizer', 'chain_builder'].includes(source);
+  };
+
+  const getFmsActivityUrl = (activity) => {
+    if (!activity.activity_id || isProposedCalendarBar(activity)) return null;
+    return `https://fms.driveshop.com/activities/edit/${activity.activity_id}`;
+  };
+
   // Determine vehicle location based on activity
   const getVehicleLocation = (activity) => {
     // Get distance info if available
@@ -2073,13 +2102,36 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                     {/* Activity bars */}
                     {activitiesWithRows.map((activity, idx) => {
                         const barStyle = getBarStyle(activity);
-                        const label = viewMode === 'vehicle' ? activity.partner_name : `${activity.make} ${activity.model}`;
+                        const fallbackLabel = getCalendarBarFallbackLabel(activity);
+                        const label = getCalendarBarLabel(activity) || fallbackLabel;
                         const vinSuffix = activity.vin ? activity.vin.slice(-6) : '';
                         const location = getVehicleLocation(activity);
                         const hasChaining = viewMode === 'vehicle' && detectChainingOpportunity(item.activities, item.activities.indexOf(activity));
                         const topOffset = 16 + (activity.rowIndex * 32); // Start at 16px from top, then 32px per row
 
                         const color = getActivityColor(activity, location?.color);
+                        const fmsActivityUrl = getFmsActivityUrl(activity);
+                        const MainContentTag = fmsActivityUrl ? 'a' : 'button';
+                        const mainContentProps = fmsActivityUrl
+                          ? {
+                              href: fmsActivityUrl,
+                              target: '_blank',
+                              rel: 'noopener noreferrer',
+                              onClick: (e) => e.stopPropagation()
+                            }
+                          : {
+                              type: 'button',
+                              onClick: (e) => {
+                                e.stopPropagation();
+                                if (viewMode === 'vehicle') {
+                                  // In vehicle view, bars show partners → open Partner Context
+                                  handlePartnerClick(activity.person_id, activity.partner_name);
+                                } else {
+                                  // In partner view, bars show vehicles → open Vehicle Context
+                                  handleActivityClick(activity.vin);
+                                }
+                              }
+                            };
 
                         return (
                           <div
@@ -2089,18 +2141,9 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                             title={`${label}\nVIN: ...${vinSuffix}\n${formatActivityDate(activity.start_date)} - ${formatActivityDate(activity.end_date)}\n${location ? location.label : ''}${hasChaining ? '\n⛓️ Chaining opportunity!' : ''}`}
                           >
                             {/* Main content - clickable */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (viewMode === 'vehicle') {
-                                  // In vehicle view, bars show partners → open Partner Context
-                                  handlePartnerClick(activity.person_id, activity.partner_name);
-                                } else {
-                                  // In partner view, bars show vehicles → open Vehicle Context
-                                  handleActivityClick(activity.vin);
-                                }
-                              }}
-                              className="flex items-center gap-1 flex-1 cursor-pointer"
+                            <MainContentTag
+                              {...mainContentProps}
+                              className="flex items-center gap-1 flex-1 min-w-0 cursor-pointer text-left"
                             >
                               {activity.status === 'planned' && <span className="text-xs">🤖</span>}
                               {activity.status === 'manual' && <span className="text-xs">✋</span>}
@@ -2108,7 +2151,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                               {location?.badge && <span className="text-sm">{location.badge}</span>}
                               {hasChaining && <span>⛓️</span>}
                               <span className="truncate">{label}</span>
-                            </button>
+                            </MainContentTag>
 
                             {/* Hover actions - only for editable statuses */}
                             {(activity.status === 'planned' || activity.status === 'manual' || activity.status === 'requested') && activity.assignment_id && (

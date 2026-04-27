@@ -331,6 +331,7 @@ async def get_calendar_activity(
                 continue
             
             activities.append({
+                'activity_id': loan.get('activity_id'),
                 'vin': loan.get('vehicle_vin') or loan.get('vin'),
                 'vehicle_id': loan.get('vehicle_id'),
                 'make': loan.get('make'),

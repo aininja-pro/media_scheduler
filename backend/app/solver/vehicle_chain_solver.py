@@ -147,6 +147,7 @@ def solve_vehicle_chain(
     max_distance_per_hop: float = 50.0,
     distance_cost_per_mile: float = 2.0,
     partner_slot_availability: Optional[Dict[Tuple[int, int], bool]] = None,
+    slot_dates_override: Optional[List[SlotDates]] = None,
     solver_timeout_seconds: float = 30.0
 ) -> VehicleChainResult:
     """
@@ -177,8 +178,9 @@ def solve_vehicle_chain(
     start_time = datetime.now()
 
     try:
-        # 1. Calculate slot dates with weekend extensions
-        slot_dates = calculate_slot_dates(start_date, num_partners, days_per_loan)
+        # 1. Calculate slot dates with weekend extensions, or use pre-threaded dates
+        # from the router when an existing vehicle commitment creates a gap.
+        slot_dates = slot_dates_override or calculate_slot_dates(start_date, num_partners, days_per_loan)
 
         # 2. Filter candidates to only those with coordinates (required for distance calculation)
         candidates_with_coords = [

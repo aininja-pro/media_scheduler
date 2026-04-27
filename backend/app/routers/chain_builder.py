@@ -31,7 +31,9 @@ from ..chain_builder.geography import (
 from ..solver.scoring import compute_candidate_scores
 from ..solver.vehicle_chain_solver import (
     solve_vehicle_chain,
-    Partner
+    Partner,
+    SlotDates,
+    extend_to_weekday_if_weekend
 )
 from ..solver.partner_chain_solver import (
     solve_partner_chain,
@@ -139,6 +141,85 @@ def _is_partner_available_for_vehicle_slot(
                 }
 
     return {'available': True, 'reason': 'Available for slot'}
+
+
+def _vehicle_slot_overlaps_busy_period(slot_start: datetime, slot_end: datetime, busy_period: Dict[str, Any]) -> bool:
+    return _period_overlaps_slot(
+        slot_start,
+        slot_end,
+        busy_period.get('start_date'),
+        busy_period.get('end_date')
+    )
+
+
+def _calculate_vehicle_available_slot_dates(
+    start_date: str,
+    num_slots: int,
+    days_per_loan: int,
+    busy_periods: List[Dict[str, Any]]
+) -> List[SlotDates]:
+    start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+    if start_dt.weekday() >= 5:
+        raise ValueError(f"Start date must be weekday, got {start_dt.strftime('%A')}")
+
+    normalized_busy_periods = []
+    for period in busy_periods:
+        period_start = _parse_chain_date(period.get('start_date'))
+        period_end = _parse_chain_date(period.get('end_date'))
+        if period_start and period_end:
+            normalized_busy_periods.append({
+                **period,
+                '_start_dt': period_start.date(),
+                '_end_dt': period_end.date()
+            })
+
+    normalized_busy_periods.sort(key=lambda p: p['_start_dt'])
+
+    slots = []
+    current_start = start_dt
+    attempts = 0
+    max_attempts = max(30, num_slots * 10)
+
+    while len(slots) < num_slots and attempts < max_attempts:
+        attempts += 1
+
+        while current_start.weekday() >= 5:
+            current_start += timedelta(days=1)
+
+        nominal_end = current_start + timedelta(days=days_per_loan)
+        actual_end = extend_to_weekday_if_weekend(nominal_end)
+
+        conflict = None
+        slot_start_dt = datetime.combine(current_start, datetime.min.time())
+        slot_end_dt = datetime.combine(actual_end, datetime.min.time())
+        for period in normalized_busy_periods:
+            if _vehicle_slot_overlaps_busy_period(slot_start_dt, slot_end_dt, period):
+                conflict = period
+                break
+
+        if conflict:
+            current_start = conflict['_end_dt']
+            continue
+
+        slots.append(SlotDates(
+            slot_index=len(slots),
+            start_date=current_start.strftime('%Y-%m-%d'),
+            end_date=actual_end.strftime('%Y-%m-%d'),
+            nominal_duration=days_per_loan,
+            actual_duration=(actual_end - current_start).days,
+            extended_for_weekend=(actual_end != nominal_end),
+            handoff_date=actual_end.strftime('%Y-%m-%d') if len(slots) < num_slots - 1 else None
+        ))
+
+        current_start = actual_end
+
+    if len(slots) < num_slots:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Vehicle does not have {num_slots} available chain slots starting on or after {start_date}"
+        )
+
+    return slots
 
 
 @router.get("/suggest-chain")
@@ -1607,40 +1688,16 @@ async def suggest_vehicle_chain(
                 detail=f"Start date must be a weekday (Mon-Fri). {start_date} is a {start_dt.strftime('%A')}"
             )
 
-        # 1b. CRITICAL: Check if vehicle is available during chain period
-        from ..solver.vehicle_chain_solver import calculate_slot_dates
-        slot_dates_check = calculate_slot_dates(start_date, num_partners, days_per_loan)
-        chain_end_date = slot_dates_check[-1].end_date
-
-        # Get vehicle busy periods
-        vehicle_busy_response = await get_vehicle_busy_periods(vin, start_date, chain_end_date, db)
-        if vehicle_busy_response['busy_periods']:
-            # Check for ACTUAL conflicts (not same-day handoffs)
-            conflicts = []
-            chain_start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-
-            for period in vehicle_busy_response['busy_periods']:
-                period_start_dt = datetime.strptime(period['start_date'], '%Y-%m-%d')
-                period_end_dt = datetime.strptime(period['end_date'], '%Y-%m-%d')
-                chain_end_dt = datetime.strptime(chain_end_date, '%Y-%m-%d')
-
-                # Allow same-day handoff in BOTH directions:
-                # 1. Chain can start on day previous loan ends (incoming handoff)
-                if chain_start_dt >= period_end_dt:
-                    continue
-
-                # 2. Chain can end on day next loan starts (outgoing handoff)
-                if chain_end_dt <= period_start_dt:
-                    continue
-
-                # Actual conflict exists (overlaps)
-                conflicts.append(f"{period['partner_name']} ({period['start_date']} to {period['end_date']})")
-
-            if conflicts:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Vehicle {vin} is not available during chain period ({start_date} to {chain_end_date}). Conflicts: {', '.join(conflicts)}"
-                )
+        # 1b. Thread chain slots around existing vehicle commitments.
+        search_end_date = (start_dt + timedelta(days=max(90, num_partners * days_per_loan * 4))).strftime('%Y-%m-%d')
+        vehicle_busy_response = await get_vehicle_busy_periods(vin, start_date, search_end_date, db)
+        slot_dates = _calculate_vehicle_available_slot_dates(
+            start_date=start_date,
+            num_slots=num_partners,
+            days_per_loan=days_per_loan,
+            busy_periods=vehicle_busy_response.get('busy_periods', [])
+        )
+        chain_end_date = slot_dates[-1].end_date
 
         # 2. Get vehicle details
         vehicle_response = db.client.table('vehicles').select('*').eq('vin', vin).eq('office', office).execute()
@@ -1770,10 +1827,7 @@ async def suggest_vehicle_chain(
                 eligible_partner_ids = set(eligible_partner_ids) & tier_approved_partner_ids
                 logger.info(f"After tier filter ({allowed_tiers}): {len(eligible_partner_ids)} partners remaining")
 
-        # 4b. CRITICAL: Filter eligible partners by availability (same as manual mode)
-        # Calculate chain end date for availability checking
-        from ..solver.vehicle_chain_solver import calculate_slot_dates
-        slot_dates = calculate_slot_dates(start_date, num_partners, days_per_loan)
+        # 4b. CRITICAL: Filter eligible partners by slot-specific availability
         chain_start = slot_dates[0].start_date
         chain_end = slot_dates[-1].end_date
 
@@ -1874,6 +1928,7 @@ async def suggest_vehicle_chain(
             max_distance_per_hop=max_distance_per_hop,
             distance_cost_per_mile=distance_cost_per_mile,
             partner_slot_availability=partner_slot_availability,
+            slot_dates_override=slot_dates,
             solver_timeout_seconds=30.0
         )
 
@@ -2010,44 +2065,19 @@ async def get_partner_slot_options(
         vehicle = vehicle_response.data[0]
         vehicle_make = vehicle['make']
 
-        # Calculate slot dates
-        from ..solver.vehicle_chain_solver import calculate_slot_dates
-        slot_dates = calculate_slot_dates(start_date, num_partners, days_per_loan)
+        # Calculate slot dates threaded around existing vehicle commitments.
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        search_end_date = (start_dt + timedelta(days=max(90, num_partners * days_per_loan * 4))).strftime('%Y-%m-%d')
+        vehicle_busy_response = await get_vehicle_busy_periods(vin, start_date, search_end_date, db)
+        slot_dates = _calculate_vehicle_available_slot_dates(
+            start_date=start_date,
+            num_slots=num_partners,
+            days_per_loan=days_per_loan,
+            busy_periods=vehicle_busy_response.get('busy_periods', [])
+        )
         target_slot = slot_dates[slot_index]
 
         logger.info(f"Slot {slot_index}: {target_slot.start_date} to {target_slot.end_date}")
-
-        # CRITICAL: Check vehicle availability for this slot (first time slot 0 loads, check entire chain)
-        if slot_index == 0:
-            chain_end_date = slot_dates[-1].end_date
-            vehicle_busy_response = await get_vehicle_busy_periods(vin, start_date, chain_end_date, db)
-            if vehicle_busy_response['busy_periods']:
-                # Check for ACTUAL conflicts (not same-day handoffs)
-                conflicts = []
-                chain_start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-
-                for period in vehicle_busy_response['busy_periods']:
-                    period_start_dt = datetime.strptime(period['start_date'], '%Y-%m-%d')
-                    period_end_dt = datetime.strptime(period['end_date'], '%Y-%m-%d')
-                    chain_end_dt = datetime.strptime(chain_end_date, '%Y-%m-%d')
-
-                    # Allow same-day handoff in BOTH directions:
-                    # 1. Chain can start on day previous loan ends (incoming handoff)
-                    if chain_start_dt >= period_end_dt:
-                        continue
-
-                    # 2. Chain can end on day next loan starts (outgoing handoff)
-                    if chain_end_dt <= period_start_dt:
-                        continue
-
-                    # Actual conflict exists (overlaps)
-                    conflicts.append(f"{period['partner_name']} ({period['start_date']} to {period['end_date']})")
-
-                if conflicts:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"Vehicle is not available during chain period ({start_date} to {chain_end_date}). Conflicts: {', '.join(conflicts)}"
-                    )
 
         # Get office coordinates for slot 0 distance calculation
         office_lat = None

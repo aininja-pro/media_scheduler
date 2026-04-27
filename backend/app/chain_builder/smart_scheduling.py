@@ -116,8 +116,9 @@ def find_available_slots(
             logger.warning(f"Reached end of search window at {current_date.strftime('%Y-%m-%d')}, found {len(slots)}/{num_slots} slots")
             break
 
-        # Calculate slot end date
-        slot_end = current_date + timedelta(days=days_per_slot - 1)
+        # Calculate slot end date. A 7-day loan runs Thursday to Thursday:
+        # 7 nights, 8 calendar days, with same-day handoff to the next slot.
+        slot_end = current_date + timedelta(days=days_per_slot)
 
         # If slot ends on weekend, extend to Monday (dropoff on weekday)
         while slot_end.weekday() >= 5:  # 5=Sat, 6=Sun

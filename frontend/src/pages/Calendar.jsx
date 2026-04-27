@@ -29,6 +29,16 @@ const formatPartnerName = (name, format = 'lastFirst') => {
   }
 };
 
+const isConfirmedPartnerTimelineActivity = (activity) => {
+  const status = String(activity?.status || '').toLowerCase();
+  const source = String(activity?.source || '').toLowerCase();
+  const activityType = String(activity?.activity_type || '').toLowerCase();
+
+  return !['planned', 'manual', 'requested', 'proposed', 'recommended', 'suggested'].includes(status) &&
+    !['optimizer', 'chain_builder'].includes(source) &&
+    activityType !== 'planned loan';
+};
+
 // Partner Review History Component
 function PartnerReviewHistory({ personId, office }) {
   const [reviewHistory, setReviewHistory] = useState(null);
@@ -1148,6 +1158,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
         const sortedActivities = [...partnerActivities].sort((a, b) =>
           new Date(a.start_date) - new Date(b.start_date)
         );
+        const confirmedTimeline = sortedActivities.filter(isConfirmedPartnerTimelineActivity);
 
         // Filter by status - matching Gantt chart colors exactly
         const currentLoans = sortedActivities.filter(a => a.status === 'active');
@@ -1226,7 +1237,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
             end_date: loan.end_date,
             status: loan.status
           })),
-          timeline: sortedActivities
+          timeline: confirmedTimeline
         };
 
         setPartnerContext(context);
@@ -2906,17 +2917,21 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
                     {showPartnerTimeline && (
                       <div className="space-y-2 mt-2">
-                        {partnerContext.timeline.map((act, idx) => (
-                          <div key={idx} className="flex items-center text-xs bg-gray-50 rounded p-2">
-                            <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
-                              act.status === 'active' ? 'bg-blue-500' :
-                              act.status === 'planned' ? 'bg-green-500' :
-                              'bg-gray-400'
-                            }`}></span>
-                            <span className="flex-1 font-medium text-gray-900">{act.make} {act.model}</span>
-                            <span className="text-gray-500">{formatActivityDate(act.start_date)}</span>
+                        {partnerContext.timeline.length > 0 ? (
+                          partnerContext.timeline.map((act, idx) => (
+                            <div key={idx} className="flex items-center text-xs bg-gray-50 rounded p-2">
+                              <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
+                                act.status === 'active' ? 'bg-blue-500' : 'bg-gray-400'
+                              }`}></span>
+                              <span className="flex-1 font-medium text-gray-900">{act.make} {act.model}</span>
+                              <span className="text-gray-500">{formatActivityDate(act.start_date)}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-xs text-gray-400 bg-gray-50 rounded p-3 text-center">
+                            No confirmed activity in this window
                           </div>
-                        ))}
+                        )}
                       </div>
                     )}
                   </div>

@@ -2143,7 +2143,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                             {/* Main content - clickable */}
                             <MainContentTag
                               {...mainContentProps}
-                              className="flex items-center gap-1 flex-1 min-w-0 cursor-pointer text-left"
+                              className="flex items-center gap-1 flex-1 min-w-0 cursor-pointer text-left text-white visited:text-white hover:text-white no-underline"
                             >
                               {activity.status === 'planned' && <span className="text-xs">🤖</span>}
                               {activity.status === 'manual' && <span className="text-xs">✋</span>}

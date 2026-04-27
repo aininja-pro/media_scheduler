@@ -67,6 +67,15 @@ def _over_budget_makes(db: DatabaseService, office: str, start_date: str) -> set
         return set()
 
 
+def _clean_vehicle_id(value):
+    if value is None or pd.isna(value):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
 @router.get("/suggest-chain")
 async def suggest_chain(
     person_id: int = Query(..., description="Media partner ID"),
@@ -418,12 +427,16 @@ async def suggest_chain(
         suggested_chain = chain_result.chain
         logger.info(f"OR-Tools generated chain with {len(suggested_chain)} vehicles (status: {chain_result.status})")
 
-        # Enrich chain with color from original vehicles_df (scoring function may drop it)
+        # Enrich chain with FMS id/color from original vehicles_df (scoring function may drop them)
         for item in suggested_chain:
             vin = item.get('vin')
-            if vin and 'color' in vehicles_df.columns:
+            if vin:
                 vehicle_row = vehicles_df[vehicles_df['vin'] == vin]
-                if not vehicle_row.empty:
+                if not vehicle_row.empty and 'vehicle_id' in vehicles_df.columns:
+                    item['vehicle_id'] = _clean_vehicle_id(vehicle_row.iloc[0]['vehicle_id'])
+                if not vehicle_row.empty and 'id' in vehicles_df.columns:
+                    item['id'] = _clean_vehicle_id(vehicle_row.iloc[0]['id'])
+                if not vehicle_row.empty and 'color' in vehicles_df.columns:
                     color_val = vehicle_row.iloc[0]['color']
                     if pd.isna(color_val):
                         item['color'] = ''
@@ -903,6 +916,8 @@ async def get_slot_options(
                 logger.info(f"First vehicle VIN: {vin}, color from vehicles_df: '{color_val}'")
 
             eligible_vehicles.append({
+                "vehicle_id": None if vehicle_row.empty or 'vehicle_id' not in vehicles_df.columns else _clean_vehicle_id(vehicle_row.iloc[0]['vehicle_id']),
+                "id": None if vehicle_row.empty or 'id' not in vehicles_df.columns else _clean_vehicle_id(vehicle_row.iloc[0]['id']),
                 "vin": vin,
                 "make": vehicle.get('make', 'Unknown'),
                 "model": vehicle.get('model', 'Unknown'),

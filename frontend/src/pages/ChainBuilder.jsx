@@ -44,6 +44,16 @@ const formatActivityDate = (dateString) => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+const getVehicleFmsId = (vehicle) => {
+  const id = vehicle?.vehicle_id ?? vehicle?.id;
+  return id && /^\d+$/.test(String(id)) ? id : null;
+};
+
+const getVehicleFmsUrl = (vehicle) => {
+  const id = getVehicleFmsId(vehicle);
+  return id ? `https://fms.driveshop.com/vehicles/list_activities/${id}` : null;
+};
+
 function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicleLoaded, preloadedPartner, onPartnerLoaded }) {
   // Chain mode: 'partner' (existing) or 'vehicle' (new)
   const [chainMode, setChainMode] = useState('partner');
@@ -1510,6 +1520,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         start_date: vehicle.start_date,
         end_date: vehicle.end_date,
         selected_vehicle: {
+          vehicle_id: vehicle.vehicle_id,
+          id: vehicle.id,
           vin: vehicle.vin,
           make: vehicle.make,
           model: vehicle.model,
@@ -1706,6 +1718,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           start_date: slot.start_date,
           end_date: slot.end_date,
           selected_vehicle: slot.selected_vehicle ? {
+            vehicle_id: slot.selected_vehicle.vehicle_id,
+            id: slot.selected_vehicle.id,
             vin: slot.selected_vehicle.vin,
             make: slot.selected_vehicle.make,
             model: slot.selected_vehicle.model,
@@ -3918,39 +3932,49 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                         }
                                         return b.score - a.score;
                                       })
-                                      .map(vehicle => (
-                                      <button
-                                        key={vehicle.vin}
-                                        onClick={() => selectVehicleForSlot(index, vehicle)}
-                                        className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 hover:text-blue-900 transition-colors border-b last:border-b-0 flex items-center justify-between"
-                                      >
-                                        <div>
-                                          <div className="font-medium">
-                                            {vehicle.make} {vehicle.model}
-                                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs font-semibold ${
-                                              vehicle.tier === 'A+' ? 'bg-green-100 text-green-800' :
-                                              vehicle.tier === 'A' ? 'bg-green-100 text-green-700' :
-                                              vehicle.tier === 'B' ? 'bg-blue-100 text-blue-800' :
-                                              'bg-yellow-100 text-yellow-800'
-                                            }`}>
-                                              {vehicle.tier}
-                                            </span>
-                                          </div>
-                                          <div className="text-gray-500 mt-0.5">
-                                            VIN: <a
-                                              href={`https://fms.driveshop.com/vehicles/list_activities/${vehicle.vehicle_id || vehicle.vin}`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="text-blue-600 hover:text-blue-800 hover:underline font-mono"
-                                              title="Open in FMS"
-                                              onClick={(e) => e.stopPropagation()}
-                                            >
-                                              ...{vehicle.vin ? vehicle.vin.slice(-8) : vehicle.last_4_vin}
-                                            </a>{vehicle.color ? ` • ${vehicle.color}` : ''}
-                                          </div>
-                                        </div>
-                                      </button>
-                                    ))}
+                                      .map(vehicle => {
+                                        const fmsUrl = getVehicleFmsUrl(vehicle);
+
+                                        return (
+                                          <button
+                                            key={vehicle.vin}
+                                            onClick={() => selectVehicleForSlot(index, vehicle)}
+                                            className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 hover:text-blue-900 transition-colors border-b last:border-b-0 flex items-center justify-between"
+                                          >
+                                            <div>
+                                              <div className="font-medium">
+                                                {vehicle.make} {vehicle.model}
+                                                <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs font-semibold ${
+                                                  vehicle.tier === 'A+' ? 'bg-green-100 text-green-800' :
+                                                  vehicle.tier === 'A' ? 'bg-green-100 text-green-700' :
+                                                  vehicle.tier === 'B' ? 'bg-blue-100 text-blue-800' :
+                                                  'bg-yellow-100 text-yellow-800'
+                                                }`}>
+                                                  {vehicle.tier}
+                                                </span>
+                                              </div>
+                                              <div className="text-gray-500 mt-0.5">
+                                                VIN: {fmsUrl ? (
+                                                  <a
+                                                    href={fmsUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 hover:text-blue-800 hover:underline font-mono"
+                                                    title="Open in FMS"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                  >
+                                                    ...{vehicle.vin ? vehicle.vin.slice(-8) : vehicle.last_4_vin}
+                                                  </a>
+                                                ) : (
+                                                  <span className="font-mono">
+                                                    ...{vehicle.vin ? vehicle.vin.slice(-8) : vehicle.last_4_vin}
+                                                  </span>
+                                                )}{vehicle.color ? ` • ${vehicle.color}` : ''}
+                                              </div>
+                                            </div>
+                                          </button>
+                                        );
+                                      })}
                                     {slot.eligible_vehicles.filter(vehicle => {
                                       const searchQuery = slotVehicleSearchQueries[index] || '';
                                       if (searchQuery === '') return true;
@@ -3995,15 +4019,21 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                             {/* Line 2: Color | VIN */}
                             <div className="text-xs text-gray-600 pl-7">
                               {slot.selected_vehicle.color && <span>{slot.selected_vehicle.color} | </span>}
-                              VIN: <a
-                                href={`https://fms.driveshop.com/vehicles/list_activities/${slot.selected_vehicle.vehicle_id || slot.selected_vehicle.vin}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="font-mono text-blue-600 hover:text-blue-800 hover:underline"
-                                title="Open in FMS"
-                              >
-                                ...{slot.selected_vehicle.vin ? slot.selected_vehicle.vin.slice(-8) : slot.selected_vehicle.last_4_vin}
-                              </a>
+                              VIN: {getVehicleFmsUrl(slot.selected_vehicle) ? (
+                                <a
+                                  href={getVehicleFmsUrl(slot.selected_vehicle)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-mono text-blue-600 hover:text-blue-800 hover:underline"
+                                  title="Open in FMS"
+                                >
+                                  ...{slot.selected_vehicle.vin ? slot.selected_vehicle.vin.slice(-8) : slot.selected_vehicle.last_4_vin}
+                                </a>
+                              ) : (
+                                <span className="font-mono">
+                                  ...{slot.selected_vehicle.vin ? slot.selected_vehicle.vin.slice(-8) : slot.selected_vehicle.last_4_vin}
+                                </span>
+                              )}
                             </div>
 
                             {/* Change button */}

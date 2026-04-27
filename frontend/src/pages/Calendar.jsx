@@ -1389,12 +1389,14 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
   const getCalendarBarLabel = (activity) => {
     const activityType = (activity.activity_type || getActivityLabel(activity.status) || '').trim();
-    const name = (activity.partner_name || activity.person_name || '').trim();
+    const vehicleName = `${activity.make || ''} ${activity.model || ''}`.trim();
+    const personName = (activity.partner_name || activity.person_name || '').trim();
+    const subject = viewMode === 'vehicle' ? personName : vehicleName || personName;
 
-    if (!activityType) return name;
-    if (!name) return activityType;
+    if (!activityType) return subject;
+    if (!subject) return activityType;
 
-    return `${activityType} ${name}`;
+    return `${activityType} ${subject}`;
   };
 
   const getCalendarBarFallbackLabel = (activity) => {

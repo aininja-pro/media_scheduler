@@ -1484,18 +1484,21 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
 
         for record in records:
             try:
-                # Convert IDs to int first to remove decimals, then to string
+                # person_id is blank for Hold / Hold for Turn In / Special / Event rows — keep as None
                 person_id_raw = record['Person_ID']
-                if pd.notna(person_id_raw):
-                    # Remove decimal by converting to int first
-                    person_id = str(int(float(person_id_raw)))
-                else:
-                    person_id = ''
+                person_id = None
+                if pd.notna(person_id_raw) and str(person_id_raw).strip():
+                    try:
+                        person_id = str(int(float(person_id_raw)))
+                    except (ValueError, TypeError):
+                        person_id = None
 
                 activity_id_raw = record['Activity_ID']
-                if pd.notna(activity_id_raw):
-                    # Remove decimal by converting to int first
-                    activity_id = str(int(float(activity_id_raw)))
+                if pd.notna(activity_id_raw) and str(activity_id_raw).strip():
+                    try:
+                        activity_id = str(int(float(activity_id_raw)))
+                    except (ValueError, TypeError):
+                        activity_id = ''
                 else:
                     activity_id = ''
 
@@ -1512,7 +1515,8 @@ async def ingest_current_activity_from_url(url: str, db: DatabaseService = Depen
                 }
 
                 # Quick validation - skip if missing required fields
-                if not normalized_dict['activity_id'] or not normalized_dict['person_id'] or not normalized_dict['vehicle_vin']:
+                # person_id is intentionally NOT required — Hold / Special / Event rows have no partner
+                if not normalized_dict['activity_id'] or not normalized_dict['vehicle_vin']:
                     skipped_count += 1
                     continue
                     

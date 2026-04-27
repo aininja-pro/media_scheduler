@@ -21,9 +21,7 @@ from ..utils.media_costs import get_cost_for_assignment
 from ..chain_builder.availability import (
     build_chain_availability_grid,
     get_available_vehicles_for_slot,
-    check_slot_availability,
-    build_partner_availability_grid,
-    check_partner_slot_availability
+    check_slot_availability
 )
 from ..chain_builder.smart_scheduling import adjust_chain_for_existing_commitments
 from ..chain_builder.geography import (
@@ -74,6 +72,73 @@ def _clean_vehicle_id(value):
         return int(value)
     except (TypeError, ValueError):
         return value
+
+
+def _parse_chain_date(value) -> Optional[datetime]:
+    if value is None or pd.isna(value):
+        return None
+    parsed = pd.to_datetime(value, errors='coerce')
+    if pd.isna(parsed):
+        return None
+    return parsed.to_pydatetime()
+
+
+def _period_overlaps_slot(slot_start: datetime, slot_end: datetime, period_start, period_end) -> bool:
+    period_start_dt = _parse_chain_date(period_start)
+    period_end_dt = _parse_chain_date(period_end)
+    if not period_start_dt or not period_end_dt:
+        return False
+
+    # Same-day handoffs are allowed in both directions.
+    return slot_start < period_end_dt and slot_end > period_start_dt
+
+
+def _is_real_partner_blocker(status) -> bool:
+    if status is None or pd.isna(status):
+        return True
+    return str(status).strip().lower() in {'manual', 'requested', 'active'}
+
+
+def _is_partner_available_for_vehicle_slot(
+    person_id: int,
+    slot_start: str,
+    slot_end: str,
+    current_activity_df: pd.DataFrame,
+    scheduled_assignments_df: pd.DataFrame
+) -> Dict[str, Any]:
+    slot_start_dt = datetime.strptime(slot_start, '%Y-%m-%d')
+    slot_end_dt = datetime.strptime(slot_end, '%Y-%m-%d')
+
+    if not current_activity_df.empty and 'person_id' in current_activity_df.columns:
+        activity_df = current_activity_df.copy()
+        activity_df['person_id_numeric'] = pd.to_numeric(activity_df['person_id'], errors='coerce')
+        partner_activity = activity_df[activity_df['person_id_numeric'] == int(person_id)]
+
+        for _, activity in partner_activity.iterrows():
+            if _period_overlaps_slot(slot_start_dt, slot_end_dt, activity.get('start_date'), activity.get('end_date')):
+                return {
+                    'available': False,
+                    'reason': f"Active loan ({activity.get('start_date')} to {activity.get('end_date')})"
+                }
+
+    if not scheduled_assignments_df.empty and 'person_id' in scheduled_assignments_df.columns:
+        scheduled_df = scheduled_assignments_df.copy()
+        scheduled_df['person_id_numeric'] = pd.to_numeric(scheduled_df['person_id'], errors='coerce')
+        partner_scheduled = scheduled_df[scheduled_df['person_id_numeric'] == int(person_id)]
+
+        for _, assignment in partner_scheduled.iterrows():
+            if not _is_real_partner_blocker(assignment.get('status')):
+                continue
+            if _period_overlaps_slot(slot_start_dt, slot_end_dt, assignment.get('start_day'), assignment.get('end_day')):
+                return {
+                    'available': False,
+                    'reason': (
+                        f"Scheduled assignment ({assignment.get('start_day')} to {assignment.get('end_day')}, "
+                        f"status: {assignment.get('status', 'scheduled')})"
+                    )
+                }
+
+    return {'available': True, 'reason': 'Available for slot'}
 
 
 @router.get("/suggest-chain")
@@ -1712,17 +1777,7 @@ async def suggest_vehicle_chain(
         chain_start = slot_dates[0].start_date
         chain_end = slot_dates[-1].end_date
 
-        logger.info(f"Building partner availability grid from {chain_start} to {chain_end}")
-
-        # Build partner availability grid for entire chain period
-        partner_availability_grid = build_partner_availability_grid(
-            partners_df=partners_df,
-            current_activity_df=current_activity_df,
-            scheduled_assignments_df=scheduled_df,
-            start_date=chain_start,
-            end_date=chain_end,
-            office=office
-        )
+        logger.info(f"Checking partner availability from {chain_start} to {chain_end}")
 
         # Keep partners who are available for at least one slot. Slot-specific
         # availability is passed into the solver so it cannot assign a partner
@@ -1733,11 +1788,12 @@ async def suggest_vehicle_chain(
         for partner_id in eligible_partner_ids:
             has_available_slot = False
             for slot_index, slot in enumerate(slot_dates):
-                availability_check = check_partner_slot_availability(
+                availability_check = _is_partner_available_for_vehicle_slot(
                     person_id=partner_id,
                     slot_start=slot.start_date,
                     slot_end=slot.end_date,
-                    availability_df=partner_availability_grid
+                    current_activity_df=current_activity_df,
+                    scheduled_assignments_df=scheduled_df
                 )
                 is_available = availability_check['available']
                 partner_slot_availability[(int(partner_id), slot_index)] = is_available
@@ -2065,25 +2121,15 @@ async def get_partner_slot_options(
             eligible_partner_ids = [pid for pid in eligible_partner_ids if pid not in excluded_set]
             logger.info(f"Excluded {len(excluded_set)} already-selected partners")
 
-        # CRITICAL: Filter out busy partners (those with active loans or scheduled assignments during this slot)
-        # Build partner availability grid for the entire slot period
-        partner_availability_grid = build_partner_availability_grid(
-            partners_df=partners_df,
-            current_activity_df=current_activity_df,
-            scheduled_assignments_df=scheduled_assignments_df,
-            start_date=target_slot.start_date,
-            end_date=target_slot.end_date,
-            office=office
-        )
-
         available_partner_ids = []
         unavailable_count = 0
         for partner_id in eligible_partner_ids:
-            availability_check = check_partner_slot_availability(
+            availability_check = _is_partner_available_for_vehicle_slot(
                 person_id=partner_id,
                 slot_start=target_slot.start_date,
                 slot_end=target_slot.end_date,
-                availability_df=partner_availability_grid
+                current_activity_df=current_activity_df,
+                scheduled_assignments_df=scheduled_assignments_df
             )
             if availability_check['available']:
                 available_partner_ids.append(partner_id)

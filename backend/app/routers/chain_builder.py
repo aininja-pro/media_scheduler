@@ -1152,7 +1152,7 @@ async def calculate_chain_budget(
             (budgets_df['quarter'] == current_quarter)
         ]
 
-        # Calculate chain costs by make
+        # Calculate chain costs by make (normalize so Lexus rolls into Toyota, etc.)
         planned_by_make = {}
         for assignment in chain:
             person_id = assignment.get('person_id')
@@ -1161,8 +1161,8 @@ async def calculate_chain_budget(
                 continue
 
             cost_info = get_cost_for_assignment(person_id, make)
-            make_upper = make.upper()
-            planned_by_make[make_upper] = planned_by_make.get(make_upper, 0) + cost_info['cost']
+            fleet_key = normalize_fleet_name(make)
+            planned_by_make[fleet_key] = planned_by_make.get(fleet_key, 0) + cost_info['cost']
 
         # Build budget_summary in same format as Optimizer
         budget_fleets = {}
@@ -1170,9 +1170,10 @@ async def calculate_chain_budget(
         # Exclude fleets that are not scheduled
         excluded_fleets = {'BENTLEY', 'FERRARI', 'MASERATI'}
 
-        # First, add all makes from quarter_budgets table
+        # First, add all makes from quarter_budgets table (aggregate when aliases collapse,
+        # e.g. Toyota + Lexus -> TOYOTA)
         for _, row in quarter_budgets.iterrows():
-            fleet = row['fleet']
+            fleet = normalize_fleet_name(row['fleet'])
 
             # Skip excluded fleets
             if fleet in excluded_fleets:
@@ -1180,14 +1181,22 @@ async def calculate_chain_budget(
 
             current_used = float(row['amount_used']) if pd.notna(row['amount_used']) else 0
             budget_amount = float(row['budget_amount']) if pd.notna(row['budget_amount']) else 0
-            planned_spend = planned_by_make.get(fleet, 0)
 
-            budget_fleets[fleet] = {
-                'current': int(current_used),
-                'planned': planned_spend,
-                'projected': current_used + planned_spend,
-                'budget': int(budget_amount)
-            }
+            if fleet in budget_fleets:
+                # Aggregate sibling row (e.g. LEXUS into existing TOYOTA bucket)
+                budget_fleets[fleet]['current'] += int(current_used)
+                budget_fleets[fleet]['budget'] += int(budget_amount)
+                budget_fleets[fleet]['projected'] = (
+                    budget_fleets[fleet]['current'] + budget_fleets[fleet]['planned']
+                )
+            else:
+                planned_spend = planned_by_make.get(fleet, 0)
+                budget_fleets[fleet] = {
+                    'current': int(current_used),
+                    'planned': planned_spend,
+                    'projected': current_used + planned_spend,
+                    'budget': int(budget_amount)
+                }
 
         # Second, add any makes from the chain that aren't in budgets table
         for make, cost in planned_by_make.items():

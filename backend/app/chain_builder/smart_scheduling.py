@@ -40,9 +40,10 @@ def get_partner_busy_periods(
 
     # Add current active loans
     if not current_activity_df.empty:
-        # Ensure person_id type matching
+        # Ensure person_id type matching (drop NULL person_id rows before casting to int)
         current_activity_df = current_activity_df.copy()
         if 'person_id' in current_activity_df.columns:
+            current_activity_df = current_activity_df.dropna(subset=['person_id'])
             current_activity_df['person_id'] = current_activity_df['person_id'].astype(int)
 
         partner_active = current_activity_df[current_activity_df['person_id'] == int(person_id)]

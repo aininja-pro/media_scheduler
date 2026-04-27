@@ -1152,6 +1152,10 @@ async def calculate_chain_budget(
             (budgets_df['quarter'] == current_quarter)
         ]
 
+        # Track raw source names per canonical bucket so merged buckets can be
+        # rendered as e.g. "TOYOTA/LEXUS" instead of just "TOYOTA"
+        fleet_sources = {}
+
         # Calculate chain costs by make (normalize so Lexus rolls into Toyota, etc.)
         planned_by_make = {}
         for assignment in chain:
@@ -1163,12 +1167,11 @@ async def calculate_chain_budget(
             cost_info = get_cost_for_assignment(person_id, make)
             fleet_key = normalize_fleet_name(make)
             planned_by_make[fleet_key] = planned_by_make.get(fleet_key, 0) + cost_info['cost']
+            # Record the raw make so a Lexus in the chain shows up as a source on TOYOTA
+            fleet_sources.setdefault(fleet_key, []).append(str(make).upper())
 
         # Build budget_summary in same format as Optimizer
         budget_fleets = {}
-        # Track raw source names per canonical bucket so merged buckets can be
-        # rendered as e.g. "TOYOTA/LEXUS" instead of just "TOYOTA"
-        fleet_sources = {}
 
         # Exclude fleets that are not scheduled
         excluded_fleets = {'BENTLEY', 'FERRARI', 'MASERATI'}

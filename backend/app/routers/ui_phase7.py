@@ -550,14 +550,16 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             (budgets_df['quarter'] == current_quarter)
         ]
 
-        # Create a lookup for planned spend by fleet from solver results
+        # Create a lookup for planned spend by fleet from solver results (normalize so
+        # Lexus rolls into Toyota, etc.)
+        from app.solver.budget_constraints import normalize_fleet_name
         planned_by_fleet = {}
         budget_summary_df = solver_result.get('budget_summary', pd.DataFrame())
         if not budget_summary_df.empty:
             for _, row in budget_summary_df.iterrows():
-                fleet = row.get('fleet', 'Unknown')
+                fleet = normalize_fleet_name(row.get('fleet', 'Unknown'))
                 planned_spend = float(row.get('planned_spend', 0))
-                planned_by_fleet[fleet] = planned_spend
+                planned_by_fleet[fleet] = planned_by_fleet.get(fleet, 0) + planned_spend
 
         # Build budget summary for ALL fleets in the quarter
         # Track totals separately for current, planned, and projected
@@ -567,8 +569,13 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         # Exclude fleets that are not scheduled
         excluded_fleets = {'BENTLEY', 'FERRARI', 'MASERATI'}
 
+        # Track raw source names per canonical bucket so merged rows can be
+        # rendered as e.g. "TOYOTA/LEXUS" instead of just "TOYOTA"
+        fleet_sources = {}
+
         for _, row in quarter_budgets.iterrows():
-            fleet = row['fleet']
+            raw_fleet = str(row['fleet']) if pd.notna(row['fleet']) else ''
+            fleet = normalize_fleet_name(raw_fleet)
 
             # Skip excluded fleets
             if fleet in excluded_fleets:
@@ -578,15 +585,27 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             budget_amount = float(row['budget_amount']) if pd.notna(row['budget_amount']) else 0
             planned_spend = planned_by_fleet.get(fleet, 0)
 
-            budget_fleets[fleet] = {
-                'current': int(current_used),
-                'planned': int(planned_spend),
-                'projected': int(current_used + planned_spend),
-                'budget': int(budget_amount)
-            }
-            budget_total_current += int(current_used)
-            budget_total_planned += int(planned_spend)
-            budget_total['budget'] += int(budget_amount)
+            if fleet in budget_fleets:
+                # Aggregate sibling row (e.g. LEXUS into existing TOYOTA bucket)
+                budget_fleets[fleet]['current'] += int(current_used)
+                budget_fleets[fleet]['budget'] += int(budget_amount)
+                budget_fleets[fleet]['projected'] = (
+                    budget_fleets[fleet]['current'] + budget_fleets[fleet]['planned']
+                )
+                budget_total_current += int(current_used)
+                budget_total['budget'] += int(budget_amount)
+            else:
+                budget_fleets[fleet] = {
+                    'current': int(current_used),
+                    'planned': int(planned_spend),
+                    'projected': int(current_used + planned_spend),
+                    'budget': int(budget_amount)
+                }
+                budget_total_current += int(current_used)
+                budget_total_planned += int(planned_spend)
+                budget_total['budget'] += int(budget_amount)
+
+            fleet_sources.setdefault(fleet, []).append(raw_fleet.upper())
 
         # Calculate actual cost breakdown using real media cost data FIRST
         print(f"\n=== CALCULATING REAL MEDIA COSTS FOR {len(assignments)} ASSIGNMENTS ===")
@@ -596,29 +615,25 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
                    f"${cost_breakdown['average_cost']:.2f} avg, "
                    f"Tiers: {cost_breakdown['tier_breakdown']}")
 
-        # Calculate actual planned spend by fleet/make from assignments with real costs
-        print(f"DEBUG: About to calculate planned spend for {len(assignments)} assignments")
+        # Calculate actual planned spend by fleet/make from assignments with real costs.
+        # Normalize so Lexus rolls into Toyota, etc.
         planned_by_fleet_real = {}
         for assignment in assignments:
-            make = assignment['make'].upper()  # UPPERCASE to match budget_fleets keys
+            raw_make = assignment['make']
+            fleet_key = normalize_fleet_name(raw_make)
             cost = assignment.get('cost', 0)
-            planned_by_fleet_real[make] = planned_by_fleet_real.get(make, 0) + cost
-            print(f"  Assignment: {make} = ${cost:.2f}")
+            planned_by_fleet_real[fleet_key] = planned_by_fleet_real.get(fleet_key, 0) + cost
+            # Record raw make so a Lexus in the run shows up as a source on TOYOTA
+            fleet_sources.setdefault(fleet_key, []).append(str(raw_make).upper())
 
-        print(f"DEBUG: Planned spend by make (real costs): {planned_by_fleet_real}")
-        logger.info(f"Planned spend by make (real costs): {planned_by_fleet_real}")
+        logger.info(f"Planned spend by fleet (real costs): {planned_by_fleet_real}")
 
         # Update budget_fleets with real costs instead of solver estimates
-        print(f"DEBUG: Updating {len(budget_fleets)} budget fleets with real costs")
         for fleet in budget_fleets.keys():
             real_planned = planned_by_fleet_real.get(fleet, 0)
             budget_fleets[fleet]['planned'] = real_planned  # Keep as float for accuracy
             budget_fleets[fleet]['projected'] = budget_fleets[fleet]['current'] + real_planned
-            print(f"  {fleet}: current=${budget_fleets[fleet]['current']}, planned=${real_planned:.2f}, projected=${budget_fleets[fleet]['projected']:.2f}")
             logger.info(f"  {fleet}: planned=${real_planned:.2f}, projected=${budget_fleets[fleet]['projected']:.2f}")
-
-        print(f"DEBUG: Final budget_fleets keys: {list(budget_fleets.keys())}")
-        print(f"DEBUG: Sample Mazda entry: {budget_fleets.get('Mazda', 'NOT FOUND')}")
 
         # Update totals with real planned costs
         real_total_planned = sum(planned_by_fleet_real.values())
@@ -626,6 +641,16 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         budget_total['current'] = budget_total_current
         budget_total['planned'] = real_total_planned
         budget_total['projected'] = budget_total_current + real_total_planned
+
+        # Rename merged buckets so the UI label reflects all contributing fleets
+        # (e.g. {'TOYOTA': {...}} -> {'TOYOTA/LEXUS': {...}} when both rows were summed)
+        relabeled_fleets = {}
+        for fleet, data in budget_fleets.items():
+            sources = fleet_sources.get(fleet, [fleet])
+            unique_sources = sorted(dict.fromkeys(sources))
+            label = '/'.join(unique_sources) if len(unique_sources) > 1 else fleet
+            relabeled_fleets[label] = data
+        budget_fleets = relabeled_fleets
 
         # NOW create budget_summary with updated values
         budget_summary = {

@@ -2111,27 +2111,6 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
                         const color = getActivityColor(activity, location?.color);
                         const fmsActivityUrl = getFmsActivityUrl(activity);
-                        const MainContentTag = fmsActivityUrl ? 'a' : 'button';
-                        const mainContentProps = fmsActivityUrl
-                          ? {
-                              href: fmsActivityUrl,
-                              target: '_blank',
-                              rel: 'noopener noreferrer',
-                              onClick: (e) => e.stopPropagation()
-                            }
-                          : {
-                              type: 'button',
-                              onClick: (e) => {
-                                e.stopPropagation();
-                                if (viewMode === 'vehicle') {
-                                  // In vehicle view, bars show partners → open Partner Context
-                                  handlePartnerClick(activity.person_id, activity.partner_name);
-                                } else {
-                                  // In partner view, bars show vehicles → open Vehicle Context
-                                  handleActivityClick(activity.vin);
-                                }
-                              }
-                            };
 
                         return (
                           <div
@@ -2141,9 +2120,19 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                             title={`${label}\nVIN: ...${vinSuffix}\n${formatActivityDate(activity.start_date)} - ${formatActivityDate(activity.end_date)}\n${location ? location.label : ''}${hasChaining ? '\n⛓️ Chaining opportunity!' : ''}`}
                           >
                             {/* Main content - clickable */}
-                            <MainContentTag
-                              {...mainContentProps}
-                              className="flex items-center gap-1 flex-1 min-w-0 cursor-pointer text-left text-white visited:text-white hover:text-white no-underline"
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (viewMode === 'vehicle') {
+                                  // In vehicle view, bars show partners → open Partner Context
+                                  handlePartnerClick(activity.person_id, activity.partner_name);
+                                } else {
+                                  // In partner view, bars show vehicles → open Vehicle Context
+                                  handleActivityClick(activity.vin);
+                                }
+                              }}
+                              className="flex items-center gap-1 flex-1 min-w-0 cursor-pointer text-left text-white"
                             >
                               {activity.status === 'planned' && <span className="text-xs">🤖</span>}
                               {activity.status === 'manual' && <span className="text-xs">✋</span>}
@@ -2151,7 +2140,20 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                               {location?.badge && <span className="text-sm">{location.badge}</span>}
                               {hasChaining && <span>⛓️</span>}
                               <span className="truncate">{label}</span>
-                            </MainContentTag>
+                            </button>
+
+                            {fmsActivityUrl && (
+                              <a
+                                href={fmsActivityUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="ml-1 shrink-0 rounded bg-white/95 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 shadow-sm hover:bg-blue-50 hover:text-blue-900 no-underline"
+                                title="Open FMS activity"
+                              >
+                                FMS
+                              </a>
+                            )}
 
                             {/* Hover actions - only for editable statuses */}
                             {(activity.status === 'planned' || activity.status === 'manual' || activity.status === 'requested') && activity.assignment_id && (

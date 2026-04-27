@@ -1166,6 +1166,9 @@ async def calculate_chain_budget(
 
         # Build budget_summary in same format as Optimizer
         budget_fleets = {}
+        # Track raw source names per canonical bucket so merged buckets can be
+        # rendered as e.g. "TOYOTA/LEXUS" instead of just "TOYOTA"
+        fleet_sources = {}
 
         # Exclude fleets that are not scheduled
         excluded_fleets = {'BENTLEY', 'FERRARI', 'MASERATI'}
@@ -1173,7 +1176,8 @@ async def calculate_chain_budget(
         # First, add all makes from quarter_budgets table (aggregate when aliases collapse,
         # e.g. Toyota + Lexus -> TOYOTA)
         for _, row in quarter_budgets.iterrows():
-            fleet = normalize_fleet_name(row['fleet'])
+            raw_fleet = str(row['fleet']) if pd.notna(row['fleet']) else ''
+            fleet = normalize_fleet_name(raw_fleet)
 
             # Skip excluded fleets
             if fleet in excluded_fleets:
@@ -1198,6 +1202,8 @@ async def calculate_chain_budget(
                     'budget': int(budget_amount)
                 }
 
+            fleet_sources.setdefault(fleet, []).append(raw_fleet.upper())
+
         # Second, add any makes from the chain that aren't in budgets table
         for make, cost in planned_by_make.items():
             if make not in budget_fleets and make not in excluded_fleets:
@@ -1207,6 +1213,17 @@ async def calculate_chain_budget(
                     'projected': cost,
                     'budget': 0  # No budget entry for this make
                 }
+                fleet_sources.setdefault(make, []).append(make)
+
+        # Rename merged buckets so the UI label reflects all contributing fleets
+        # (e.g. {'TOYOTA': {...}} -> {'TOYOTA/LEXUS': {...}} when both rows were summed)
+        relabeled_fleets = {}
+        for fleet, data in budget_fleets.items():
+            sources = fleet_sources.get(fleet, [fleet])
+            unique_sources = sorted(dict.fromkeys(sources))  # de-dupe, preserve sort
+            label = '/'.join(unique_sources) if len(unique_sources) > 1 else fleet
+            relabeled_fleets[label] = data
+        budget_fleets = relabeled_fleets
 
         # Calculate totals
         total_current = sum(f['current'] for f in budget_fleets.values())

@@ -2713,6 +2713,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                     <div>
                       <div className="border-l-4 border-purple-500 pl-3 mb-3">
                         <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wide">Publication Performance</h3>
+                        <p className="text-xs text-gray-500">{partnerContext.stats.publication_window_label || 'Last 12 months'}</p>
                       </div>
                       <div className="grid grid-cols-3 gap-4 bg-gray-50 rounded-lg p-4 mb-4">
                         <div className="text-center">
@@ -2724,7 +2725,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                         <div className="text-center border-l border-r border-gray-200">
                           <div className="text-sm text-gray-600 mb-1">Published</div>
                           <div className="text-2xl font-semibold text-blue-600">
-                            {Math.round((partnerContext.stats.total_loans || 0) * (partnerContext.stats.publication_rate || 0))}
+                            {partnerContext.stats.published_loans || 0}
                           </div>
                         </div>
                         <div className="text-center">

@@ -2281,19 +2281,27 @@ async def get_partner_intelligence(
 
         loan_history_df = pd.DataFrame(loan_history_response.data) if loan_history_response.data else pd.DataFrame()
 
-        # Calculate stats
-        total_loans = len(loan_history_df)
+        # Calculate selected-partner summary stats for the last 12 months.
+        summary_window_start = (datetime.now() - timedelta(days=365)).date()
+        summary_df = loan_history_df.copy()
+        if not summary_df.empty and 'start_date' in summary_df.columns:
+            summary_df = summary_df[
+                pd.to_datetime(summary_df['start_date'], errors='coerce') >= pd.Timestamp(summary_window_start)
+            ]
+
+        total_loans = len(summary_df)
+        published_loans = 0
         publication_rate = 0.0
         avg_clips = 0.0
         last_loan_date = None
 
         if not loan_history_df.empty:
-            # Publication rate
-            if 'clips_received' in loan_history_df.columns:
-                published = loan_history_df['clips_received'].apply(
-                    lambda x: str(x) == '1.0' if pd.notna(x) else False
+            # Publication rate for the selected partner only, scoped to the summary window.
+            if not summary_df.empty and 'clips_received' in summary_df.columns:
+                published_loans = summary_df['clips_received'].apply(
+                    lambda x: str(x).strip().lower() in {'1', '1.0', 'true', 'yes', 'y'} if pd.notna(x) else False
                 ).sum()
-                publication_rate = published / total_loans if total_loans > 0 else 0.0
+                publication_rate = published_loans / total_loans if total_loans > 0 else 0.0
 
             # Last loan date
             if 'end_date' in loan_history_df.columns:
@@ -2513,7 +2521,9 @@ async def get_partner_intelligence(
             },
             "stats": {
                 "total_loans": total_loans,
+                "published_loans": int(published_loans),
                 "publication_rate": round(publication_rate, 3),
+                "publication_window_label": "Last 12 months",
                 "avg_clips": round(avg_clips, 2),
                 "last_loan_date": str(last_loan_date) if last_loan_date else None
             },

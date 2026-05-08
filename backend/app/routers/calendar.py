@@ -86,7 +86,7 @@ async def get_all_media_partners(office: str = Query(..., description="Office na
     try:
         # Get all partners for this office
         partners_response = db.client.table('media_partners')\
-            .select('person_id, name, office, address, latitude, longitude')\
+            .select('person_id, name, office, address, latitude, longitude, default_loan_region')\
             .eq('office', office)\
             .execute()
 

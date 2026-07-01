@@ -4,7 +4,8 @@ import ModelSelector from '../components/ModelSelector';
 import { EventManager, EventTypes } from '../utils/eventManager';
 import TimelineBar from '../components/TimelineBar';
 import AssignmentDetailsPanel from '../components/AssignmentDetailsPanel';
-import { Combobox, Transition } from '@headlessui/react';
+import PartnerReviewHistory from '../components/PartnerReviewHistory';
+import { Combobox, Transition, Popover } from '@headlessui/react';
 
 /**
  * Format partner name for display
@@ -2582,6 +2583,51 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Chain Info help popover */}
+            <Popover className="relative">
+              <Popover.Button
+                className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Chain Info"
+                aria-label="Chain Info"
+              >
+                <span className="text-base font-semibold">?</span>
+              </Popover.Button>
+              <Popover.Panel className="absolute right-0 z-50 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-xl p-4 space-y-4 text-sm">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h3 className="font-medium text-blue-900 mb-2">What is Chain Builder?</h3>
+                  <p className="text-blue-700 text-xs">
+                    Quickly create 4-6 back-to-back vehicle assignments for a single media partner.
+                    The system suggests vehicles they haven't reviewed, sequentially available.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="font-medium text-gray-700">Business Rules</h3>
+                  <div className="text-xs text-gray-600 space-y-1">
+                    <div className="flex items-start gap-2">
+                      <span className="text-green-600">✓</span>
+                      <span>Excludes vehicles partner has already reviewed</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-green-600">✓</span>
+                      <span>Enforces 30-day model cooldown (no duplicate models)</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-green-600">✓</span>
+                      <span>Checks sequential availability across weeks</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-green-600">✓</span>
+                      <span>Prioritizes by partner tier ranking (A+, A, B, C)</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-green-600">✓</span>
+                      <span>Weekday pickups/dropoffs only (Mon-Fri)</span>
+                    </div>
+                  </div>
+                </div>
+              </Popover.Panel>
+            </Popover>
           </div>
         </div>
       </div>
@@ -4797,8 +4843,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         </div>
 
         {/* Right Panel - Info - Hidden on mobile, visible on desktop */}
-        <div className="hidden lg:block w-80 bg-white border-l p-6 overflow-y-auto">
-          <h2 className="text-lg font-semibold text-gray-900 mb-6">Chain Info</h2>
+        <div className="hidden lg:block w-96 bg-white border-l p-6 overflow-y-auto">
+          <h2 className="text-lg font-semibold text-gray-900 mb-6">Media Info</h2>
 
           <div className="space-y-4 text-sm">
             {/* Budget Status - Shows available to spend */}
@@ -4911,41 +4957,18 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
             })()}
           </div>
 
+          {/* Previous Loans - partner's loan history over the last 6 months */}
+          {chainMode === 'partner' && selectedPartner && (
+            <div className="mt-6">
+              <PartnerReviewHistory
+                personId={selectedPartner}
+                office={selectedOffice}
+                initialLimit={10}
+              />
+            </div>
+          )}
+
           <div className="space-y-4 text-sm mt-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="font-medium text-blue-900 mb-2">What is Chain Builder?</h3>
-              <p className="text-blue-700 text-xs">
-                Quickly create 4-6 back-to-back vehicle assignments for a single media partner.
-                The system suggests vehicles they haven't reviewed, sequentially available.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="font-medium text-gray-700">Business Rules</h3>
-              <div className="text-xs text-gray-600 space-y-1">
-                <div className="flex items-start gap-2">
-                  <span className="text-green-600">✓</span>
-                  <span>Excludes vehicles partner has already reviewed</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="text-green-600">✓</span>
-                  <span>Enforces 30-day model cooldown (no duplicate models)</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="text-green-600">✓</span>
-                  <span>Checks sequential availability across weeks</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="text-green-600">✓</span>
-                  <span>Prioritizes by partner tier ranking (A+, A, B, C)</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="text-green-600">✓</span>
-                  <span>Weekday pickups/dropoffs only (Mon-Fri)</span>
-                </div>
-              </div>
-            </div>
-
             {chain && (
               <div className="pt-4 border-t">
                 <h3 className="font-medium text-gray-700 mb-2">Chain Summary</h3>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import driveShopLogo from '../assets/DriveShop_WebLogo.png';
 import backgroundImage from '../assets/locations-2.jpg';
+import { supabase } from '../lib/supabaseClient';
 
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
@@ -8,24 +9,35 @@ const Login = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Get credentials from environment variables
+    // 1) Try per-user login via Supabase Auth. On success, AuthContext's
+    //    auth-state listener picks up the session automatically.
+    try {
+      const { data, error: sbError } = await supabase.auth.signInWithPassword({
+        email: username.trim(),
+        password,
+      });
+      if (!sbError && data?.session) {
+        return; // authenticated; AuthGate will swap to the app
+      }
+    } catch {
+      // fall through to the legacy shared login
+    }
+
+    // 2) Fallback: legacy shared login (same credentials as before).
     const validUsername = import.meta.env.VITE_AUTH_USERNAME || 'driveshop';
     const validPassword = import.meta.env.VITE_AUTH_PASSWORD || 'scheduler2025';
-
-    // Simple credential check
     if (username === validUsername && password === validPassword) {
-      // Successful login
       onLogin();
-    } else {
-      // Failed login
-      setError('Invalid username or password');
-      setIsLoading(false);
+      return;
     }
+
+    setError('Invalid email or password');
+    setIsLoading(false);
   };
 
   return (
@@ -57,7 +69,7 @@ const Login = ({ onLogin }) => {
             {/* Username */}
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
-                Username
+                Email
               </label>
               <input
                 id="username"
@@ -67,7 +79,7 @@ const Login = ({ onLogin }) => {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="appearance-none relative block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Enter username"
+                placeholder="you@driveshop.com"
                 disabled={isLoading}
               />
             </div>

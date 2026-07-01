@@ -1712,6 +1712,18 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     }
   }, [manualSlots, manualPartnerSlots, selectedPartner, selectedVehicle, shouldCalculateBudget, chainMode]);
 
+  // Show the base "Available to Spend" budget as soon as an office + partner/vehicle
+  // is selected, even before a chain is built (empty chain returns base availability).
+  useEffect(() => {
+    const hasSelection = chainMode === 'partner' ? selectedPartner : selectedVehicle;
+    if (selectedOffice && hasSelection) {
+      calculateChainBudget();
+    } else {
+      setChainBudget(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOffice, selectedPartner, selectedVehicle, chainMode]);
+
   // Save chain state to sessionStorage when it changes
   useEffect(() => {
     if (manualSlots.length > 0) {
@@ -2388,14 +2400,16 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
     if (chainMode === 'partner') {
       // Partner Chain mode: one partner, multiple vehicles
-      const filledSlots = manualSlots.filter(s => s.selected_vehicle);
-      console.log('[Budget] Partner Chain mode. Filled slots:', filledSlots.length, 'Partner:', selectedPartner);
-
-      if (filledSlots.length === 0 || !selectedPartner) {
-        console.log('[Budget] No filled slots or no partner selected, clearing budget');
+      if (!selectedPartner) {
+        console.log('[Budget] No partner selected, clearing budget');
         setChainBudget(null);
         return;
       }
+
+      // An empty chain still returns the base "Available to Spend" per fleet,
+      // so the budget shows as soon as a partner is picked (before any vehicles).
+      const filledSlots = manualSlots.filter(s => s.selected_vehicle);
+      console.log('[Budget] Partner Chain mode. Filled slots:', filledSlots.length, 'Partner:', selectedPartner);
 
       chainData = filledSlots.map(slot => ({
         person_id: selectedPartner,
@@ -2404,14 +2418,14 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       }));
     } else {
       // Vehicle Chain mode: one vehicle, multiple partners
-      const filledSlots = manualPartnerSlots.filter(s => s.selected_partner);
-      console.log('[Budget] Vehicle Chain mode. Filled slots:', filledSlots.length, 'Vehicle:', selectedVehicle?.vin);
-
-      if (filledSlots.length === 0 || !selectedVehicle) {
-        console.log('[Budget] No filled slots or no vehicle selected, clearing budget');
+      if (!selectedVehicle) {
+        console.log('[Budget] No vehicle selected, clearing budget');
         setChainBudget(null);
         return;
       }
+
+      const filledSlots = manualPartnerSlots.filter(s => s.selected_partner);
+      console.log('[Budget] Vehicle Chain mode. Filled slots:', filledSlots.length, 'Vehicle:', selectedVehicle?.vin);
 
       chainData = filledSlots.map(slot => ({
         person_id: slot.selected_partner.person_id,

@@ -98,6 +98,10 @@ app.include_router(chain_builder.router, prefix="/api")
 from .routers import fms_integration
 app.include_router(fms_integration.router)
 
+# Import and include User Management router (admin console)
+from .routers import users
+app.include_router(users.router)
+
 @app.get("/")
 def read_root():
     """Root endpoint"""

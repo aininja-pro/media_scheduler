@@ -5,6 +5,7 @@ import Optimizer from './pages/Optimizer.jsx'
 import Calendar from './pages/Calendar.jsx'
 import Partners from './pages/Partners.jsx'
 import ChainBuilder from './pages/ChainBuilder.jsx'
+import AdminUsers from './pages/AdminUsers.jsx'
 import TabNavigation from './components/TabNavigation.jsx'
 import Login from './components/Login.jsx'
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'
@@ -12,7 +13,7 @@ import { API_BASE_URL } from './config'
 import './App.css'
 
 function AppContent() {
-  const { logout } = useAuth();
+  const { logout, isAdmin } = useAuth();
   const [selectedOffice, setSelectedOffice] = useState('')
   const [selectedWeek, setSelectedWeek] = useState('')
   const [activeTab, setActiveTab] = useState('calendar')
@@ -426,6 +427,18 @@ function AppContent() {
                 >
                   Upload Data
                 </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => setActiveTab('admin')}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      activeTab === 'admin'
+                        ? 'bg-white text-black'
+                        : 'bg-gray-600 text-white hover:bg-gray-500'
+                    }`}
+                  >
+                    Users
+                  </button>
+                )}
                 <button
                   onClick={logout}
                   className="px-4 py-2 rounded-md text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors ml-2"
@@ -833,6 +846,10 @@ function AppContent() {
             preloadedPartner={chainBuilderPartner}
             onPartnerLoaded={() => setChainBuilderPartner(null)}
           />
+        )}
+
+        {activeTab === 'admin' && isAdmin && (
+          <AdminUsers />
         )}
         </div>
       </main>

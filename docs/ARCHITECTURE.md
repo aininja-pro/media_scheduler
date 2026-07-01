@@ -50,6 +50,26 @@ shared login has no Supabase token, so it can never reach the admin API.
 Everyone (per-user or shared login) has full access to the rest of the app; only the
 Users tab / admin API is restricted to admins.
 
+### Self-service password management
+
+Per-user (Supabase) accounts can manage their own passwords without an admin:
+
+- **Change password** — an **Account** tab (`frontend/src/components/ChangePassword.jsx`),
+  shown whenever `authMode === 'supabase'`, calls `supabase.auth.updateUser({ password })`.
+- **Forgot password** — a "Forgot password?" link on the login screen calls
+  `supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })`.
+  The email link returns the user to the app, where Supabase fires a `PASSWORD_RECOVERY`
+  event; `AuthContext` sets `isRecovering`, and `AuthGate` shows the recovery variant of
+  `ChangePassword` to set a new password before entering the app.
+
+Admins can also reset any user's password from the Users tab (the "Reset password" button
+→ `POST /api/admin/users/{id}/reset-password`). The legacy shared login has no Supabase
+account, so none of these apply to it.
+
+**Supabase config:** for the forgot-password email flow, each app origin
+(`http://localhost:5173`, the production URL, etc.) must be listed under Supabase →
+Authentication → URL Configuration → Redirect URLs.
+
 ### Bootstrapping the first admin
 
 Someone must be the first admin before the console can be used. Run once per initial

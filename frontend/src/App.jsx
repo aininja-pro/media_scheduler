@@ -8,12 +8,13 @@ import ChainBuilder from './pages/ChainBuilder.jsx'
 import AdminUsers from './pages/AdminUsers.jsx'
 import TabNavigation from './components/TabNavigation.jsx'
 import Login from './components/Login.jsx'
+import ChangePassword from './components/ChangePassword.jsx'
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'
 import { API_BASE_URL } from './config'
 import './App.css'
 
 function AppContent() {
-  const { logout, isAdmin } = useAuth();
+  const { logout, isAdmin, authMode } = useAuth();
   const [selectedOffice, setSelectedOffice] = useState('')
   const [selectedWeek, setSelectedWeek] = useState('')
   const [activeTab, setActiveTab] = useState('calendar')
@@ -427,6 +428,18 @@ function AppContent() {
                 >
                   Upload Data
                 </button>
+                {authMode === 'supabase' && (
+                  <button
+                    onClick={() => setActiveTab('account')}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      activeTab === 'account'
+                        ? 'bg-white text-black'
+                        : 'bg-gray-600 text-white hover:bg-gray-500'
+                    }`}
+                  >
+                    Account
+                  </button>
+                )}
                 {isAdmin && (
                   <button
                     onClick={() => setActiveTab('admin')}
@@ -851,6 +864,10 @@ function AppContent() {
         {activeTab === 'admin' && isAdmin && (
           <AdminUsers />
         )}
+
+        {activeTab === 'account' && authMode === 'supabase' && (
+          <ChangePassword variant="account" />
+        )}
         </div>
       </main>
     </div>
@@ -868,7 +885,7 @@ function App() {
 
 // Component that shows Login or AppContent based on auth state
 function AuthGate() {
-  const { isAuthenticated, isLoading, login } = useAuth()
+  const { isAuthenticated, isLoading, login, isRecovering, finishRecovery } = useAuth()
 
   if (isLoading) {
     // Show loading state while checking authentication
@@ -880,6 +897,11 @@ function AuthGate() {
         </div>
       </div>
     )
+  }
+
+  if (isRecovering) {
+    // Arrived via a password-reset email link: force setting a new password.
+    return <ChangePassword variant="recovery" onSuccess={finishRecovery} />
   }
 
   if (!isAuthenticated) {

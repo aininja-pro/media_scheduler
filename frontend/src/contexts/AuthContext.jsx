@@ -20,6 +20,7 @@ export const AuthProvider = ({ children }) => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [accessToken, setAccessToken] = useState(null);
   const [authMode, setAuthMode] = useState(null);  // 'supabase' | 'legacy'
+  const [isRecovering, setIsRecovering] = useState(false); // password-reset link in progress
 
   // Apply a Supabase session to auth state (used on load + auth events).
   const applySession = (session) => {
@@ -37,6 +38,7 @@ export const AuthProvider = ({ children }) => {
     setIsAdmin(false);
     setAccessToken(null);
     setAuthMode(null);
+    setIsRecovering(false);
   };
 
   // Restore an existing session on mount and keep it in sync.
@@ -58,7 +60,13 @@ export const AuthProvider = ({ children }) => {
     });
 
     // Keep token fresh and react to sign-in / sign-out / refresh events.
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      // User arrived via a password-reset email link: force the reset screen.
+      if (event === 'PASSWORD_RECOVERY') {
+        if (session) applySession(session);
+        setIsRecovering(true);
+        return;
+      }
       if (session) {
         applySession(session);
       } else if (sessionStorage.getItem(LEGACY_KEY) !== 'authenticated') {
@@ -81,6 +89,10 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(true);
   };
 
+  // Called after the user sets a new password from a reset link; drops the
+  // recovery screen and lets them into the app (they're already signed in).
+  const finishRecovery = () => setIsRecovering(false);
+
   const logout = async () => {
     sessionStorage.removeItem(LEGACY_KEY);
     if (authMode === 'supabase') {
@@ -99,8 +111,11 @@ export const AuthProvider = ({ children }) => {
     user,
     isAdmin,
     accessToken,
+    authMode,
+    isRecovering,
     login,
     logout,
+    finishRecovery,
   };
 
   return (

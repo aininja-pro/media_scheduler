@@ -33,11 +33,18 @@ const Login = ({ onLogin }) => {
     setError('');
     setIsLoading(true);
 
+    // The existing shared "driveshop" username maps to a Supabase admin
+    // account, so the shared login signs in as a real admin (with a token).
+    const sharedUsername = import.meta.env.VITE_AUTH_USERNAME || 'driveshop';
+    const sharedAdminEmail = import.meta.env.VITE_SHARED_ADMIN_EMAIL || 'driveshop@driveshop.com';
+    const typed = username.trim();
+    const loginEmail = typed.toLowerCase() === sharedUsername.toLowerCase() ? sharedAdminEmail : typed;
+
     // 1) Try per-user login via Supabase Auth. On success, AuthContext's
     //    auth-state listener picks up the session automatically.
     try {
       const { data, error: sbError } = await supabase.auth.signInWithPassword({
-        email: username.trim(),
+        email: loginEmail,
         password,
       });
       if (!sbError && data?.session) {

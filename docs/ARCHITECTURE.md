@@ -27,9 +27,14 @@ The app supports **two sign-in paths**, resolved in `frontend/src/components/Log
    (`frontend/src/contexts/AuthContext.jsx`) restores/refreshes the session and exposes
    `user`, `isAdmin`, and `accessToken`. The admin flag is stored per user in
    `user_metadata.is_admin`; the display name in `user_metadata.full_name`.
-2. **Legacy shared login (fallback).** The original single shared credential
-   (`VITE_AUTH_USERNAME` / `VITE_AUTH_PASSWORD`) still works, stored as a boolean flag in
-   `sessionStorage`. This path is always non-admin.
+2. **Shared DriveShop login (admin).** The familiar shared username
+   (`VITE_AUTH_USERNAME`, e.g. `driveshop`) is mapped at login to a real Supabase admin
+   account (`VITE_SHARED_ADMIN_EMAIL`, e.g. `driveshop@driveshop.com`). So typing the
+   shared username/password signs into that Supabase account and gets a normal admin
+   session (token + Users tab). People keep using the same shared credentials as before.
+3. **Env fallback (non-admin, degraded).** If Supabase sign-in fails (e.g. misconfigured),
+   the original `VITE_AUTH_USERNAME` / `VITE_AUTH_PASSWORD` check still logs in via a
+   `sessionStorage` flag. This path has no token and is non-admin — a safety net only.
 
 `AuthGate` in `App.jsx` shows `Login` until authenticated, then the app.
 
@@ -44,8 +49,9 @@ that lets them add and remove users. It calls the admin API:
   (`client.auth.admin.*`).
 
 These endpoints are protected by the `require_admin` dependency: the caller must send a
-Supabase access token (`Authorization: Bearer <token>`) belonging to an admin. The legacy
-shared login has no Supabase token, so it can never reach the admin API.
+Supabase access token (`Authorization: Bearer <token>`) belonging to an admin. The shared
+DriveShop login qualifies because it is backed by a real Supabase admin account; only the
+non-admin env fallback (no token) cannot reach the admin API.
 
 Everyone (per-user or shared login) has full access to the rest of the app; only the
 Users tab / admin API is restricted to admins.

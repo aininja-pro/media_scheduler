@@ -7,7 +7,26 @@ const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  const handleForgotPassword = async () => {
+    setError('');
+    setInfo('');
+    const email = username.trim();
+    if (!email) {
+      setError('Enter your email above, then click "Forgot password?"');
+      return;
+    }
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    setInfo('If that email has an account, a password-reset link is on its way. Check your inbox.');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -119,6 +138,13 @@ const Login = ({ onLogin }) => {
             </div>
           )}
 
+          {/* Info Message */}
+          {info && (
+            <div className="rounded-md bg-blue-50 p-4">
+              <p className="text-sm font-medium text-blue-800">{info}</p>
+            </div>
+          )}
+
           {/* Submit Button */}
           <div>
             <button
@@ -127,6 +153,18 @@ const Login = ({ onLogin }) => {
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? 'Signing in...' : 'Sign in'}
+            </button>
+          </div>
+
+          {/* Forgot password */}
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              disabled={isLoading}
+              className="text-sm text-gray-600 hover:text-gray-900 underline disabled:opacity-50"
+            >
+              Forgot password?
             </button>
           </div>
         </form>

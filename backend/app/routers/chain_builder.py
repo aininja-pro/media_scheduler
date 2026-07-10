@@ -2355,6 +2355,7 @@ async def get_vehicle_review_history(
     vin: str,
     office: str = Query(..., description="Office name"),
     months_back: int = Query(6, description="How many months back to query (default 6)", ge=1, le=24),
+    all_time: bool = Query(False, description="If true, ignore months_back and return all reviews"),
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """
@@ -2377,10 +2378,10 @@ async def get_vehicle_review_history(
         - total_historical_reviews: Total count beyond time window
     """
     try:
-        logger.info(f"Getting review history for vehicle {vin}, office {office}, last {months_back} months")
+        logger.info(f"Getting review history for vehicle {vin}, office {office}, {'all time' if all_time else f'last {months_back} months'}")
 
-        # Calculate cutoff date
-        cutoff_date = (datetime.now() - timedelta(days=months_back * 30)).strftime('%Y-%m-%d')
+        # Calculate cutoff date (ignored when all_time is set)
+        cutoff_date = None if all_time else (datetime.now() - timedelta(days=months_back * 30)).strftime('%Y-%m-%d')
 
         # Get total count for this VIN (all time)
         total_count_response = db.client.table('loan_history')\
@@ -2390,12 +2391,13 @@ async def get_vehicle_review_history(
 
         total_historical_reviews = total_count_response.count if hasattr(total_count_response, 'count') else 0
 
-        # Load recent loan history filtered by VIN and date at database level
-        loan_response = db.client.table('loan_history')\
+        # Load loan history filtered by VIN (and date unless all_time) at database level
+        loan_query = db.client.table('loan_history')\
             .select('*')\
-            .eq('vin', vin)\
-            .gte('start_date', cutoff_date)\
-            .execute()
+            .eq('vin', vin)
+        if cutoff_date:
+            loan_query = loan_query.gte('start_date', cutoff_date)
+        loan_response = loan_query.execute()
 
         loan_history_df = pd.DataFrame(loan_response.data) if loan_response.data else pd.DataFrame()
 
@@ -2449,12 +2451,16 @@ async def get_vehicle_review_history(
             clips_received_val = loan.get('clips_received', 0)
             clips_received = int(float(clips_received_val)) if pd.notna(clips_received_val) else 0
 
+            # Determine published status: any non-zero clips_received means published
+            # (loan_history has no 'published' column - same derivation as partner endpoint)
+            is_published = clips_received > 0
+
             reviews.append({
                 'person_id': person_id,
                 'partner_name': partner_name,
                 'start_date': start_date_str,
                 'end_date': end_date_str,
-                'published': bool(loan.get('published', False)),
+                'published': is_published,
                 'clips_count': clips_count,
                 'clips_received': clips_received
             })
@@ -2483,6 +2489,7 @@ async def get_partner_review_history(
     person_id: int,
     office: str = Query(..., description="Office name"),
     months_back: int = Query(6, description="How many months back to query (default 6)", ge=1, le=24),
+    all_time: bool = Query(False, description="If true, ignore months_back and return all reviews"),
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """
@@ -2506,10 +2513,10 @@ async def get_partner_review_history(
         - total_historical_reviews: Total count beyond time window
     """
     try:
-        logger.info(f"Getting review history for partner {person_id}, office {office}, last {months_back} months")
+        logger.info(f"Getting review history for partner {person_id}, office {office}, {'all time' if all_time else f'last {months_back} months'}")
 
-        # Calculate cutoff date
-        cutoff_date = (datetime.now() - timedelta(days=months_back * 30)).strftime('%Y-%m-%d')
+        # Calculate cutoff date (ignored when all_time is set)
+        cutoff_date = None if all_time else (datetime.now() - timedelta(days=months_back * 30)).strftime('%Y-%m-%d')
 
         # Get partner name first
         partners_response = db.client.table('media_partners').select('person_id, name').eq('person_id', person_id).execute()
@@ -2523,12 +2530,13 @@ async def get_partner_review_history(
 
         total_historical_reviews = total_count_response.count if hasattr(total_count_response, 'count') else 0
 
-        # Load recent loan history filtered by person_id and date at database level
-        loan_response = db.client.table('loan_history')\
+        # Load loan history filtered by person_id (and date unless all_time) at database level
+        loan_query = db.client.table('loan_history')\
             .select('*')\
-            .eq('person_id', int(person_id))\
-            .gte('start_date', cutoff_date)\
-            .execute()
+            .eq('person_id', int(person_id))
+        if cutoff_date:
+            loan_query = loan_query.gte('start_date', cutoff_date)
+        loan_response = loan_query.execute()
 
         loan_history_df = pd.DataFrame(loan_response.data) if loan_response.data else pd.DataFrame()
 

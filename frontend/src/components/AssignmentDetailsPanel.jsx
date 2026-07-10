@@ -29,47 +29,107 @@ export function AssignmentDetailsPanel({
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [historyError, setHistoryError] = useState(null);
 
+  // Upcoming schedule state (vehicle view only)
+  const [upcomingSchedule, setUpcomingSchedule] = useState(null);
+  const [loadingUpcoming, setLoadingUpcoming] = useState(false);
+
+  // Fetch review history (allTime=true refetches without the 6-month window)
+  const fetchReviewHistory = async (allTime = false) => {
+    if (!assignment || !office) return;
+
+    setLoadingHistory(true);
+    setHistoryError(null);
+
+    try {
+      let url;
+      // Determine which endpoint to call based on view mode
+      if (assignment.vin) {
+        // Vehicle view - show partners who reviewed this vehicle
+        url = `${API_BASE_URL}/api/chain-builder/vehicle-review-history/${encodeURIComponent(assignment.vin)}?office=${encodeURIComponent(office)}`;
+      } else if (assignment.person_id) {
+        // Partner view - show vehicles this partner has reviewed
+        url = `${API_BASE_URL}/api/chain-builder/partner-review-history/${assignment.person_id}?office=${encodeURIComponent(office)}`;
+      } else {
+        // Can't determine what to fetch
+        setLoadingHistory(false);
+        return;
+      }
+
+      if (allTime) {
+        url += '&all_time=true';
+      }
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch review history: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setReviewHistory(data);
+    } catch (error) {
+      console.error('Error fetching review history:', error);
+      setHistoryError(error.message);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   // Fetch review history when assignment changes
   useEffect(() => {
-    const fetchReviewHistory = async () => {
-      if (!assignment || !office) return;
+    setShowAllHistory(false);
+    fetchReviewHistory(false);
+  }, [assignment, office]);
 
-      setLoadingHistory(true);
-      setHistoryError(null);
-      setShowAllHistory(false);
+  // View All: fetch complete history (beyond the 6-month window), then expand
+  const handleViewAll = async () => {
+    await fetchReviewHistory(true);
+    setShowAllHistory(true);
+  };
 
+  // Show Less: collapse back to the recent window
+  const handleShowLess = async () => {
+    setShowAllHistory(false);
+    await fetchReviewHistory(false);
+  };
+
+  // Fetch upcoming schedule for vehicle view (active loans + future assignments)
+  useEffect(() => {
+    const fetchUpcomingSchedule = async () => {
+      if (!assignment?.vin) {
+        setUpcomingSchedule(null);
+        return;
+      }
+
+      setLoadingUpcoming(true);
       try {
-        let url;
-        // Determine which endpoint to call based on view mode
-        if (assignment.vin) {
-          // Vehicle view - show partners who reviewed this vehicle
-          url = `${API_BASE_URL}/api/chain-builder/vehicle-review-history/${encodeURIComponent(assignment.vin)}?office=${encodeURIComponent(office)}`;
-        } else if (assignment.person_id) {
-          // Partner view - show vehicles this partner has reviewed
-          url = `${API_BASE_URL}/api/chain-builder/partner-review-history/${assignment.person_id}?office=${encodeURIComponent(office)}`;
-        } else {
-          // Can't determine what to fetch
-          setLoadingHistory(false);
-          return;
-        }
+        const today = new Date();
+        const oneYearOut = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+        const startDate = today.toISOString().split('T')[0];
+        const endDate = oneYearOut.toISOString().split('T')[0];
 
-        const response = await fetch(url);
+        const response = await fetch(
+          `${API_BASE_URL}/api/chain-builder/vehicle-busy-periods?vin=${encodeURIComponent(assignment.vin)}&start_date=${startDate}&end_date=${endDate}`
+        );
         if (!response.ok) {
-          throw new Error(`Failed to fetch review history: ${response.status}`);
+          throw new Error(`Failed to fetch upcoming schedule: ${response.status}`);
         }
 
         const data = await response.json();
-        setReviewHistory(data);
+        // Exclude the assignment currently being viewed
+        const periods = (data.busy_periods || []).filter(
+          (p) => !assignment.assignment_id || p.assignment_id !== assignment.assignment_id
+        );
+        setUpcomingSchedule(periods);
       } catch (error) {
-        console.error('Error fetching review history:', error);
-        setHistoryError(error.message);
+        console.error('Error fetching upcoming schedule:', error);
+        setUpcomingSchedule(null);
       } finally {
-        setLoadingHistory(false);
+        setLoadingUpcoming(false);
       }
     };
 
-    fetchReviewHistory();
-  }, [assignment, office]);
+    fetchUpcomingSchedule();
+  }, [assignment]);
 
   // Format dates
   const formatDate = (date) => {
@@ -94,6 +154,14 @@ export function AssignmentDetailsPanel({
     if (diffDays < 60) return '1 month ago';
     const months = Math.floor(diffDays / 30);
     return `${months} months ago`;
+  };
+
+  // Format YYYY-MM-DD schedule dates as "Aug 27, 2026" (parsed manually to avoid UTC offset issues)
+  const formatScheduleDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    const [year, month, day] = String(dateStr).split('T')[0].split('-').map(Number);
+    if (!year || !month || !day) return String(dateStr);
+    return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   // Handle filter button clicks
@@ -216,17 +284,6 @@ export function AssignmentDetailsPanel({
           </div>
         )}
 
-        {/* Score */}
-        {assignment.score && (
-          <div className="bg-gray-50 p-3 rounded-lg">
-            <h3 className="text-sm font-semibold text-gray-600 mb-2">Quality Score</h3>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold text-indigo-600">{assignment.score}</span>
-              <span className="text-sm text-gray-500">/ 1000</span>
-            </div>
-          </div>
-        )}
-
         {/* Review History Section */}
         <div className="bg-gray-50 p-3 rounded-lg border-t-2 border-indigo-200">
           <h3 className="text-sm font-semibold text-gray-600 mb-2">
@@ -260,70 +317,38 @@ export function AssignmentDetailsPanel({
                       >
                         {/* Vehicle View: Show Partner Info */}
                         {assignment.vin && (
-                          <>
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <p className="font-semibold text-sm">{review.partner_name}</p>
-                                <p className="text-xs text-gray-500" title={`${review.start_date} to ${review.end_date}`}>
-                                  {formatRelativeDate(review.start_date)}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-lg ${review.published ? 'text-green-600' : 'text-gray-400'}`}>
-                                  {review.published ? '✓' : '✗'}
-                                </span>
-                                {review.clips_count > 0 && (
-                                  <span className="text-xs font-bold text-indigo-600">
-                                    {review.clips_count} clip{review.clips_count !== 1 ? 's' : ''}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            {!review.published && (
-                              <p className="text-xs text-gray-400 mt-1">Not Published</p>
-                            )}
-                          </>
+                          <div className="flex justify-between items-center">
+                            <p className="font-semibold text-sm">{review.partner_name}</p>
+                            <p className="text-xs text-gray-500" title={`${review.start_date} to ${review.end_date}`}>
+                              {formatRelativeDate(review.start_date)}
+                            </p>
+                          </div>
                         )}
 
                         {/* Partner View: Show Vehicle Info */}
                         {assignment.person_id && (
-                          <>
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <p className="font-semibold text-sm">
-                                  {review.make} {review.model}
-                                </p>
-                                <p className="text-xs text-gray-500 font-mono">
-                                  {review.vin.slice(-4)}
-                                </p>
-                                <p className="text-xs text-gray-500" title={`${review.start_date} to ${review.end_date}`}>
-                                  {formatRelativeDate(review.start_date)}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-lg ${review.published ? 'text-green-600' : 'text-gray-400'}`}>
-                                  {review.published ? '✓' : '✗'}
-                                </span>
-                                {review.clips_count > 0 && (
-                                  <span className="text-xs font-bold text-indigo-600">
-                                    {review.clips_count} clip{review.clips_count !== 1 ? 's' : ''}
-                                  </span>
-                                )}
-                              </div>
+                          <div className="flex justify-between items-center">
+                            <div className="flex-1">
+                              <p className="font-semibold text-sm">
+                                {review.make} {review.model}
+                              </p>
+                              <p className="text-xs text-gray-500 font-mono">
+                                {review.vin.slice(-4)}
+                              </p>
                             </div>
-                            {!review.published && (
-                              <p className="text-xs text-gray-400 mt-1">Not Published</p>
-                            )}
-                          </>
+                            <p className="text-xs text-gray-500" title={`${review.start_date} to ${review.end_date}`}>
+                              {formatRelativeDate(review.start_date)}
+                            </p>
+                          </div>
                         )}
                       </div>
                     ))}
                   </div>
 
-                  {/* View All Button */}
-                  {reviewHistory.total_historical_reviews > 5 && !showAllHistory && (
+                  {/* View All Button - fetches complete history beyond the recent window */}
+                  {!showAllHistory && reviewHistory.total_historical_reviews > Math.min(reviewHistory.reviews.length, 5) && (
                     <button
-                      onClick={() => setShowAllHistory(true)}
+                      onClick={handleViewAll}
                       className="w-full mt-2 text-xs text-indigo-600 hover:text-indigo-800 font-semibold py-1 border border-indigo-200 rounded hover:bg-indigo-50 transition-colors"
                     >
                       View All {reviewHistory.total_historical_reviews} Reviews →
@@ -333,7 +358,7 @@ export function AssignmentDetailsPanel({
                   {/* Collapse Button */}
                   {showAllHistory && (
                     <button
-                      onClick={() => setShowAllHistory(false)}
+                      onClick={handleShowLess}
                       className="w-full mt-2 text-xs text-gray-600 hover:text-gray-800 font-semibold py-1 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
                     >
                       ← Show Less
@@ -363,6 +388,61 @@ export function AssignmentDetailsPanel({
             </>
           )}
         </div>
+
+        {/* Upcoming Schedule Section (vehicle view only) */}
+        {assignment.vin && (
+          <div className="bg-gray-50 p-3 rounded-lg border-t-2 border-indigo-200">
+            <h3 className="text-sm font-semibold text-gray-600 mb-2">
+              📅 Upcoming Schedule
+            </h3>
+
+            {loadingUpcoming && (
+              <div className="flex items-center justify-center py-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+              </div>
+            )}
+
+            {!loadingUpcoming && upcomingSchedule && upcomingSchedule.length > 0 && (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {upcomingSchedule.map((period, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-white p-2 rounded border border-gray-200"
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="flex-1">
+                        <p className="font-semibold text-sm">{period.partner_name}</p>
+                        <p className="text-xs text-gray-500">
+                          {formatScheduleDate(period.start_date)} – {formatScheduleDate(period.end_date)}
+                        </p>
+                      </div>
+                      <span className={`
+                        px-2 py-0.5 rounded-full text-xs font-semibold
+                        ${period.status === 'active' ? 'bg-blue-100 text-blue-800' :
+                          period.status === 'requested' ? 'bg-pink-100 text-pink-800' :
+                          period.status === 'manual' ? 'bg-green-100 text-green-800' :
+                          period.status === 'planned' ? 'bg-emerald-100 text-emerald-800' :
+                          'bg-gray-100 text-gray-800'}
+                      `}>
+                        {period.status === 'active' ? 'Active' :
+                          period.status === 'requested' ? 'Requested' :
+                          period.status === 'manual' ? 'Manual' :
+                          period.status === 'planned' ? 'Planned' :
+                          period.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!loadingUpcoming && (!upcomingSchedule || upcomingSchedule.length === 0) && (
+              <div className="text-sm text-gray-500 italic py-2">
+                No other upcoming activity scheduled for this vehicle.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Actions */}
         {!isActive && (

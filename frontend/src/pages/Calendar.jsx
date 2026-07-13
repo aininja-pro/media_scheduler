@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { EventManager, EventTypes } from '../utils/eventManager';
 import { API_BASE_URL } from '../config';
+import { getAuthHeader } from '../lib/supabaseClient';
 import PartnerReviewHistory from '../components/PartnerReviewHistory';
 
 /**
@@ -250,7 +251,8 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
   const requestAssignment = async (assignmentId) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/calendar/change-assignment-status/${assignmentId}?new_status=requested`, {
-        method: 'PATCH'
+        method: 'PATCH',
+        headers: await getAuthHeader()
       });
 
       if (!response.ok) {

@@ -19,6 +19,7 @@ const AdminUsers = () => {
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [makeAdmin, setMakeAdmin] = useState(false);
+  const [fmsUserId, setFmsUserId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
@@ -66,6 +67,7 @@ const AdminUsers = () => {
           password,
           full_name: fullName.trim(),
           is_admin: makeAdmin,
+          fms_user_id: fmsUserId.trim(),
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -77,6 +79,7 @@ const AdminUsers = () => {
       setFullName('');
       setPassword('');
       setMakeAdmin(false);
+      setFmsUserId('');
       fetchUsers();
     } catch (err) {
       setFormError(err.message);
@@ -105,6 +108,33 @@ const AdminUsers = () => {
         throw new Error(body.detail || `Failed to reset password (${res.status})`);
       }
       alert(`Password updated for ${u.email}. Share it with them to change on next login.`);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleSetFmsUserId = async (u) => {
+    const value = window.prompt(
+      `FMS User ID for ${u.email} (their user ID in the FMS system, used as the requestor on vehicle requests). Leave empty to clear:`,
+      u.fms_user_id || ''
+    );
+    if (value === null) return; // cancelled
+    const trimmed = value.trim();
+    if (trimmed && !/^\d+$/.test(trimmed)) {
+      alert('FMS User ID must be a number (e.g. 9202).');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${u.id}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({ fms_user_id: trimmed }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.detail || `Failed to update FMS User ID (${res.status})`);
+      }
+      fetchUsers();
     } catch (err) {
       alert(err.message);
     }
@@ -184,6 +214,22 @@ const AdminUsers = () => {
               disabled={submitting}
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">FMS User ID</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={fmsUserId}
+              onChange={(e) => setFmsUserId(e.target.value)}
+              placeholder="e.g. 9202 — their user ID in FMS"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              disabled={submitting}
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Used as the requestor when they send vehicle requests to FMS. Without it, they cannot submit to FMS.
+            </p>
+          </div>
           <div className="flex items-end">
             <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
               <input
@@ -244,6 +290,7 @@ const AdminUsers = () => {
                 <th className="px-6 py-3 font-medium">Name</th>
                 <th className="px-6 py-3 font-medium">Email</th>
                 <th className="px-6 py-3 font-medium">Role</th>
+                <th className="px-6 py-3 font-medium">FMS User ID</th>
                 <th className="px-6 py-3 font-medium">Created</th>
                 <th className="px-6 py-3 font-medium">Last sign-in</th>
                 <th className="px-6 py-3 font-medium text-right">Actions</th>
@@ -265,9 +312,27 @@ const AdminUsers = () => {
                       </span>
                     )}
                   </td>
+                  <td className="px-6 py-3">
+                    {u.fms_user_id ? (
+                      <span className="text-gray-900">{u.fms_user_id}</span>
+                    ) : (
+                      <span
+                        className="px-2 py-1 rounded-full font-semibold text-xs bg-amber-100 text-amber-800"
+                        title="This user cannot send requests to FMS until an FMS User ID is set."
+                      >
+                        Not set
+                      </span>
+                    )}
+                  </td>
                   <td className="px-6 py-3 text-gray-600">{formatDate(u.created_at)}</td>
                   <td className="px-6 py-3 text-gray-600">{formatDate(u.last_sign_in_at)}</td>
                   <td className="px-6 py-3 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => handleSetFmsUserId(u)}
+                      className="mr-2 px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold rounded transition-colors"
+                    >
+                      Set FMS ID
+                    </button>
                     <button
                       onClick={() => handleResetPassword(u)}
                       className="mr-2 px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold rounded transition-colors"

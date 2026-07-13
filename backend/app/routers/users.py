@@ -34,10 +34,16 @@ class CreateUserRequest(BaseModel):
     password: str
     full_name: Optional[str] = ""
     is_admin: bool = False
+    fms_user_id: Optional[str] = ""
 
 
 class ResetPasswordRequest(BaseModel):
     password: str
+
+
+class UpdateUserRequest(BaseModel):
+    fms_user_id: Optional[str] = None
+    full_name: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +90,7 @@ def _serialize_user(user) -> dict:
         "email": user.email,
         "full_name": metadata.get("full_name", ""),
         "is_admin": bool(metadata.get("is_admin", False)),
+        "fms_user_id": str(metadata.get("fms_user_id") or ""),
         "created_at": str(user.created_at) if user.created_at else None,
         "last_sign_in_at": str(user.last_sign_in_at) if user.last_sign_in_at else None,
     }
@@ -120,6 +127,7 @@ async def create_user(body: CreateUserRequest, admin: dict = Depends(require_adm
             "user_metadata": {
                 "full_name": body.full_name or "",
                 "is_admin": body.is_admin,
+                "fms_user_id": (body.fms_user_id or "").strip(),
             },
         })
         logger.info(f"Admin {admin['email']} created user {body.email}")
@@ -145,6 +153,39 @@ async def delete_user(user_id: str, admin: dict = Depends(require_admin)):
         raise
     except Exception as e:
         logger.error(f"Failed to delete user {user_id}: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/{user_id}")
+async def update_user(user_id: str, body: UpdateUserRequest,
+                      admin: dict = Depends(require_admin)):
+    """Update a user's profile fields, e.g. their FMS User ID (admins only)."""
+    try:
+        # Merge with existing metadata so untouched fields (is_admin, etc.) survive.
+        current = db_service.client.auth.admin.get_user_by_id(user_id)
+        user = getattr(current, "user", None)
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        metadata = dict(user.user_metadata or {})
+        if body.fms_user_id is not None:
+            fms_user_id = body.fms_user_id.strip()
+            if fms_user_id and not fms_user_id.isdigit():
+                raise HTTPException(status_code=400,
+                                    detail="FMS User ID must be a number")
+            metadata["fms_user_id"] = fms_user_id
+        if body.full_name is not None:
+            metadata["full_name"] = body.full_name.strip()
+
+        result = db_service.client.auth.admin.update_user_by_id(
+            user_id, {"user_metadata": metadata})
+        logger.info(f"Admin {admin['email']} updated user {user_id} "
+                    f"(fms_user_id={metadata.get('fms_user_id', '')!r})")
+        return _serialize_user(result.user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update user {user_id}: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 

@@ -11,8 +11,8 @@ Author: Ray Rierson
 Date: 2025-11-12
 """
 
-from fastapi import APIRouter, HTTPException
-from typing import List
+from fastapi import APIRouter, HTTPException, Header
+from typing import List, Optional
 from pydantic import BaseModel
 import httpx
 import os
@@ -42,6 +42,46 @@ FMS_REQUESTOR_ID = FMS_PRODUCTION_REQUESTOR_ID if FMS_ENVIRONMENT == "production
 from app.services.database import db_service
 
 
+def resolve_fms_requestor(authorization: Optional[str]) -> int:
+    """Resolve the FMS requestor_id from the signed-in user's profile.
+
+    Every FMS submission must be attributed to the real person who made it
+    (client requirement — a shared/fallback ID shows up as the wrong person
+    in FMS). The caller's Supabase token is verified and their
+    user_metadata.fms_user_id is used. Raises 401/403 with an actionable
+    message instead of falling back to a shared ID.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Sign in with your personal account to send requests to FMS. "
+                   "The shared login cannot submit FMS requests."
+        )
+
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        result = db_service.client.auth.get_user(token)
+    except Exception as e:
+        logger.warning(f"FMS requestor token verification failed: {e}")
+        raise HTTPException(status_code=401, detail="Invalid or expired session. Please sign in again.")
+
+    user = getattr(result, "user", None)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired session. Please sign in again.")
+
+    metadata = user.user_metadata or {}
+    fms_user_id = str(metadata.get("fms_user_id") or "").strip()
+
+    if not fms_user_id or not fms_user_id.isdigit():
+        raise HTTPException(
+            status_code=403,
+            detail=f"No FMS User ID is set on your profile ({user.email}). "
+                   "Ask an admin to add it in User Management before sending requests to FMS."
+        )
+
+    return int(fms_user_id)
+
+
 # Pydantic models
 class BulkOperationRequest(BaseModel):
     assignment_ids: List[int]
@@ -61,7 +101,8 @@ class OperationResult(BaseModel):
 # ============================================
 
 @router.post("/create-vehicle-request/{assignment_id}")
-async def create_fms_vehicle_request(assignment_id: int):
+async def create_fms_vehicle_request(assignment_id: int,
+                                     authorization: Optional[str] = Header(None)):
     """
     Create FMS vehicle request when user marks assignment as 'requested'
 
@@ -84,6 +125,10 @@ async def create_fms_vehicle_request(assignment_id: int):
     """
 
     logger.info(f"Creating FMS vehicle request for assignment {assignment_id}")
+
+    # Resolve who is making this request BEFORE touching anything else —
+    # submissions without a real FMS user are rejected outright.
+    requestor_id = resolve_fms_requestor(authorization)
 
     try:
         # 1. Fetch assignment details
@@ -145,7 +190,7 @@ async def create_fms_vehicle_request(assignment_id: int):
         fms_payload = {
             "request": {
                 # Required fields
-                "requestor_id": int(FMS_REQUESTOR_ID),
+                "requestor_id": requestor_id,  # the signed-in user's FMS User ID
                 "start_date": fms_start_date,
                 "end_date": fms_end_date,
                 "activity_type_id": 1,  # NEW: Always 1 for media partner loans
@@ -173,6 +218,7 @@ async def create_fms_vehicle_request(assignment_id: int):
         logger.info(f"  Vehicle: {vehicle_data.get('make')} {vehicle_data.get('model')} (VIN: {vin}, vehicle_id: {vehicle_id})")
         logger.info(f"  Partner: {assignment.get('partner_name')} (person_id: {assignment.get('person_id')})")
         logger.info(f"  Dates: {fms_start_date} to {fms_end_date}")
+        logger.info(f"  Requestor: {requestor_id}")
         logger.debug(f"Full payload: {fms_payload}")
 
         # 5. Send to FMS
@@ -313,7 +359,8 @@ async def delete_fms_vehicle_request(assignment_id: int):
 # ============================================
 
 @router.post("/bulk-create-vehicle-requests")
-async def bulk_create_fms_vehicle_requests(request: BulkOperationRequest):
+async def bulk_create_fms_vehicle_requests(request: BulkOperationRequest,
+                                           authorization: Optional[str] = Header(None)):
     """
     Bulk request multiple assignments (Green → Magenta)
     Loops through each and calls FMS CREATE API individually
@@ -328,6 +375,11 @@ async def bulk_create_fms_vehicle_requests(request: BulkOperationRequest):
     """
 
     logger.info(f"Bulk creating {len(request.assignment_ids)} FMS vehicle requests")
+
+    # Fail the whole batch up front if the caller can't be attributed —
+    # better than flipping statuses and rolling them all back one by one.
+    resolve_fms_requestor(authorization)
+
     results = []
 
     for assignment_id in request.assignment_ids:
@@ -366,7 +418,7 @@ async def bulk_create_fms_vehicle_requests(request: BulkOperationRequest):
 
             # Create FMS request
             try:
-                fms_result = await create_fms_vehicle_request(assignment_id)
+                fms_result = await create_fms_vehicle_request(assignment_id, authorization)
 
                 results.append(OperationResult(
                     assignment_id=assignment_id,
@@ -612,7 +664,7 @@ async def get_fms_config():
     return {
         "environment": FMS_ENVIRONMENT,
         "base_url": FMS_BASE_URL,
-        "requestor_id": FMS_REQUESTOR_ID,
+        "requestor_id": "per-user (fms_user_id on each profile)",
         "token_configured": bool(FMS_TOKEN),
         "token_length": len(FMS_TOKEN) if FMS_TOKEN else 0
     }

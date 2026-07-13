@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { API_BASE_URL } from '../config';
+import { getAuthHeader } from '../lib/supabaseClient';
 import ModelSelector from '../components/ModelSelector';
 import { EventManager, EventTypes } from '../utils/eventManager';
 import TimelineBar from '../components/TimelineBar';
@@ -1113,7 +1114,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/calendar/change-assignment-status/${assignment.assignment_id}?new_status=requested`,
-        { method: 'PATCH' }
+        { method: 'PATCH', headers: await getAuthHeader() }
       );
 
       if (!response.ok) {
@@ -2327,7 +2328,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         try {
           const fmsResponse = await fetch(`${API_BASE_URL}/api/fms/bulk-create-vehicle-requests`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
             body: JSON.stringify({ assignment_ids: data.assignment_ids })
           });
 
@@ -2336,7 +2337,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           if (fmsResult.succeeded > 0) {
             setSaveMessage(`✅ Chain saved and ${fmsResult.succeeded}/${fmsResult.total} requests sent to FMS!`);
           } else {
-            setSaveMessage(`⚠️ Chain saved but FMS requests failed. See console for details.`);
+            setSaveMessage(`⚠️ Chain saved but FMS requests failed: ${fmsResult.detail || 'See console for details.'}`);
             console.error('FMS bulk request failed:', fmsResult);
           }
         } catch (fmsError) {
@@ -2528,7 +2529,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         try {
           const fmsResponse = await fetch(`${API_BASE_URL}/api/fms/bulk-create-vehicle-requests`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
             body: JSON.stringify({ assignment_ids: data.assignment_ids })
           });
 
@@ -2537,7 +2538,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           if (fmsResult.succeeded > 0) {
             setSaveMessage(`✅ Chain saved and ${fmsResult.succeeded}/${fmsResult.total} requests sent to FMS!`);
           } else {
-            setSaveMessage(`⚠️ Chain saved but FMS requests failed. See console for details.`);
+            setSaveMessage(`⚠️ Chain saved but FMS requests failed: ${fmsResult.detail || 'See console for details.'}`);
             console.error('FMS bulk request failed:', fmsResult);
           }
         } catch (fmsError) {

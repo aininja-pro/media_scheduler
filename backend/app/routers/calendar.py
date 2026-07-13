@@ -2,7 +2,7 @@
 Calendar view endpoints for visualizing vehicle activity timeline
 """
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Header
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 import pandas as pd
@@ -570,7 +570,8 @@ async def schedule_manual_assignment(request: ScheduleAssignmentRequest) -> Dict
 @router.patch("/change-assignment-status/{assignment_id}")
 async def change_assignment_status(
     assignment_id: int,
-    new_status: str = Query(..., description="New status: 'planned', 'manual', 'requested'")
+    new_status: str = Query(..., description="New status: 'planned', 'manual', 'requested'"),
+    authorization: Optional[str] = Header(None)
 ) -> Dict[str, Any]:
     """
     Change the status of a scheduled assignment.
@@ -617,7 +618,7 @@ async def change_assignment_status(
                 # Import and call FMS integration directly
                 from ..routers.fms_integration import create_fms_vehicle_request
 
-                fms_result = await create_fms_vehicle_request(assignment_id)
+                fms_result = await create_fms_vehicle_request(assignment_id, authorization)
 
                 if not fms_result.get('success'):
                     # Rollback status change
@@ -637,9 +638,13 @@ async def change_assignment_status(
                     .update({'status': current_status})\
                     .eq('assignment_id', assignment_id)\
                     .execute()
+                # Preserve auth/attribution errors (401/403) so the UI can show
+                # the actionable message instead of a generic FMS failure.
+                if he.status_code in (401, 403):
+                    raise he
                 raise HTTPException(
                     status_code=500,
-                    detail=f"FMS integration error: {str(he)}"
+                    detail=f"FMS integration error: {he.detail}"
                 )
 
             return {

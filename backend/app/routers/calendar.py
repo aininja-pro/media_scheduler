@@ -638,9 +638,10 @@ async def change_assignment_status(
                     .update({'status': current_status})\
                     .eq('assignment_id', assignment_id)\
                     .execute()
-                # Preserve auth/attribution errors (401/403) so the UI can show
-                # the actionable message instead of a generic FMS failure.
-                if he.status_code in (401, 403):
+                # Preserve auth/attribution (401/403) and booking-conflict (409)
+                # errors so the UI can show the actionable message instead of
+                # a generic FMS failure.
+                if he.status_code in (401, 403, 409):
                     raise he
                 raise HTTPException(
                     status_code=500,

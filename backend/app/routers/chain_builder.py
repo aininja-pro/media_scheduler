@@ -15,6 +15,7 @@ import pandas as pd
 import json
 
 from ..services.database import get_database, DatabaseService
+from ..services.conflicts import find_vehicle_conflicts
 from ..chain_builder.exclusions import get_vehicles_not_reviewed, get_model_cooldown_status
 from ..chain_builder.vehicle_exclusions import get_partners_not_reviewed
 from ..utils.media_costs import get_cost_for_assignment
@@ -1203,6 +1204,38 @@ async def get_slot_options(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _reject_if_chain_conflicts(client, slots: List[Dict[str, str]]) -> None:
+    """Block a chain save when any slot overlaps an existing booking.
+
+    slots: [{'vin', 'label', 'start', 'end'}] — label is shown to the user
+    (partner name for vehicle chains, vehicle for partner chains).
+    Checks each slot against current_activity + scheduled_assignments, and
+    slots within the same request against each other. Raises 409 with a
+    plain-English list so the UI can show exactly what's in the way.
+    """
+    problems: List[str] = []
+
+    for i, slot in enumerate(slots):
+        for conflict in find_vehicle_conflicts(client, slot['vin'], slot['start'], slot['end']):
+            problems.append(
+                f"{slot['label']} ({slot['start']} to {slot['end']}) overlaps {conflict}"
+            )
+        # Same-vehicle slots within this request can also collide with each other
+        for other in slots[i + 1:]:
+            if other['vin'] == slot['vin'] and \
+                    slot['start'] < other['end'] and slot['end'] > other['start']:
+                problems.append(
+                    f"{slot['label']} ({slot['start']} to {slot['end']}) overlaps "
+                    f"{other['label']} ({other['start']} to {other['end']}) in this same chain"
+                )
+
+    if problems:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot save: the vehicle is already booked. " + "; ".join(problems)
+        )
+
+
 @router.post("/save-chain")
 async def save_chain(
     request: Dict[str, Any],
@@ -1246,6 +1279,17 @@ async def save_chain(
 
         logger.info(f"Saving chain for partner {person_id}: {len(chain_vehicles)} vehicles")
 
+        # Block saves that would double-book a vehicle
+        _reject_if_chain_conflicts(db.client, [
+            {
+                'vin': v['vin'],
+                'label': f"{v.get('make', '')} {v.get('model', '')}".strip() or v['vin'],
+                'start': v['start_date'],
+                'end': v['end_date'],
+            }
+            for v in chain_vehicles
+        ])
+
         # Insert each vehicle as a scheduled assignment
         assignments_to_insert = []
 
@@ -1285,6 +1329,8 @@ async def save_chain(
                 'message': 'No vehicles to save'
             }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error saving chain: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1334,6 +1380,17 @@ async def save_vehicle_chain(
 
         logger.info(f"Saving vehicle chain for VIN {vin}: {len(chain_partners)} partners")
 
+        # Block saves that would double-book this vehicle
+        _reject_if_chain_conflicts(db.client, [
+            {
+                'vin': vin,
+                'label': p.get('partner_name') or f"partner {p.get('person_id')}",
+                'start': p['start_date'],
+                'end': p['end_date'],
+            }
+            for p in chain_partners
+        ])
+
         # Insert each partner as a scheduled assignment
         assignments_to_insert = []
 
@@ -1373,6 +1430,8 @@ async def save_vehicle_chain(
                 'message': 'No partners to save'
             }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error saving vehicle chain: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

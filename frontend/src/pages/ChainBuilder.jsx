@@ -5,6 +5,7 @@ import ModelSelector from '../components/ModelSelector';
 import { EventManager, EventTypes } from '../utils/eventManager';
 import TimelineBar from '../components/TimelineBar';
 import AssignmentDetailsPanel from '../components/AssignmentDetailsPanel';
+import FmsResultModal from '../components/FmsResultModal';
 import PartnerReviewHistory from '../components/PartnerReviewHistory';
 import { Combobox, Transition, Popover } from '@headlessui/react';
 
@@ -86,6 +87,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   const [chain, setChain] = useState(null);
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  // Blocking success/failure dialog for FMS submissions (see FmsResultModal)
+  const [fmsResult, setFmsResult] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // Timeline navigation
@@ -1119,11 +1122,11 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
       if (!response.ok) {
         const errorData = await response.json();
-        if (response.status === 500) {
-          setSaveMessage(`❌ Failed to send request to FMS - assignment not marked as requested`);
-        } else {
-          setSaveMessage(`❌ Failed to request: ${errorData.detail || errorData.message || 'Unknown error'}`);
-        }
+        setFmsResult({
+          success: false,
+          title: 'Not sent to FMS',
+          message: `${errorData.detail || errorData.message || 'Unknown error'}\n\nThe assignment was NOT marked as requested.`,
+        });
         return;
       }
 
@@ -1132,7 +1135,11 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       if (data.success) {
         // Check if FMS action was performed
         if (data.fms_action === 'create') {
-          setSaveMessage(`✅ Assignment requested! Request sent to FMS for approval.`);
+          setFmsResult({
+            success: true,
+            title: 'Sent to FMS',
+            message: `The request for ${assignment.partner_name || 'this assignment'} was created in FMS and is awaiting approval.`,
+          });
         } else {
           setSaveMessage(`✅ Changed to requested`);
         }
@@ -1171,10 +1178,18 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           assignmentId: assignment.assignment_id
         });
       } else {
-        setSaveMessage(`❌ Failed to request: ${data.message}`);
+        setFmsResult({
+          success: false,
+          title: 'Not sent to FMS',
+          message: data.message || 'Unknown error',
+        });
       }
     } catch (err) {
-      setSaveMessage(`❌ Error: ${err.message}`);
+      setFmsResult({
+        success: false,
+        title: 'Not sent to FMS',
+        message: `Could not reach the server: ${err.message}`,
+      });
     }
   };
 
@@ -1189,11 +1204,11 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
       if (!response.ok) {
         const errorData = await response.json();
-        if (response.status === 500) {
-          setSaveMessage(`❌ Failed to unrequest from FMS - request may still be active`);
-        } else {
-          setSaveMessage(`❌ Failed to unrequest: ${errorData.detail || errorData.message || 'Unknown error'}`);
-        }
+        setFmsResult({
+          success: false,
+          title: 'Unrequest failed',
+          message: `${errorData.detail || errorData.message || 'Unknown error'}\n\nThe request may still be active in FMS.`,
+        });
         return;
       }
 
@@ -1436,6 +1451,14 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 409) {
+          setFmsResult({
+            success: false,
+            title: 'Scheduling conflict',
+            message: data.detail || 'The vehicle is already booked for those dates.',
+          });
+          return;
+        }
         throw new Error(data.detail || 'Failed to save chain');
       }
 
@@ -2317,6 +2340,14 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 409) {
+          setFmsResult({
+            success: false,
+            title: 'Scheduling conflict',
+            message: data.detail || 'The vehicle is already booked for those dates.',
+          });
+          return;
+        }
         throw new Error(data.detail || 'Failed to save vehicle chain');
       }
 
@@ -2332,17 +2363,43 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
             body: JSON.stringify({ assignment_ids: data.assignment_ids })
           });
 
-          const fmsResult = await fmsResponse.json();
+          const fmsSummary = await fmsResponse.json();
 
-          if (fmsResult.succeeded > 0) {
-            setSaveMessage(`✅ Chain saved and ${fmsResult.succeeded}/${fmsResult.total} requests sent to FMS!`);
+          if (fmsSummary.succeeded > 0 && fmsSummary.failed === 0) {
+            setFmsResult({
+              success: true,
+              title: 'Sent to FMS',
+              message: `Chain saved and all ${fmsSummary.succeeded} requests were created in FMS.`,
+            });
+          } else if (fmsSummary.succeeded > 0) {
+            const failures = (fmsSummary.results || [])
+              .filter((r) => !r.success)
+              .map((r) => `• Assignment ${r.assignment_id}: ${r.error}`)
+              .join('\n');
+            setFmsResult({
+              success: false,
+              title: 'Partially sent to FMS',
+              message: `${fmsSummary.succeeded}/${fmsSummary.total} requests were created in FMS. Failures:\n${failures}`,
+            });
           } else {
-            setSaveMessage(`⚠️ Chain saved but FMS requests failed: ${fmsResult.detail || 'See console for details.'}`);
-            console.error('FMS bulk request failed:', fmsResult);
+            const failures = (fmsSummary.results || [])
+              .filter((r) => !r.success)
+              .map((r) => `• Assignment ${r.assignment_id}: ${r.error}`)
+              .join('\n');
+            setFmsResult({
+              success: false,
+              title: 'Not sent to FMS',
+              message: `The chain was saved, but no requests reached FMS.\n${failures || fmsSummary.detail || 'See console for details.'}`,
+            });
+            console.error('FMS bulk request failed:', fmsSummary);
           }
         } catch (fmsError) {
           console.error('Failed to send bulk requests to FMS:', fmsError);
-          setSaveMessage(`⚠️ Chain saved but failed to send to FMS: ${fmsError.message}`);
+          setFmsResult({
+            success: false,
+            title: 'Not sent to FMS',
+            message: `The chain was saved, but sending to FMS failed: ${fmsError.message}`,
+          });
         }
       }
 
@@ -2518,6 +2575,14 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 409) {
+          setFmsResult({
+            success: false,
+            title: 'Scheduling conflict',
+            message: data.detail || 'The vehicle is already booked for those dates.',
+          });
+          return;
+        }
         throw new Error(data.detail || 'Failed to save chain');
       }
 
@@ -2533,17 +2598,43 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
             body: JSON.stringify({ assignment_ids: data.assignment_ids })
           });
 
-          const fmsResult = await fmsResponse.json();
+          const fmsSummary = await fmsResponse.json();
 
-          if (fmsResult.succeeded > 0) {
-            setSaveMessage(`✅ Chain saved and ${fmsResult.succeeded}/${fmsResult.total} requests sent to FMS!`);
+          if (fmsSummary.succeeded > 0 && fmsSummary.failed === 0) {
+            setFmsResult({
+              success: true,
+              title: 'Sent to FMS',
+              message: `Chain saved and all ${fmsSummary.succeeded} requests were created in FMS.`,
+            });
+          } else if (fmsSummary.succeeded > 0) {
+            const failures = (fmsSummary.results || [])
+              .filter((r) => !r.success)
+              .map((r) => `• Assignment ${r.assignment_id}: ${r.error}`)
+              .join('\n');
+            setFmsResult({
+              success: false,
+              title: 'Partially sent to FMS',
+              message: `${fmsSummary.succeeded}/${fmsSummary.total} requests were created in FMS. Failures:\n${failures}`,
+            });
           } else {
-            setSaveMessage(`⚠️ Chain saved but FMS requests failed: ${fmsResult.detail || 'See console for details.'}`);
-            console.error('FMS bulk request failed:', fmsResult);
+            const failures = (fmsSummary.results || [])
+              .filter((r) => !r.success)
+              .map((r) => `• Assignment ${r.assignment_id}: ${r.error}`)
+              .join('\n');
+            setFmsResult({
+              success: false,
+              title: 'Not sent to FMS',
+              message: `The chain was saved, but no requests reached FMS.\n${failures || fmsSummary.detail || 'See console for details.'}`,
+            });
+            console.error('FMS bulk request failed:', fmsSummary);
           }
         } catch (fmsError) {
           console.error('Failed to send bulk requests to FMS:', fmsError);
-          setSaveMessage(`⚠️ Chain saved but failed to send to FMS: ${fmsError.message}`);
+          setFmsResult({
+            success: false,
+            title: 'Not sent to FMS',
+            message: `The chain was saved, but sending to FMS failed: ${fmsError.message}`,
+          });
         }
       }
 
@@ -5445,6 +5536,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           onUnrequest={handleTimelineBarUnrequest}
         />
       )}
+
+      <FmsResultModal result={fmsResult} onClose={() => setFmsResult(null)} />
     </div>
   );
 }

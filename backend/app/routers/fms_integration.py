@@ -40,9 +40,10 @@ FMS_REQUESTOR_ID = FMS_PRODUCTION_REQUESTOR_ID if FMS_ENVIRONMENT == "production
 
 # Import database service
 from app.services.database import db_service
+from app.services.conflicts import find_vehicle_conflicts, log_fms_submission
 
 
-def resolve_fms_requestor(authorization: Optional[str]) -> int:
+def resolve_fms_requestor(authorization: Optional[str]) -> tuple:
     """Resolve the FMS requestor_id from the signed-in user's profile.
 
     Every FMS submission must be attributed to the real person who made it
@@ -50,6 +51,8 @@ def resolve_fms_requestor(authorization: Optional[str]) -> int:
     in FMS). The caller's Supabase token is verified and their
     user_metadata.fms_user_id is used. Raises 401/403 with an actionable
     message instead of falling back to a shared ID.
+
+    Returns (fms_user_id, email) — the email feeds the submission audit log.
     """
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(
@@ -79,7 +82,7 @@ def resolve_fms_requestor(authorization: Optional[str]) -> int:
                    "Ask an admin to add it in User Management before sending requests to FMS."
         )
 
-    return int(fms_user_id)
+    return int(fms_user_id), user.email
 
 
 # Pydantic models
@@ -128,7 +131,7 @@ async def create_fms_vehicle_request(assignment_id: int,
 
     # Resolve who is making this request BEFORE touching anything else —
     # submissions without a real FMS user are rejected outright.
-    requestor_id = resolve_fms_requestor(authorization)
+    requestor_id, requestor_email = resolve_fms_requestor(authorization)
 
     try:
         # 1. Fetch assignment details
@@ -146,6 +149,33 @@ async def create_fms_vehicle_request(assignment_id: int,
 
         assignment = assignment_result.data[0]
         vin = assignment.get('vin')
+
+        # 1b. Re-check for booking conflicts RIGHT NOW. FMS activity changes
+        # daily, so a slot that was free when this chain was planned may have
+        # been taken since. Better to block here with a clear reason than
+        # have FMS reject it cryptically.
+        conflicts = find_vehicle_conflicts(
+            db_service.client,
+            vin=vin,
+            start_day=str(assignment['start_day']),
+            end_day=str(assignment['end_day']),
+            exclude_assignment_id=assignment_id,
+        )
+        if conflicts:
+            conflict_text = "; ".join(conflicts)
+            logger.warning(f"Blocking FMS request for assignment {assignment_id}: conflicts with {conflict_text}")
+            log_fms_submission(
+                db_service.client,
+                action='create', success=False, assignment=assignment,
+                requestor_fms_id=requestor_id, requestor_email=requestor_email,
+                error_detail=f"Blocked: vehicle already booked — {conflict_text}",
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=f"This vehicle is already booked during "
+                       f"{assignment['start_day']} to {assignment['end_day']}: {conflict_text}. "
+                       "Adjust the dates or resolve the existing booking, then try again."
+            )
 
         # 2. Fetch vehicle details to get vehicle_id
         vehicle_result = db_service.client.table('vehicles') \
@@ -234,6 +264,12 @@ async def create_fms_vehicle_request(assignment_id: int,
 
             if response.status_code not in [200, 201]:
                 logger.error(f"FMS API error: {response.status_code} - {response.text}")
+                log_fms_submission(
+                    db_service.client,
+                    action='create', success=False, assignment=assignment,
+                    requestor_fms_id=requestor_id, requestor_email=requestor_email,
+                    error_detail=f"FMS API error {response.status_code}: {response.text[:500]}",
+                )
                 raise HTTPException(
                     status_code=500,
                     detail=f"FMS API error: {response.status_code} - {response.text}"
@@ -256,6 +292,13 @@ async def create_fms_vehicle_request(assignment_id: int,
                     'fms_request_id': fms_request_id
                 }).eq('assignment_id', assignment_id).execute()
 
+            log_fms_submission(
+                db_service.client,
+                action='create', success=True, assignment=assignment,
+                requestor_fms_id=requestor_id, requestor_email=requestor_email,
+                fms_request_id=fms_request_id,
+            )
+
             return {
                 "success": True,
                 "fms_request_id": fms_request_id,
@@ -267,6 +310,12 @@ async def create_fms_vehicle_request(assignment_id: int,
         raise
     except Exception as e:
         logger.error(f"Error creating FMS request: {str(e)}", exc_info=True)
+        log_fms_submission(
+            db_service.client,
+            action='create', success=False, assignment_id=assignment_id,
+            requestor_fms_id=requestor_id, requestor_email=requestor_email,
+            error_detail=f"Unexpected error: {str(e)[:500]}",
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Error creating FMS request: {str(e)}"

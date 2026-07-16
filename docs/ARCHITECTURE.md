@@ -93,3 +93,29 @@ After that, admins add everyone else from the Users tab.
 - Backend (project-root `.env`): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
 - Frontend (`frontend/.env.*`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (anon key is
   browser-safe), plus the legacy `VITE_AUTH_USERNAME` / `VITE_AUTH_PASSWORD`.
+
+## FMS integration (vehicle requests)
+
+Submitting an assignment to FMS (`backend/app/routers/fms_integration.py`) flows through
+three gates before the request is sent to `FMS_BASE_URL/api/v1/vehicle_requests`:
+
+1. **Attribution.** `resolve_fms_requestor` verifies the caller's Supabase token and uses
+   `user_metadata.fms_user_id` as the FMS `requestor_id` (set per user in the Users tab).
+   No token or no FMS User ID → 401/403; there is deliberately no shared fallback ID, so
+   every FMS request is attributed to a real person. The frontend attaches the token via
+   `getAuthHeader()` (`frontend/src/lib/supabaseClient.js`).
+2. **Conflict re-check.** `find_vehicle_conflicts` (`backend/app/services/conflicts.py`)
+   verifies the vehicle isn't already booked for the dates — against `current_activity`
+   (real FMS activity, synced nightly) and other `scheduled_assignments`. Conflicts → 409
+   with a plain-English description. The same check runs when chains are saved
+   (`_reject_if_chain_conflicts` in `backend/app/routers/chain_builder.py`), but the
+   submit-time re-check matters because FMS activity changes between planning and
+   submission.
+3. **Submission + audit.** Every attempt (blocked, failed, or succeeded) is recorded in
+   the `fms_submission_log` table via `log_fms_submission` — who, which assignment, when,
+   and the outcome — since Render's log retention is short. On success the returned FMS
+   request ID is stored on the assignment (`fms_request_id`).
+
+Status flow: green (`planned`/`manual`) → magenta (`requested`) only after FMS accepts;
+on any failure the status is rolled back, so a pink bar always means "actually in FMS".
+The UI shows the outcome in a blocking dialog (`frontend/src/components/FmsResultModal.jsx`).

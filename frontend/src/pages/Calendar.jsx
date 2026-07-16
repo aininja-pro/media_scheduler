@@ -257,11 +257,8 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
       if (!response.ok) {
         const errorData = await response.json();
-        if (response.status === 500) {
-          alert('⚠️ Failed to send request to FMS.\n\nThe assignment has NOT been marked as requested. Please try again or contact support if the issue persists.');
-        } else {
-          alert(`Failed to request: ${errorData.detail || errorData.message || 'Unknown error'}`);
-        }
+        const reason = errorData.detail || errorData.message || 'Unknown error';
+        alert(`⚠️ Not sent to FMS.\n\n${reason}\n\nThe assignment has NOT been marked as requested.`);
         return;
       }
 
@@ -296,11 +293,8 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
 
       if (!response.ok) {
         const errorData = await response.json();
-        if (response.status === 500) {
-          alert('⚠️ Failed to unrequest from FMS.\n\nThe request may still be active in FMS. Please try again or contact support.');
-        } else {
-          alert(`Failed to unrequest: ${errorData.detail || errorData.message || 'Unknown error'}`);
-        }
+        const reason = errorData.detail || errorData.message || 'Unknown error';
+        alert(`⚠️ Failed to unrequest from FMS.\n\n${reason}\n\nThe request may still be active in FMS.`);
         return;
       }
 

@@ -118,4 +118,9 @@ three gates before the request is sent to `FMS_BASE_URL/api/v1/vehicle_requests`
 
 Status flow: green (`planned`/`manual`) → magenta (`requested`) only after FMS accepts;
 on any failure the status is rolled back, so a pink bar always means "actually in FMS".
-The UI shows the outcome in a blocking dialog (`frontend/src/components/FmsResultModal.jsx`).
+This invariant is enforced at every entry point: the chain-save endpoints clamp
+`status='requested'` to `'manual'` (a "Save as Requested" chain saves green, then the
+bulk submit flips each row pink per-item as FMS accepts it), and blocked attempts
+(no login token / no FMS User ID) are recorded in `fms_submission_log` before the
+401/403 is raised. The UI shows the outcome in a blocking dialog
+(`frontend/src/components/FmsResultModal.jsx`).

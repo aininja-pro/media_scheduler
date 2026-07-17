@@ -1251,7 +1251,7 @@ async def save_chain(
             "person_id": int,
             "partner_name": str,
             "office": str,
-            "status": str (optional, default='manual', can be 'manual' or 'requested'),
+            "status": str (optional, default='manual'; 'requested' is clamped to 'manual' — rows only become 'requested' when FMS accepts them),
             "chain": [
                 {
                     "vin": str,
@@ -1271,8 +1271,17 @@ async def save_chain(
         person_id = request.get('person_id')
         partner_name = request.get('partner_name')
         office = request.get('office')
-        status = request.get('status', 'manual')  # Default to 'manual', can be 'requested'
+        status = request.get('status', 'manual')  # 'requested' from the client is clamped to 'manual' below
         chain_vehicles = request.get('chain', [])
+
+        # Never insert rows directly as 'requested'. Pink must mean "FMS
+        # accepted it", so chains always save green ('manual'); the bulk FMS
+        # submit then flips each row to 'requested' only when FMS accepts
+        # that item. (Saving pre-marked 'requested' rows meant a failed
+        # submit left them pink with nothing in FMS — the rollback restored
+        # 'requested' because that WAS the original status.)
+        if status == 'requested':
+            status = 'manual'
 
         if not person_id or not office or not chain_vehicles:
             raise HTTPException(status_code=400, detail="Missing required fields: person_id, office, chain")
@@ -1310,7 +1319,7 @@ async def save_chain(
                 'partner_name': partner_name,
                 'score': vehicle.get('score', 0),
                 'week_start': week_start,  # Monday of the week
-                'status': status  # 'manual' (green) or 'requested' (magenta)
+                'status': status  # always green here; flips to 'requested' only after FMS accepts
             })
 
         # Insert all assignments
@@ -1352,7 +1361,7 @@ async def save_vehicle_chain(
             "vehicle_make": str,
             "vehicle_model": str,
             "office": str,
-            "status": str (optional, default='manual', can be 'manual' or 'requested'),
+            "status": str (optional, default='manual'; 'requested' is clamped to 'manual' — rows only become 'requested' when FMS accepts them),
             "chain": [
                 {
                     "person_id": int,
@@ -1372,8 +1381,12 @@ async def save_vehicle_chain(
         vehicle_make = request.get('vehicle_make')
         vehicle_model = request.get('vehicle_model', '')
         office = request.get('office')
-        status = request.get('status', 'manual')  # Default to 'manual', can be 'requested'
+        status = request.get('status', 'manual')  # 'requested' from the client is clamped to 'manual' below
         chain_partners = request.get('chain', [])
+
+        # Never insert rows directly as 'requested' — see save_chain for why.
+        if status == 'requested':
+            status = 'manual'
 
         if not vin or not office or not chain_partners:
             raise HTTPException(status_code=400, detail="Missing required fields: vin, office, chain")
@@ -1411,7 +1424,7 @@ async def save_vehicle_chain(
                 'partner_name': partner.get('partner_name', ''),
                 'score': partner.get('score', 0),
                 'week_start': week_start,  # Monday of the week
-                'status': status  # 'manual' (green) or 'requested' (magenta)
+                'status': status  # always green here; flips to 'requested' only after FMS accepts
             })
 
         # Insert all assignments

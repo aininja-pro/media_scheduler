@@ -130,8 +130,18 @@ async def create_fms_vehicle_request(assignment_id: int,
     logger.info(f"Creating FMS vehicle request for assignment {assignment_id}")
 
     # Resolve who is making this request BEFORE touching anything else —
-    # submissions without a real FMS user are rejected outright.
-    requestor_id, requestor_email = resolve_fms_requestor(authorization)
+    # submissions without a real FMS user are rejected outright. Log the
+    # rejection: an attempt that never reaches FMS still needs an audit
+    # trail (this was a blind spot — blocked attempts left no record).
+    try:
+        requestor_id, requestor_email = resolve_fms_requestor(authorization)
+    except HTTPException as he:
+        log_fms_submission(
+            db_service.client,
+            action='create', success=False, assignment_id=assignment_id,
+            error_detail=f"Blocked before submit: {he.detail}",
+        )
+        raise
 
     try:
         # 1. Fetch assignment details
@@ -275,22 +285,35 @@ async def create_fms_vehicle_request(assignment_id: int,
                     detail=f"FMS API error: {response.status_code} - {response.text}"
                 )
 
-            fms_response = response.json()
-            logger.info(f"FMS response: {fms_response}")
+            # FMS accepted the request (2xx). From here on nothing may fail
+            # the submission: the request exists in FMS, so the row must end
+            # up 'requested' even if we can't parse the response or store the
+            # ID. (A post-acceptance error used to bubble into the generic
+            # 500 handler, and the bulk caller would roll the row back to
+            # green while FMS held a live request nobody was tracking.)
+            fms_request_id = None
+            try:
+                fms_response = response.json()
+                logger.info(f"FMS response: {fms_response}")
 
-            # 6. Extract FMS request ID
-            # FMS returns: {"request": {"id": 4371, ...}}
-            fms_request_id = fms_response.get('request', {}).get('id')
+                # 6. Extract FMS request ID
+                # FMS returns: {"request": {"id": 4371, ...}}
+                fms_request_id = fms_response.get('request', {}).get('id')
 
-            if not fms_request_id:
-                logger.warning(f"Could not extract FMS request ID from response: {fms_response}")
-                # Continue anyway - we created the request successfully
+                if not fms_request_id:
+                    logger.warning(f"Could not extract FMS request ID from response: {fms_response}")
+                    # Continue anyway - we created the request successfully
 
-            # 7. Store FMS request ID for future reference
-            if fms_request_id:
-                db_service.client.table('scheduled_assignments').update({
-                    'fms_request_id': fms_request_id
-                }).eq('assignment_id', assignment_id).execute()
+                # 7. Store FMS request ID for future reference
+                if fms_request_id:
+                    db_service.client.table('scheduled_assignments').update({
+                        'fms_request_id': fms_request_id
+                    }).eq('assignment_id', assignment_id).execute()
+            except Exception as post_err:
+                logger.warning(
+                    f"FMS accepted assignment {assignment_id} but post-processing failed: {post_err}. "
+                    "Treating as success; fms_request_id may be missing."
+                )
 
             log_fms_submission(
                 db_service.client,
@@ -427,7 +450,17 @@ async def bulk_create_fms_vehicle_requests(request: BulkOperationRequest,
 
     # Fail the whole batch up front if the caller can't be attributed —
     # better than flipping statuses and rolling them all back one by one.
-    resolve_fms_requestor(authorization)
+    # Log the rejection per assignment so the audit trail shows the attempt.
+    try:
+        resolve_fms_requestor(authorization)
+    except HTTPException as he:
+        for blocked_id in request.assignment_ids:
+            log_fms_submission(
+                db_service.client,
+                action='create', success=False, assignment_id=blocked_id,
+                error_detail=f"Batch blocked before submit: {he.detail}",
+            )
+        raise
 
     results = []
 
@@ -485,7 +518,10 @@ async def bulk_create_fms_vehicle_requests(request: BulkOperationRequest,
                 results.append(OperationResult(
                     assignment_id=assignment_id,
                     success=False,
-                    error=f"FMS API error: {he.detail}"
+                    # Each raise site already describes itself accurately
+                    # (conflict 409s, auth 401/403s, real FMS API errors) —
+                    # don't prefix local blocks as "FMS API" errors.
+                    error=str(he.detail)
                 ))
 
         except Exception as e:

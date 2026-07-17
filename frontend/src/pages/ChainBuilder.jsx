@@ -2379,7 +2379,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
             setFmsResult({
               success: false,
               title: 'Partially sent to FMS',
-              message: `${fmsSummary.succeeded}/${fmsSummary.total} requests were created in FMS. Failures:\n${failures}`,
+              message: `${fmsSummary.succeeded}/${fmsSummary.total} requests were created in FMS (now pink). The rest stayed green:\n${failures}`,
             });
           } else {
             const failures = (fmsSummary.results || [])
@@ -2389,7 +2389,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
             setFmsResult({
               success: false,
               title: 'Not sent to FMS',
-              message: `The chain was saved, but no requests reached FMS.\n${failures || fmsSummary.detail || 'See console for details.'}`,
+              message: `The chain was saved (green), but no requests reached FMS — the bars stay green until FMS accepts them.\n${failures || fmsSummary.detail || 'See console for details.'}`,
             });
             console.error('FMS bulk request failed:', fmsSummary);
           }
@@ -2398,7 +2398,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           setFmsResult({
             success: false,
             title: 'Not sent to FMS',
-            message: `The chain was saved, but sending to FMS failed: ${fmsError.message}`,
+            message: `The chain was saved (green), but sending to FMS failed: ${fmsError.message}\nThe bars stay green until FMS accepts them.`,
           });
         }
       }
@@ -2614,7 +2614,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
             setFmsResult({
               success: false,
               title: 'Partially sent to FMS',
-              message: `${fmsSummary.succeeded}/${fmsSummary.total} requests were created in FMS. Failures:\n${failures}`,
+              message: `${fmsSummary.succeeded}/${fmsSummary.total} requests were created in FMS (now pink). The rest stayed green:\n${failures}`,
             });
           } else {
             const failures = (fmsSummary.results || [])
@@ -2624,7 +2624,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
             setFmsResult({
               success: false,
               title: 'Not sent to FMS',
-              message: `The chain was saved, but no requests reached FMS.\n${failures || fmsSummary.detail || 'See console for details.'}`,
+              message: `The chain was saved (green), but no requests reached FMS — the bars stay green until FMS accepts them.\n${failures || fmsSummary.detail || 'See console for details.'}`,
             });
             console.error('FMS bulk request failed:', fmsSummary);
           }
@@ -2633,7 +2633,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           setFmsResult({
             success: false,
             title: 'Not sent to FMS',
-            message: `The chain was saved, but sending to FMS failed: ${fmsError.message}`,
+            message: `The chain was saved (green), but sending to FMS failed: ${fmsError.message}\nThe bars stay green until FMS accepts them.`,
           });
         }
       }

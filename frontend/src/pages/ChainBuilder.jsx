@@ -3784,6 +3784,39 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
                     const timelineHeight = ROW_TOP * 2 + Math.max(nextLane, 1) * ROW_HEIGHT;
 
+                    // Row labels for the left gutter. Dot colours mirror TimelineBar
+                    // so a row reads the same whether you look left or at the bar —
+                    // and stays identifiable when a bar is clipped by the month view.
+                    const laneLabels = [];
+
+                    existingActivities.forEach((activity, idx) => {
+                      const lane = existingLanes[idx];
+                      if (lane === null) return;
+
+                      const dot = activity.type === 'active' ? 'bg-blue-600'
+                        : activity.status === 'manual' ? 'bg-green-600'
+                        : activity.status === 'requested' ? 'bg-pink-600'
+                        : 'bg-gray-600';
+
+                      laneLabels[lane] = {
+                        name: [activity.make, activity.model].filter(Boolean).join(' ')
+                          || (activity.vin ? `VIN ...${String(activity.vin).slice(-6)}` : 'Assignment'),
+                        dot
+                      };
+                    });
+
+                    manualSlots.forEach((slot, idx) => {
+                      const lane = slotLanes[idx];
+                      if (lane === null) return;
+
+                      laneLabels[lane] = {
+                        name: slot.selected_vehicle
+                          ? `${slot.selected_vehicle.make} ${slot.selected_vehicle.model}`
+                          : `Slot ${slot.slot}`,
+                        dot: slot.selected_vehicle ? 'bg-green-400' : 'bg-gray-300'
+                      };
+                    });
+
                     return (
                       <>
                         {/* Header Row - Day headers like Calendar (Month Day format) */}
@@ -3815,7 +3848,21 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
                         {/* Timeline rows — one lane per vehicle */}
                         <div className="relative flex" style={{ minHeight: `${timelineHeight}px` }}>
-                          <div className="w-48 flex-shrink-0 border-r bg-gray-50"></div>
+                          <div className="w-48 flex-shrink-0 border-r bg-gray-50 relative">
+                            {laneLabels.map((label, lane) => label && (
+                              <div
+                                key={lane}
+                                className="absolute left-0 right-0 px-3 flex items-center gap-2"
+                                style={{ top: `${ROW_TOP + (lane * ROW_HEIGHT)}px`, height: '24px' }}
+                                title={label.name}
+                              >
+                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${label.dot}`}></span>
+                                <span className="truncate text-[11px] text-gray-700">
+                                  {label.name}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
 
                           <div className="flex-1 relative">
                             {/* Day grid background with weekend highlighting */}

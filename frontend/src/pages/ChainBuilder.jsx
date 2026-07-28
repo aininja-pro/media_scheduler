@@ -3715,6 +3715,75 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                       current.setDate(current.getDate() + 1);
                     }
 
+                    // Every vehicle gets its own line. Bars used to be placed by
+                    // two schemes that ignored each other — existing loans stacked
+                    // by overlap, proposed slots stair-stepped in groups of 3 — so
+                    // slot 4 landed back on slot 1 and long loans covered the rest.
+                    // Lanes are assigned across both, over only what's visible in
+                    // this month, so navigating months doesn't leave empty rows.
+                    const viewStart = new Date(viewStartDate);
+                    const viewEnd = new Date(viewEndDate);
+                    const inView = (barStart, barEnd) => !(barEnd < viewStart || barStart > viewEnd);
+
+                    const existingActivities = [];
+
+                    // Current active loans (BLUE)
+                    partnerIntelligence?.current_loans?.forEach(loan => {
+                      const [sYear, sMonth, sDay] = loan.start_date.split('-').map(Number);
+                      const [eYear, eMonth, eDay] = loan.end_date.split('-').map(Number);
+                      existingActivities.push({
+                        type: 'active',
+                        vin: loan.vehicle_vin,
+                        make: loan.make,
+                        model: loan.model,
+                        start: new Date(sYear, sMonth - 1, sDay),
+                        end: new Date(eYear, eMonth - 1, eDay)
+                      });
+                    });
+
+                    // Scheduled assignments (GREEN - optimizer/manual)
+                    partnerIntelligence?.upcoming_assignments?.forEach(assignment => {
+                      const [sYear, sMonth, sDay] = assignment.start_day.split('-').map(Number);
+                      const [eYear, eMonth, eDay] = assignment.end_day.split('-').map(Number);
+                      existingActivities.push({
+                        type: 'scheduled',
+                        assignment_id: assignment.assignment_id,  // CRITICAL for interactive actions
+                        vin: assignment.vin,
+                        make: assignment.make,
+                        model: assignment.model,
+                        status: assignment.status,
+                        tier: assignment.tier,
+                        score: assignment.score,
+                        start: new Date(sYear, sMonth - 1, sDay),
+                        end: new Date(eYear, eMonth - 1, eDay),
+                        start_day: assignment.start_day,
+                        end_day: assignment.end_day,
+                        office: assignment.office
+                      });
+                    });
+
+                    const ROW_HEIGHT = 28;
+                    const ROW_TOP = 8;
+
+                    // Existing loans take the top lanes, then the chain slots in
+                    // slot order — so the timeline reads top-to-bottom in the same
+                    // order as the Chain Vehicles cards below.
+                    let nextLane = 0;
+                    const existingLanes = existingActivities.map(
+                      a => (inView(a.start, a.end) ? nextLane++ : null)
+                    );
+                    const slotLanes = manualSlots.map(slot => {
+                      const [sYear, sMonth, sDay] = slot.start_date.split('-').map(Number);
+                      const [eYear, eMonth, eDay] = slot.end_date.split('-').map(Number);
+                      const visible = inView(
+                        new Date(sYear, sMonth - 1, sDay),
+                        new Date(eYear, eMonth - 1, eDay)
+                      );
+                      return visible ? nextLane++ : null;
+                    });
+
+                    const timelineHeight = ROW_TOP * 2 + Math.max(nextLane, 1) * ROW_HEIGHT;
+
                     return (
                       <>
                         {/* Header Row - Day headers like Calendar (Month Day format) */}
@@ -3744,8 +3813,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                           </div>
                         </div>
 
-                        {/* Timeline Row with stair-stepped bars (3 per row) */}
-                        <div className="relative flex" style={{ minHeight: '200px' }}>
+                        {/* Timeline rows — one lane per vehicle */}
+                        <div className="relative flex" style={{ minHeight: `${timelineHeight}px` }}>
                           <div className="w-48 flex-shrink-0 border-r bg-gray-50"></div>
 
                           <div className="flex-1 relative">
@@ -3765,77 +3834,14 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                             </div>
 
                             {/* Existing activities (current + scheduled) - show FIRST */}
-                            {partnerIntelligence && (() => {
-                              const existingActivities = [];
-
-                              // Add current active loans (BLUE)
-                              partnerIntelligence.current_loans?.forEach(loan => {
-                                const [sYear, sMonth, sDay] = loan.start_date.split('-').map(Number);
-                                const [eYear, eMonth, eDay] = loan.end_date.split('-').map(Number);
-                                existingActivities.push({
-                                  type: 'active',
-                                  vin: loan.vehicle_vin,
-                                  make: loan.make,
-                                  model: loan.model,
-                                  start: new Date(sYear, sMonth - 1, sDay),
-                                  end: new Date(eYear, eMonth - 1, eDay)
-                                });
-                              });
-
-                              // Add scheduled assignments (GREEN - optimizer/manual)
-                              partnerIntelligence.upcoming_assignments?.forEach(assignment => {
-                                const [sYear, sMonth, sDay] = assignment.start_day.split('-').map(Number);
-                                const [eYear, eMonth, eDay] = assignment.end_day.split('-').map(Number);
-                                existingActivities.push({
-                                  type: 'scheduled',
-                                  assignment_id: assignment.assignment_id,  // CRITICAL for interactive actions
-                                  vin: assignment.vin,
-                                  make: assignment.make,
-                                  model: assignment.model,
-                                  status: assignment.status,
-                                  tier: assignment.tier,
-                                  score: assignment.score,
-                                  start: new Date(sYear, sMonth - 1, sDay),
-                                  end: new Date(eYear, eMonth - 1, eDay),
-                                  start_day: assignment.start_day,
-                                  end_day: assignment.end_day,
-                                  office: assignment.office
-                                });
-                              });
-
-                              // Detect overlaps and assign row positions (match Calendar behavior)
-                              const activitiesWithRows = existingActivities.map((activity, idx) => {
-                                // Check if this activity overlaps with any previous activity
-                                let rowIndex = 0;
-                                const actStart = activity.start;
-                                const actEnd = activity.end;
-
-                                for (let i = 0; i < idx; i++) {
-                                  const prevAct = existingActivities[i];
-                                  const prevStart = prevAct.start;
-                                  const prevEnd = prevAct.end;
-
-                                  // Check if dates overlap
-                                  if (actStart <= prevEnd && actEnd >= prevStart) {
-                                    rowIndex = Math.max(rowIndex, (existingActivities[i].rowIndex || 0) + 1);
-                                  }
-                                }
-
-                                activity.rowIndex = rowIndex;
-                                return activity;
-                              });
-
-                              return activitiesWithRows.map((activity, idx) => {
-                                const aStart = activity.start;
-                                const aEnd = activity.end;
-
-                                // Only show if overlaps with current view
-                                const viewStart = new Date(viewStartDate);
-                                const viewEnd = new Date(viewEndDate);
-
-                                if (aEnd < viewStart || aStart > viewEnd) {
+                            {partnerIntelligence && existingActivities.map((activity, idx) => {
+                                const lane = existingLanes[idx];
+                                if (lane === null) {
                                   return null;
                                 }
+
+                                const aStart = activity.start;
+                                const aEnd = activity.end;
 
                                 // Calculate bar position
                                 const rangeStart = new Date(viewStartDate);
@@ -3849,8 +3855,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                 const left = ((startDayOffset + 0.5) / totalDays) * 100;
                                 const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
 
-                                // Use rowIndex for vertical positioning to prevent overlaps
-                                const topOffset = 8 + (activity.rowIndex * 28);
+                                const topOffset = ROW_TOP + (lane * ROW_HEIGHT);
 
                                 return (
                                   <TimelineBar
@@ -3872,24 +3877,20 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                     showActions={true}
                                   />
                                 );
-                              });
-                            })()}
+                            })}
 
                             {/* Unified Slots - works for both Auto and Manual modes */}
                             {manualSlots.map((slot, idx) => {
+                              const lane = slotLanes[idx];
+                              if (lane === null) {
+                                return null;
+                              }
+
                               // Parse dates as local (avoid timezone shift)
                               const [sYear, sMonth, sDay] = slot.start_date.split('-').map(Number);
                               const [eYear, eMonth, eDay] = slot.end_date.split('-').map(Number);
                               const vStart = new Date(sYear, sMonth - 1, sDay);
                               const vEnd = new Date(eYear, eMonth - 1, eDay);
-
-                              // Only show if slot overlaps with current view
-                              const viewStart = new Date(viewStartDate);
-                              const viewEnd = new Date(viewEndDate);
-
-                              if (vEnd < viewStart || vStart > viewEnd) {
-                                return null;
-                              }
 
                               // Calculate bar position
                               const rangeStart = new Date(viewStartDate);
@@ -3905,9 +3906,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                               const left = ((startDayOffset + 0.5) / totalDays) * 100;
                               const width = ((endDayOffset - startDayOffset) / totalDays) * 100;
 
-                              // Stair-step pattern
-                              const positionInGroup = idx % 3;
-                              const top = 40 + (positionInGroup * 28);
+                              const top = ROW_TOP + (lane * ROW_HEIGHT);
 
                               // Color: Gray for empty, Green for filled
                               const barColor = slot.selected_vehicle

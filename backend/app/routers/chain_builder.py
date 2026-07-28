@@ -24,7 +24,10 @@ from ..chain_builder.availability import (
     get_available_vehicles_for_slot,
     check_slot_availability
 )
-from ..chain_builder.smart_scheduling import adjust_chain_for_existing_commitments
+from ..chain_builder.smart_scheduling import (
+    adjust_chain_for_existing_commitments,
+    summarize_schedule_adjustment,
+)
 from ..chain_builder.geography import (
     score_partners_base,
     calculate_distance_matrix
@@ -339,6 +342,7 @@ async def suggest_chain(
     model_preferences: Optional[str] = Query(None, description='JSON array of model preferences: [{"make":"Honda","model":"Accord"}]'),
     preference_mode: str = Query("prioritize", description="Preference mode: prioritize | strict | ignore"),
     respect_budget_limits: bool = Query(True, description="Exclude vehicles whose make is over budget for the office/quarter"),
+    allow_double_booking: bool = Query(False, description="Honour the requested start date even when the partner already has loans then, and report the overlaps"),
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """
@@ -474,7 +478,14 @@ async def suggest_chain(
             num_vehicles=num_vehicles,
             days_per_loan=days_per_loan,
             current_activity_df=activity_df,
-            scheduled_assignments_df=scheduled_df
+            scheduled_assignments_df=scheduled_df,
+            allow_double_booking=allow_double_booking
+        )
+
+        schedule_adjustment = summarize_schedule_adjustment(
+            requested_start=start_date,
+            slots=smart_slots,
+            num_requested=num_vehicles
         )
 
         logger.info(f"Smart scheduling found {len(smart_slots)} available slots (threading through {len(scheduled_df)} existing commitments)")
@@ -527,7 +538,8 @@ async def suggest_chain(
                 'slot': slot_index + 1,
                 'start_date': slot_start,
                 'end_date': slot_end,
-                'available_count': len(slot_vins)
+                'available_count': len(slot_vins),
+                'conflicts': smart_slot.get('conflicts', [])
             })
 
         # Load additional data needed for scoring
@@ -733,6 +745,7 @@ async def suggest_chain(
                 for (make, model), status in cooldown_status.items()
             },
             "slot_availability": slot_availability_counts,
+            "schedule_adjustment": schedule_adjustment,
             "message": (
                 f"Chain generated using OR-Tools ({chain_result.status}). "
                 f"{len(suggested_chain)}/{num_vehicles} vehicles selected. "
@@ -886,6 +899,7 @@ async def get_slot_options(
     slot_index: int = Query(..., description="Slot index (0-based)", ge=0),
     preferred_makes: Optional[str] = Query(None, description="Comma-separated list of makes to filter"),
     exclude_vins: Optional[str] = Query(None, description="Comma-separated list of VINs to exclude (already selected in other slots)"),
+    allow_double_booking: bool = Query(False, description="Honour the requested start date even when the partner already has loans then, and report the overlaps"),
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """
@@ -1013,13 +1027,18 @@ async def get_slot_options(
             num_vehicles=num_vehicles,
             days_per_loan=days_per_loan,
             current_activity_df=activity_df,
-            scheduled_assignments_df=scheduled_df
+            scheduled_assignments_df=scheduled_df,
+            allow_double_booking=allow_double_booking
         )
 
         if not smart_slots or slot_index >= len(smart_slots):
             raise HTTPException(
                 status_code=400,
-                detail=f"Unable to find slot {slot_index} (only {len(smart_slots)} slots available)"
+                detail=(
+                    f"Unable to find slot {slot_index} (only {len(smart_slots)} slots available). "
+                    f"The partner's existing loans leave too few gaps — turn on "
+                    f"'Allow double booking' to keep the requested dates."
+                )
             )
 
         # Get the specific slot we're interested in
@@ -1188,7 +1207,8 @@ async def get_slot_options(
             "slot": {
                 "index": slot_index,
                 "start_date": slot_start,
-                "end_date": slot_end
+                "end_date": slot_end,
+                "conflicts": target_slot.get('conflicts', [])
             },
             "eligible_vehicles": eligible_vehicles,
             "total_eligible": len(eligible_vehicles),

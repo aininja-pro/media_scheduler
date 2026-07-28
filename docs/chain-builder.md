@@ -181,6 +181,39 @@ When you add an assignment, the system:
 - Finds available gaps
 - Suggests non-conflicting dates
 
+Cancelled and rejected assignments are ignored — only `planned`, `manual`,
+`requested`, and `active` rows occupy a partner. Same-day handoffs are allowed in
+both directions: a slot may start the day a loan ends, and end the day one begins.
+
+### Allow Double Booking
+
+Gap filling assumes a partner holds one vehicle at a time. That is wrong for
+outlets that take several vehicles at once (Car and Driver) and for partners on a
+long-term loan who also review other cars. In those cases gap filling pushes the
+chain past the existing loan — potentially months past your chosen start date.
+
+The **Allow Double Booking** toggle (off by default) changes this:
+
+| Toggle | Behavior |
+| --- | --- |
+| Off | Chain is threaded through the gaps, skipping past existing loans |
+| On | Chain runs from your chosen start date; overlaps are flagged, not moved |
+
+With the toggle on, the chain is never shortened or shifted — you get exactly the
+slots you asked for, and an amber banner names each slot that double-books the
+partner along with what it overlaps. Saving is allowed either way; partner
+double-booking has never been blocked at save time (only vehicle double-booking
+is, in `_reject_if_chain_conflicts`).
+
+To give one partner several vehicles on the *same* dates, turn the toggle on and
+run the builder once per vehicle at the same start date. Slots within a single
+chain are always sequential.
+
+Both `GET /suggest-chain` and `GET /get-slot-options` accept
+`allow_double_booking`. `/suggest-chain` returns a `schedule_adjustment` object
+reporting the requested vs. actual start date and every double-booked slot, which
+is what drives the banners in the UI.
+
 ### Cooldown Awareness
 
 The system tracks cooldowns per partner-make:

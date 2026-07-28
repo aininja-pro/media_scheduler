@@ -1,15 +1,58 @@
 """
 Smart scheduling logic for Chain Builder
 
-Finds available gaps in partner's schedule to thread chain through existing commitments
+Finds available gaps in partner's schedule to thread chain through existing
+commitments — or, when double-booking is allowed, keeps the requested dates and
+reports the overlaps instead of moving them.
 """
 
 import pandas as pd
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Statuses that mean a scheduled assignment really occupies the partner.
+# Anything else (cancelled, rejected, ...) must not push a chain around.
+# Mirrors _is_real_partner_blocker in routers/chain_builder.py.
+BLOCKING_STATUSES = {'planned', 'manual', 'requested', 'active'}
+
+
+def _is_real_blocker(status) -> bool:
+    if status is None or pd.isna(status):
+        return True
+    return str(status).strip().lower() in BLOCKING_STATUSES
+
+
+def _overlaps(slot_start: datetime, slot_end: datetime,
+              busy_start: datetime, busy_end: datetime) -> bool:
+    """True when a slot genuinely collides with a busy period.
+
+    Strict on both edges so same-day handoffs are allowed in either direction:
+    a slot may start the day a loan ends, and may end the day one begins.
+    """
+    return slot_start < busy_end and slot_end > busy_start
+
+
+def _describe(row, vin_key: str, start, end) -> str:
+    """Human-readable label for a busy period, e.g. 'Toyota Camry (2026-01-02 to 2026-01-12)'."""
+    make = row.get('make')
+    model = row.get('model')
+    name = ' '.join(str(p) for p in (make, model) if p and pd.notna(p)).strip()
+
+    if not name:
+        name = str(row.get('activity_type') or '').strip()
+    if not name:
+        vin = row.get(vin_key)
+        name = f"VIN ...{str(vin)[-6:]}" if vin and pd.notna(vin) else 'Existing loan'
+
+    return f"{name} ({_fmt(start)} to {_fmt(end)})"
+
+
+def _fmt(value) -> str:
+    parsed = pd.to_datetime(value, errors='coerce')
+    return str(value) if pd.isna(parsed) else parsed.strftime('%Y-%m-%d')
 
 
 def get_partner_busy_periods(
@@ -18,7 +61,7 @@ def get_partner_busy_periods(
     scheduled_assignments_df: pd.DataFrame,
     start_date: str,
     end_date: str
-) -> List[Tuple[datetime, datetime]]:
+) -> List[Dict[str, Any]]:
     """
     Get all periods when partner is busy (has existing commitments).
 
@@ -30,7 +73,7 @@ def get_partner_busy_periods(
         end_date: End of chain period (YYYY-MM-DD)
 
     Returns:
-        List of (start_datetime, end_datetime) tuples representing busy periods
+        List of {'start': datetime, 'end': datetime, 'label': str} busy periods
     """
     busy_periods = []
 
@@ -55,111 +98,173 @@ def get_partner_busy_periods(
 
                 # Only include if overlaps with chain period
                 if act_end >= chain_start and act_start <= chain_end:
-                    busy_periods.append((act_start, act_end))
+                    busy_periods.append({
+                        'start': act_start,
+                        'end': act_end,
+                        'label': _describe(activity, 'vehicle_vin', act_start, act_end),
+                    })
 
     # Add scheduled assignments
-    if not scheduled_assignments_df.empty:
+    if not scheduled_assignments_df.empty and 'person_id' in scheduled_assignments_df.columns:
+        scheduled_assignments_df = scheduled_assignments_df.copy()
+        scheduled_assignments_df['_pid_numeric'] = pd.to_numeric(
+            scheduled_assignments_df['person_id'], errors='coerce'
+        )
         partner_scheduled = scheduled_assignments_df[
-            scheduled_assignments_df['person_id'] == int(person_id)
+            scheduled_assignments_df['_pid_numeric'] == int(person_id)
         ]
+        logger.info(f"Found {len(partner_scheduled)} scheduled assignments for partner {person_id}")
+
         for _, assignment in partner_scheduled.iterrows():
+            # Cancelled/rejected rows must not push the chain around
+            if not _is_real_blocker(assignment.get('status')):
+                continue
+
             if pd.notna(assignment.get('start_day')) and pd.notna(assignment.get('end_day')):
-                # Parse as local dates (avoid timezone issues)
-                start_parts = str(assignment['start_day']).split('-')
-                end_parts = str(assignment['end_day']).split('-')
+                sched_start = pd.to_datetime(assignment['start_day'])
+                sched_end = pd.to_datetime(assignment['end_day'])
 
-                if len(start_parts) == 3 and len(end_parts) == 3:
-                    sched_start = datetime(int(start_parts[0]), int(start_parts[1]), int(start_parts[2]))
-                    sched_end = datetime(int(end_parts[0]), int(end_parts[1]), int(end_parts[2]))
-
-                    # Only include if overlaps with chain period
-                    if sched_end >= chain_start and sched_start <= chain_end:
-                        busy_periods.append((sched_start, sched_end))
+                # Only include if overlaps with chain period
+                if sched_end >= chain_start and sched_start <= chain_end:
+                    busy_periods.append({
+                        'start': sched_start,
+                        'end': sched_end,
+                        'label': _describe(assignment, 'vin', sched_start, sched_end),
+                    })
 
     # Sort by start date
-    busy_periods.sort(key=lambda x: x[0])
+    busy_periods.sort(key=lambda p: p['start'])
 
     logger.info(f"Partner {person_id} has {len(busy_periods)} busy periods in chain window")
 
     return busy_periods
 
 
+def _next_weekday(date: datetime) -> datetime:
+    while date.weekday() >= 5:  # 5=Sat, 6=Sun
+        date += timedelta(days=1)
+    return date
+
+
+def _slot_end(start: datetime, days_per_slot: int) -> datetime:
+    """A 7-day loan runs Thursday to Thursday: 7 nights, 8 calendar days,
+    with same-day handoff to the next slot. Dropoff always lands on a weekday."""
+    return _next_weekday(start + timedelta(days=days_per_slot))
+
+
 def find_available_slots(
-    busy_periods: List[Tuple[datetime, datetime]],
+    busy_periods: List[Dict[str, Any]],
     chain_start: datetime,
     chain_end: datetime,
     num_slots: int,
-    days_per_slot: int = 7
+    days_per_slot: int = 7,
+    allow_double_booking: bool = False
 ) -> List[Dict[str, Any]]:
     """
-    Find available time slots that thread through busy periods.
+    Build the chain's slot dates.
+
+    Two modes:
+      - allow_double_booking=False (default): thread the chain through the gaps
+        in the partner's schedule, pushing past anything in the way.
+      - allow_double_booking=True: run straight from the requested start date and
+        report the overlaps rather than moving around them. This is what lets a
+        partner hold a long-term loan (or a Car and Driver style multi-car week)
+        and still take more vehicles.
 
     Args:
-        busy_periods: List of (start, end) tuples when partner is busy
+        busy_periods: [{'start': datetime, 'end': datetime, 'label': str}]
         chain_start: Desired chain start date
         chain_end: End of chain search period
         num_slots: Number of slots to find
         days_per_slot: Days per vehicle loan
+        allow_double_booking: Keep requested dates and flag overlaps
 
     Returns:
-        List of slot dictionaries with start_date, end_date
+        List of slot dicts with slot, start_date, end_date, and conflicts
+        (a list of human-readable labels — empty when the slot is clear)
     """
+    if allow_double_booking:
+        return _build_slots_from_requested_date(
+            busy_periods, chain_start, num_slots, days_per_slot
+        )
+
     slots = []
-    current_date = chain_start
+    current_date = _next_weekday(chain_start)
 
     while len(slots) < num_slots and current_date <= chain_end:
-        # Skip weekends for start dates
-        while current_date.weekday() >= 5:  # 5=Sat, 6=Sun
-            current_date += timedelta(days=1)
+        current_date = _next_weekday(current_date)
 
         if current_date > chain_end:
-            logger.warning(f"Reached end of search window at {current_date.strftime('%Y-%m-%d')}, found {len(slots)}/{num_slots} slots")
+            logger.warning(
+                f"Reached end of search window at {current_date.strftime('%Y-%m-%d')}, "
+                f"found {len(slots)}/{num_slots} slots"
+            )
             break
 
-        # Calculate slot end date. A 7-day loan runs Thursday to Thursday:
-        # 7 nights, 8 calendar days, with same-day handoff to the next slot.
-        slot_end = current_date + timedelta(days=days_per_slot)
+        slot_end = _slot_end(current_date, days_per_slot)
 
-        # If slot ends on weekend, extend to Monday (dropoff on weekday)
-        while slot_end.weekday() >= 5:  # 5=Sat, 6=Sun
-            slot_end += timedelta(days=1)
+        # Push past the first busy period this slot runs into
+        conflict = next(
+            (p for p in busy_periods if _overlaps(current_date, slot_end, p['start'], p['end'])),
+            None
+        )
 
-        # Check if this slot conflicts with any busy period
-        conflicts = False
-        for busy_start, busy_end in busy_periods:
-            # Check if slot overlaps with busy period
-            # Allow same-day pickup: if busy ends on date X, we can start on date X
-            # So conflict only if: slot_start < busy_end (not <=)
-            if current_date < busy_end and slot_end >= busy_start:
-                conflicts = True
+        if conflict:
+            current_date = _next_weekday(conflict['end'])
+            continue
 
-                # Jump to end of busy period (same day pickup allowed)
-                current_date = busy_end
+        slots.append({
+            'slot': len(slots) + 1,
+            'start_date': current_date.strftime('%Y-%m-%d'),
+            'end_date': slot_end.strftime('%Y-%m-%d'),
+            'conflicts': []
+        })
 
-                # Skip weekends
-                while current_date.weekday() >= 5:  # 5=Sat, 6=Sun
-                    current_date += timedelta(days=1)
-
-                break
-
-        if not conflicts:
-            # This slot is available!
-            slots.append({
-                'slot': len(slots) + 1,
-                'start_date': current_date.strftime('%Y-%m-%d'),
-                'end_date': slot_end.strftime('%Y-%m-%d')
-            })
-
-            # Move to next potential slot - start the NEXT vehicle same day this one ends
-            # This creates a true "chain" where pickup/dropoff happen same day
-            current_date = slot_end
-
-            # Skip weekends
-            while current_date.weekday() >= 5:  # 5=Sat, 6=Sun
-                current_date += timedelta(days=1)
-        # If conflicts, current_date was already updated in the loop
+        # Start the NEXT vehicle the day this one ends — a true chain, with
+        # pickup and dropoff on the same day.
+        current_date = _next_weekday(slot_end)
 
     logger.info(f"Found {len(slots)} available slots (requested {num_slots})")
+
+    return slots
+
+
+def _build_slots_from_requested_date(
+    busy_periods: List[Dict[str, Any]],
+    chain_start: datetime,
+    num_slots: int,
+    days_per_slot: int
+) -> List[Dict[str, Any]]:
+    """Lay the chain out back-to-back from the requested date, recording overlaps.
+
+    Never skips or moves a slot: the scheduler asked for these dates and gets
+    them, with a warning attached to whichever slots double-book the partner.
+    """
+    slots = []
+    current_date = _next_weekday(chain_start)
+
+    for index in range(num_slots):
+        slot_end = _slot_end(current_date, days_per_slot)
+
+        conflicts = [
+            p['label'] for p in busy_periods
+            if _overlaps(current_date, slot_end, p['start'], p['end'])
+        ]
+
+        slots.append({
+            'slot': index + 1,
+            'start_date': current_date.strftime('%Y-%m-%d'),
+            'end_date': slot_end.strftime('%Y-%m-%d'),
+            'conflicts': conflicts
+        })
+
+        current_date = _next_weekday(slot_end)
+
+    double_booked = sum(1 for s in slots if s['conflicts'])
+    logger.info(
+        f"Built {len(slots)} slots from requested start date "
+        f"({double_booked} double-booked)"
+    )
 
     return slots
 
@@ -170,13 +275,15 @@ def adjust_chain_for_existing_commitments(
     num_vehicles: int,
     days_per_loan: int,
     current_activity_df: pd.DataFrame,
-    scheduled_assignments_df: pd.DataFrame
+    scheduled_assignments_df: pd.DataFrame,
+    allow_double_booking: bool = False
 ) -> List[Dict[str, Any]]:
     """
     Smart chain building that works around existing commitments.
 
-    Instead of blocking dates with existing assignments, this finds
-    gaps and threads the chain through them.
+    By default this finds gaps and threads the chain through them. With
+    allow_double_booking=True it honours the requested start date instead and
+    tags any slot that overlaps an existing commitment.
 
     Args:
         person_id: Partner ID
@@ -185,9 +292,10 @@ def adjust_chain_for_existing_commitments(
         days_per_loan: Days per vehicle
         current_activity_df: Current active loans
         scheduled_assignments_df: Scheduled assignments
+        allow_double_booking: Keep the requested dates and report overlaps
 
     Returns:
-        List of available slots with start/end dates that avoid conflicts
+        List of slots with start_date, end_date and a 'conflicts' list
     """
     # Calculate search window (generous - look 2x expected duration)
     chain_start = datetime.strptime(start_date, '%Y-%m-%d')
@@ -203,13 +311,39 @@ def adjust_chain_for_existing_commitments(
         end_date=chain_end.strftime('%Y-%m-%d')
     )
 
-    # Find available slots that thread through busy periods
-    available_slots = find_available_slots(
+    return find_available_slots(
         busy_periods=busy_periods,
         chain_start=chain_start,
         chain_end=chain_end,
         num_slots=num_vehicles,
-        days_per_slot=days_per_loan
+        days_per_slot=days_per_loan,
+        allow_double_booking=allow_double_booking
     )
 
-    return available_slots
+
+def summarize_schedule_adjustment(
+    requested_start: str,
+    slots: List[Dict[str, Any]],
+    num_requested: int
+) -> Dict[str, Any]:
+    """Explain what the scheduler did with the requested dates, for the UI.
+
+    Chains used to silently come back on completely different dates with no
+    indication why. This gives the frontend everything it needs to say so.
+    """
+    actual_start = slots[0]['start_date'] if slots else None
+    double_booked = [
+        {'slot': s['slot'], 'start_date': s['start_date'],
+         'end_date': s['end_date'], 'conflicts': s['conflicts']}
+        for s in slots if s.get('conflicts')
+    ]
+
+    return {
+        'requested_start_date': requested_start,
+        'actual_start_date': actual_start,
+        'start_date_moved': bool(actual_start) and actual_start != requested_start,
+        'slots_requested': num_requested,
+        'slots_returned': len(slots),
+        'double_booked_slots': double_booked,
+        'has_double_booking': bool(double_booked),
+    }

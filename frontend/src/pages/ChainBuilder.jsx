@@ -158,6 +158,14 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
   // Respect Budget Limits toggle (default ON)
   const [respectBudgetLimits, setRespectBudgetLimits] = useState(true);
 
+  // Allow Double Booking toggle (default OFF). When ON the chain keeps the
+  // requested start date even if the partner already has loans then — needed
+  // for long-term loans and outlets that take several vehicles at once.
+  const [allowDoubleBooking, setAllowDoubleBooking] = useState(false);
+
+  // How the backend treated the requested dates (moved them / double-booked)
+  const [scheduleAdjustment, setScheduleAdjustment] = useState(null);
+
   // Budget calculation for chain
   const [chainBudget, setChainBudget] = useState(null);
 
@@ -1502,6 +1510,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     setChain(null);
     setManualSlots([]); // Clear existing chain immediately
     setChainBudget(null); // Clear budget display
+    setScheduleAdjustment(null);
 
     try {
       const params = new URLSearchParams({
@@ -1511,7 +1520,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         num_vehicles: numVehicles,
         days_per_loan: daysPerLoan,
         preference_mode: preferenceMode,
-        respect_budget_limits: respectBudgetLimits
+        respect_budget_limits: respectBudgetLimits,
+        allow_double_booking: allowDoubleBooking
       });
 
       // Add selected makes filter if any are selected (DEPRECATED - keeping for backward compat)
@@ -1539,6 +1549,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       };
 
       setChain(normalizedData);
+      setScheduleAdjustment(data.schedule_adjustment || null);
       console.log('Chain generated:', normalizedData);
 
       // Convert auto-generated chain to manual slots format for editing
@@ -1593,6 +1604,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
     setSaveMessage('');
     setChain(null);
     setManualSlots([]);
+    setScheduleAdjustment(null);
 
     try {
       // First, get the slot dates by calling suggest-chain (we just need the slot dates, not the vehicles)
@@ -1601,7 +1613,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         office: selectedOffice,
         start_date: startDate,
         num_vehicles: numVehicles,
-        days_per_loan: daysPerLoan
+        days_per_loan: daysPerLoan,
+        allow_double_booking: allowDoubleBooking
       });
 
       // IMPORTANT: Pass make filter so counts are accurate
@@ -1627,6 +1640,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
       }));
 
       setManualSlots(slots);
+      setScheduleAdjustment(data.schedule_adjustment || null);
       console.log('Manual slots generated:', slots);
 
       // Budget will be calculated as vehicles are selected
@@ -1668,7 +1682,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         start_date: startDate,
         num_vehicles: numVehicles,
         days_per_loan: daysPerLoan,
-        slot_index: slotIndex
+        slot_index: slotIndex,
+        allow_double_booking: allowDoubleBooking
       });
 
       if (selectedMakes.length > 0) {
@@ -3379,6 +3394,37 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
               </div>
             </div>
 
+            {/* Allow Double Booking toggle */}
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">
+                    Allow Double Booking
+                  </label>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {allowDoubleBooking
+                      ? 'Keeps your start date — overlapping loans are flagged, not moved'
+                      : 'Chain is pushed past the partner’s existing loans'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={allowDoubleBooking}
+                  onClick={() => setAllowDoubleBooking(!allowDoubleBooking)}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                    allowDoubleBooking ? 'bg-amber-500' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      allowDoubleBooking ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
             {/* Mode Toggle - Partner Chain */}
             {chainMode === 'partner' && (
               <div className="border-t pt-4">
@@ -3516,6 +3562,60 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                     <div className="text-right">
                       <div className="text-2xl font-semibold text-gray-900">{chain.chain.length}</div>
                       <div className="text-xs text-gray-500">Vehicles</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Double-booking warning / moved-date explanation */}
+              {scheduleAdjustment?.has_double_booking && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+                  <div className="flex gap-3">
+                    <span className="text-amber-600 text-lg leading-none">⚠️</span>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-semibold text-amber-900">
+                        This chain double-books {chain?.partner_info?.name || 'this partner'}
+                      </h4>
+                      <ul className="mt-2 space-y-1 text-sm text-amber-800">
+                        {scheduleAdjustment.double_booked_slots.map((slot) => (
+                          <li key={slot.slot}>
+                            <span className="font-medium">
+                              Slot {slot.slot} ({slot.start_date} to {slot.end_date})
+                            </span>
+                            {' overlaps '}
+                            {slot.conflicts.join(', ')}
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-2 text-xs text-amber-700">
+                        This is allowed — save it if the partner really is taking
+                        these vehicles at the same time.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {scheduleAdjustment?.start_date_moved && (
+                <div className="bg-blue-50 border border-blue-300 rounded-lg p-4">
+                  <div className="flex gap-3">
+                    <span className="text-blue-600 text-lg leading-none">ℹ️</span>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-semibold text-blue-900">
+                        Start date moved to {scheduleAdjustment.actual_start_date}
+                      </h4>
+                      <p className="mt-1 text-sm text-blue-800">
+                        {scheduleAdjustment.requested_start_date} was skipped because the
+                        partner already has loans booked. Turn on{' '}
+                        <span className="font-medium">Allow Double Booking</span> to keep
+                        your date instead.
+                      </p>
+                      {scheduleAdjustment.slots_returned < scheduleAdjustment.slots_requested && (
+                        <p className="mt-1 text-sm text-blue-800">
+                          Only {scheduleAdjustment.slots_returned} of{' '}
+                          {scheduleAdjustment.slots_requested} vehicles could be placed.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>

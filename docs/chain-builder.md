@@ -214,6 +214,25 @@ Both `GET /suggest-chain` and `GET /get-slot-options` accept
 reporting the requested vs. actual start date and every double-booked slot, which
 is what drives the banners in the UI.
 
+### Naming conflicts
+
+`current_activity` stores only `vehicle_vin` — no make or model — so an active
+loan can only be labelled by its `activity_type`. A partner on two concurrent
+loans then produces two rows both reading `Loan (dates)`, which looks like one
+row duplicated rather than two distinct loans.
+
+Conflict labels are therefore resolved against the office `vehicles` table by
+VIN, giving `Loan: Toyota Camry (2026-02-24 to 2027-02-24)`. A loan on a vehicle
+outside the office falls back to a VIN suffix rather than a bare activity type,
+so two labels are never identical.
+
+`schedule_adjustment.conflict_summary` groups the other way from
+`double_booked_slots`: one entry per existing loan, listing the slot numbers it
+blocks. A partner on two year-long loans collides with every slot, so the
+per-slot view repeats the same two loans once per slot; the grouped view answers
+"what am I double-booking against" in as many lines as there are loans. The UI
+renders the grouped form.
+
 ### Cooldown Awareness
 
 The system tracks cooldowns per partner-make:

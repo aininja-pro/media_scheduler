@@ -479,7 +479,8 @@ async def suggest_chain(
             days_per_loan=days_per_loan,
             current_activity_df=activity_df,
             scheduled_assignments_df=scheduled_df,
-            allow_double_booking=allow_double_booking
+            allow_double_booking=allow_double_booking,
+            vehicles_df=vehicles_df  # names the vehicle on each conflict label
         )
 
         schedule_adjustment = summarize_schedule_adjustment(
@@ -1028,7 +1029,8 @@ async def get_slot_options(
             days_per_loan=days_per_loan,
             current_activity_df=activity_df,
             scheduled_assignments_df=scheduled_df,
-            allow_double_booking=allow_double_booking
+            allow_double_booking=allow_double_booking,
+            vehicles_df=vehicles_df  # names the vehicle on each conflict label
         )
 
         if not smart_slots or slot_index >= len(smart_slots):

@@ -183,6 +183,101 @@ def test_summary_reports_a_moved_start_date():
     assert summary["has_double_booking"] is False
 
 
+def test_active_loans_are_named_by_vehicle_not_activity_type():
+    """current_activity has no make/model, so two loans both read 'Loan'
+    and look like one row duplicated. Name them from the vehicles table."""
+    activity = pd.DataFrame([
+        {"person_id": 7, "vehicle_vin": "VINAAA111", "activity_type": "Loan",
+         "start_date": "2026-02-24", "end_date": "2027-02-24"},
+        {"person_id": 7, "vehicle_vin": "VINBBB222", "activity_type": "Loan",
+         "start_date": "2026-03-25", "end_date": "2027-03-25"},
+    ])
+    vehicles = pd.DataFrame([
+        {"vin": "VINAAA111", "make": "Toyota", "model": "Camry"},
+        {"vin": "VINBBB222", "make": "Honda", "model": "Accord"},
+    ])
+
+    periods = get_partner_busy_periods(
+        person_id=7,
+        current_activity_df=activity,
+        scheduled_assignments_df=pd.DataFrame(),
+        start_date="2026-09-24",
+        end_date="2026-12-30",
+        vehicles_df=vehicles,
+    )
+
+    assert [p["label"] for p in periods] == [
+        "Loan: Toyota Camry (2026-02-24 to 2027-02-24)",
+        "Loan: Honda Accord (2026-03-25 to 2027-03-25)",
+    ]
+
+
+def test_unknown_vehicles_stay_distinguishable_by_vin():
+    """A loan on an out-of-office vehicle misses the lookup; it must still not
+    collide with another loan's label."""
+    activity = pd.DataFrame([
+        {"person_id": 7, "vehicle_vin": "VINAAA111", "activity_type": "Loan",
+         "start_date": "2026-02-24", "end_date": "2027-02-24"},
+        {"person_id": 7, "vehicle_vin": "VINBBB222", "activity_type": "Loan",
+         "start_date": "2026-03-25", "end_date": "2027-03-25"},
+    ])
+
+    periods = get_partner_busy_periods(
+        person_id=7,
+        current_activity_df=activity,
+        scheduled_assignments_df=pd.DataFrame(),
+        start_date="2026-09-24",
+        end_date="2026-12-30",
+        vehicles_df=pd.DataFrame(),
+    )
+
+    labels = [p["label"] for p in periods]
+    assert labels == [
+        "Loan: VIN ...AAA111 (2026-02-24 to 2027-02-24)",
+        "Loan: VIN ...BBB222 (2026-03-25 to 2027-03-25)",
+    ]
+    assert len(set(labels)) == 2
+
+
+def test_conflict_summary_groups_by_loan_instead_of_repeating_per_slot():
+    """Two year-long loans block all 8 slots. Per-slot that is 16 lines saying
+    the same thing; grouped it is 2."""
+    slots = find_available_slots(
+        busy_periods=[
+            busy((2026, 2, 24), (2027, 2, 24), "Loan: Toyota Camry"),
+            busy((2026, 3, 25), (2027, 3, 25), "Loan: Honda Accord"),
+        ],
+        chain_start=datetime(2026, 9, 24),
+        chain_end=datetime(2027, 6, 30),
+        num_slots=8,
+        days_per_slot=7,
+        allow_double_booking=True,
+    )
+    summary = summarize_schedule_adjustment("2026-09-24", slots, num_requested=8)
+
+    assert len(summary["double_booked_slots"]) == 8
+    assert summary["conflict_summary"] == [
+        {"label": "Loan: Toyota Camry", "slots": [1, 2, 3, 4, 5, 6, 7, 8]},
+        {"label": "Loan: Honda Accord", "slots": [1, 2, 3, 4, 5, 6, 7, 8]},
+    ]
+
+
+def test_conflict_summary_tracks_partial_overlaps():
+    slots = find_available_slots(
+        busy_periods=[busy((2026, 5, 7), (2026, 5, 14), "Lexus RX 450h+")],
+        chain_start=datetime(2026, 4, 30),
+        chain_end=datetime(2026, 7, 30),
+        num_slots=3,
+        days_per_slot=7,
+        allow_double_booking=True,
+    )
+    summary = summarize_schedule_adjustment("2026-04-30", slots, num_requested=3)
+
+    assert summary["conflict_summary"] == [
+        {"label": "Lexus RX 450h+", "slots": [2]},
+    ]
+
+
 def test_summary_reports_double_booked_slots():
     slots = find_available_slots(
         busy_periods=[busy((2026, 5, 4), (2026, 8, 31), "Volkswagen Golf R")],

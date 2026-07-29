@@ -35,17 +35,66 @@ def _overlaps(slot_start: datetime, slot_end: datetime,
     return slot_start < busy_end and slot_end > busy_start
 
 
-def _describe(row, vin_key: str, start, end) -> str:
-    """Human-readable label for a busy period, e.g. 'Toyota Camry (2026-01-02 to 2026-01-12)'."""
-    make = row.get('make')
-    model = row.get('model')
-    name = ' '.join(str(p) for p in (make, model) if p and pd.notna(p)).strip()
+def build_vehicle_lookup(vehicles_df: pd.DataFrame) -> Dict[str, str]:
+    """Map VIN -> 'Make Model'.
+
+    current_activity stores only vehicle_vin — no make or model — so without
+    this every active loan is labelled by its activity_type alone. Two loans
+    then both read 'Loan' and look like one row duplicated.
+    """
+    if vehicles_df is None or vehicles_df.empty or 'vin' not in vehicles_df.columns:
+        return {}
+
+    lookup = {}
+    for _, vehicle in vehicles_df.iterrows():
+        vin = vehicle.get('vin')
+        if not vin or pd.isna(vin):
+            continue
+        name = ' '.join(
+            str(p) for p in (vehicle.get('make'), vehicle.get('model'))
+            if p and pd.notna(p)
+        ).strip()
+        if name:
+            lookup[str(vin)] = name
+
+    return lookup
+
+
+def _vehicle_name(row, vin_key: str, vehicle_lookup: Dict[str, str]) -> str:
+    """Name the vehicle on a busy period, most specific source first."""
+    name = ' '.join(
+        str(p) for p in (row.get('make'), row.get('model')) if p and pd.notna(p)
+    ).strip()
+    if name:
+        return name
+
+    vin = row.get(vin_key)
+    if vin and pd.notna(vin):
+        # Fall back to the VIN suffix so two loans are never labelled alike
+        return vehicle_lookup.get(str(vin)) or f"VIN ...{str(vin)[-6:]}"
+
+    return ''
+
+
+def _describe(row, vin_key: str, start, end, vehicle_lookup: Dict[str, str],
+              include_activity_type: bool = False) -> str:
+    """Human-readable label for a busy period.
+
+    e.g. 'Loan: Toyota Camry (2026-02-24 to 2027-02-24)'. current_activity rows
+    keep their activity_type because they are not always loans — Hold, Service
+    and Event rows land in the same table.
+    """
+    name = _vehicle_name(row, vin_key, vehicle_lookup)
+
+    if include_activity_type:
+        activity_type = str(row.get('activity_type') or '').strip()
+        if activity_type and name:
+            name = f"{activity_type}: {name}"
+        elif activity_type:
+            name = activity_type
 
     if not name:
-        name = str(row.get('activity_type') or '').strip()
-    if not name:
-        vin = row.get(vin_key)
-        name = f"VIN ...{str(vin)[-6:]}" if vin and pd.notna(vin) else 'Existing loan'
+        name = 'Existing loan'
 
     return f"{name} ({_fmt(start)} to {_fmt(end)})"
 
@@ -60,7 +109,8 @@ def get_partner_busy_periods(
     current_activity_df: pd.DataFrame,
     scheduled_assignments_df: pd.DataFrame,
     start_date: str,
-    end_date: str
+    end_date: str,
+    vehicles_df: pd.DataFrame = None
 ) -> List[Dict[str, Any]]:
     """
     Get all periods when partner is busy (has existing commitments).
@@ -76,6 +126,7 @@ def get_partner_busy_periods(
         List of {'start': datetime, 'end': datetime, 'label': str} busy periods
     """
     busy_periods = []
+    vehicle_lookup = build_vehicle_lookup(vehicles_df)
 
     # Parse chain period
     chain_start = datetime.strptime(start_date, '%Y-%m-%d')
@@ -101,7 +152,8 @@ def get_partner_busy_periods(
                     busy_periods.append({
                         'start': act_start,
                         'end': act_end,
-                        'label': _describe(activity, 'vehicle_vin', act_start, act_end),
+                        'label': _describe(activity, 'vehicle_vin', act_start, act_end,
+                                           vehicle_lookup, include_activity_type=True),
                     })
 
     # Add scheduled assignments
@@ -129,7 +181,8 @@ def get_partner_busy_periods(
                     busy_periods.append({
                         'start': sched_start,
                         'end': sched_end,
-                        'label': _describe(assignment, 'vin', sched_start, sched_end),
+                        'label': _describe(assignment, 'vin', sched_start, sched_end,
+                                           vehicle_lookup),
                     })
 
     # Sort by start date
@@ -276,7 +329,8 @@ def adjust_chain_for_existing_commitments(
     days_per_loan: int,
     current_activity_df: pd.DataFrame,
     scheduled_assignments_df: pd.DataFrame,
-    allow_double_booking: bool = False
+    allow_double_booking: bool = False,
+    vehicles_df: pd.DataFrame = None
 ) -> List[Dict[str, Any]]:
     """
     Smart chain building that works around existing commitments.
@@ -308,7 +362,8 @@ def adjust_chain_for_existing_commitments(
         current_activity_df=current_activity_df,
         scheduled_assignments_df=scheduled_assignments_df,
         start_date=start_date,
-        end_date=chain_end.strftime('%Y-%m-%d')
+        end_date=chain_end.strftime('%Y-%m-%d'),
+        vehicles_df=vehicles_df
     )
 
     return find_available_slots(
@@ -338,6 +393,20 @@ def summarize_schedule_adjustment(
         for s in slots if s.get('conflicts')
     ]
 
+    # Grouped the other way round: one row per existing loan, listing the slots
+    # it blocks. A partner on two year-long loans collides with every slot, so
+    # the per-slot list repeats the same two loans N times — the useful question
+    # is "what am I double-booking against", and that has only two answers here.
+    by_conflict: Dict[str, List[int]] = {}
+    for slot in slots:
+        for label in slot.get('conflicts', []):
+            by_conflict.setdefault(label, []).append(slot['slot'])
+
+    conflict_summary = [
+        {'label': label, 'slots': slot_numbers}
+        for label, slot_numbers in by_conflict.items()
+    ]
+
     return {
         'requested_start_date': requested_start,
         'actual_start_date': actual_start,
@@ -345,5 +414,6 @@ def summarize_schedule_adjustment(
         'slots_requested': num_requested,
         'slots_returned': len(slots),
         'double_booked_slots': double_booked,
+        'conflict_summary': conflict_summary,
         'has_double_booking': bool(double_booked),
     }

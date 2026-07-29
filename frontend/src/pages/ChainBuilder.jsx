@@ -37,6 +37,35 @@ const formatPartnerName = (name, format = 'lastFirst') => {
 };
 
 /**
+ * Describe which slots a conflict blocks, collapsing runs into ranges.
+ * [1,2,3,4] -> "blocks slots 1-4";  [1,3] -> "blocks slots 1, 3"
+ * @param {number[]} slots - Slot numbers, ascending
+ * @returns {string}
+ */
+const formatSlotList = (slots = []) => {
+  if (!slots.length) return '';
+
+  const ranges = [];
+  let runStart = slots[0];
+  let previous = slots[0];
+
+  for (const slot of slots.slice(1)) {
+    if (slot !== previous + 1) {
+      ranges.push([runStart, previous]);
+      runStart = slot;
+    }
+    previous = slot;
+  }
+  ranges.push([runStart, previous]);
+
+  const text = ranges
+    .map(([from, to]) => (from === to ? `${from}` : `${from}-${to}`))
+    .join(', ');
+
+  return `blocks ${slots.length === 1 ? 'slot' : 'slots'} ${text}`;
+};
+
+/**
  * Format activity date for display
  * @param {string} dateString - ISO date string
  * @returns {string} Formatted date (e.g., "Jan 15")
@@ -3577,13 +3606,11 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                         This chain double-books {chain?.partner_info?.name || 'this partner'}
                       </h4>
                       <ul className="mt-2 space-y-1 text-sm text-amber-800">
-                        {scheduleAdjustment.double_booked_slots.map((slot) => (
-                          <li key={slot.slot}>
-                            <span className="font-medium">
-                              Slot {slot.slot} ({slot.start_date} to {slot.end_date})
-                            </span>
-                            {' overlaps '}
-                            {slot.conflicts.join(', ')}
+                        {(scheduleAdjustment.conflict_summary || []).map((conflict) => (
+                          <li key={conflict.label}>
+                            <span className="font-medium">{conflict.label}</span>
+                            {' — '}
+                            {formatSlotList(conflict.slots)}
                           </li>
                         ))}
                       </ul>

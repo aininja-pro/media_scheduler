@@ -37,6 +37,21 @@ const formatPartnerName = (name, format = 'lastFirst') => {
 };
 
 /**
+ * Format an ISO date (YYYY-MM-DD) as MM-DD-YY, matching FMS.
+ * Parsed as local parts to avoid the UTC shift new Date('2026-02-24') gives.
+ * @param {string} isoDate
+ * @returns {string}
+ */
+const formatFmsDate = (isoDate) => {
+  if (!isoDate) return '';
+
+  const [year, month, day] = String(isoDate).split('-');
+  if (!year || !month || !day) return String(isoDate);
+
+  return `${month}-${day}-${year.slice(-2)}`;
+};
+
+/**
  * Describe which slots a conflict blocks, collapsing runs into ranges.
  * [1,2,3,4] -> "blocks slots 1-4";  [1,3] -> "blocks slots 1, 3"
  * @param {number[]} slots - Slot numbers, ascending
@@ -3585,7 +3600,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                     <div>
                       <h3 className="text-lg font-medium text-gray-900">{chain.partner_info.name}</h3>
                       <p className="text-sm text-gray-500">
-                        {chain.chain_params.start_date} - {chain.chain[chain.chain.length - 1]?.end_date} ({chain.chain_params.total_span_days} days)
+                        {formatFmsDate(chain.chain_params.start_date)} - {formatFmsDate(chain.chain[chain.chain.length - 1]?.end_date)} ({chain.chain_params.total_span_days} days)
                       </p>
                     </div>
                     <div className="text-right">
@@ -3629,10 +3644,10 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                     <span className="text-blue-600 text-lg leading-none">ℹ️</span>
                     <div className="flex-1">
                       <h4 className="text-sm font-semibold text-blue-900">
-                        Start date moved to {scheduleAdjustment.actual_start_date}
+                        Start date moved to {formatFmsDate(scheduleAdjustment.actual_start_date)}
                       </h4>
                       <p className="mt-1 text-sm text-blue-800">
-                        {scheduleAdjustment.requested_start_date} was skipped because the
+                        {formatFmsDate(scheduleAdjustment.requested_start_date)} was skipped because the
                         partner already has loans booked. Turn on{' '}
                         <span className="font-medium">Allow Double Booking</span> to keep
                         your date instead.
@@ -4003,8 +4018,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                     height: '24px'
                                   }}
                                   title={slot.selected_vehicle
-                                    ? `Slot ${slot.slot}: ${slot.selected_vehicle.make} ${slot.selected_vehicle.model}${slot.selected_vehicle.color ? ` (${slot.selected_vehicle.color})` : ''}\n${slot.start_date} - ${slot.end_date}\nScore: ${slot.selected_vehicle.score}`
-                                    : `Slot ${slot.slot}: Empty\n${slot.start_date} - ${slot.end_date}\nClick dropdown below to select vehicle`
+                                    ? `Slot ${slot.slot}: ${slot.selected_vehicle.make} ${slot.selected_vehicle.model}${slot.selected_vehicle.color ? ` (${slot.selected_vehicle.color})` : ''}\n${formatFmsDate(slot.start_date)} - ${formatFmsDate(slot.end_date)}\nScore: ${slot.selected_vehicle.score}`
+                                    : `Slot ${slot.slot}: Empty\n${formatFmsDate(slot.start_date)} - ${formatFmsDate(slot.end_date)}\nClick dropdown below to select vehicle`
                                   }
                                 >
                                   <span className="truncate text-[11px]">
@@ -4178,7 +4193,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-bold text-gray-700">Slot {slot.slot}</span>
                             <span className="text-xs text-gray-600">
-                              {new Date(slot.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(slot.end_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              {formatFmsDate(slot.start_date)} - {formatFmsDate(slot.end_date)}
                             </span>
                           </div>
                           {/* Show actual dropdown count if loaded, otherwise show estimated count */}

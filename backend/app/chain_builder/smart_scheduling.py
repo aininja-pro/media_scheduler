@@ -100,8 +100,9 @@ def _describe(row, vin_key: str, start, end, vehicle_lookup: Dict[str, str],
 
 
 def _fmt(value) -> str:
+    """Dates shown to schedulers use MM-DD-YY, matching FMS."""
     parsed = pd.to_datetime(value, errors='coerce')
-    return str(value) if pd.isna(parsed) else parsed.strftime('%Y-%m-%d')
+    return str(value) if pd.isna(parsed) else parsed.strftime('%m-%d-%y')
 
 
 def get_partner_busy_periods(

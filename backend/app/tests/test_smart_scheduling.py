@@ -142,7 +142,7 @@ def test_cancelled_assignments_do_not_block():
         end_date="2026-07-30",
     )
 
-    assert [p["label"] for p in periods] == ["Mazda CX-90 (2026-05-18 to 2026-05-25)"]
+    assert [p["label"] for p in periods] == ["Mazda CX-90 (05-18-26 to 05-25-26)"]
 
 
 def test_busy_periods_are_scoped_to_the_partner():
@@ -206,9 +206,10 @@ def test_active_loans_are_named_by_vehicle_not_activity_type():
         vehicles_df=vehicles,
     )
 
+    # Dates read MM-DD-YY to match FMS
     assert [p["label"] for p in periods] == [
-        "Loan: Toyota Camry (2026-02-24 to 2027-02-24)",
-        "Loan: Honda Accord (2026-03-25 to 2027-03-25)",
+        "Loan: Toyota Camry (02-24-26 to 02-24-27)",
+        "Loan: Honda Accord (03-25-26 to 03-25-27)",
     ]
 
 
@@ -233,8 +234,8 @@ def test_unknown_vehicles_stay_distinguishable_by_vin():
 
     labels = [p["label"] for p in periods]
     assert labels == [
-        "Loan: VIN ...AAA111 (2026-02-24 to 2027-02-24)",
-        "Loan: VIN ...BBB222 (2026-03-25 to 2027-03-25)",
+        "Loan: VIN ...AAA111 (02-24-26 to 02-24-27)",
+        "Loan: VIN ...BBB222 (03-25-26 to 03-25-27)",
     ]
     assert len(set(labels)) == 2
 
@@ -260,6 +261,34 @@ def test_conflict_summary_groups_by_loan_instead_of_repeating_per_slot():
         {"label": "Loan: Toyota Camry", "slots": [1, 2, 3, 4, 5, 6, 7, 8]},
         {"label": "Loan: Honda Accord", "slots": [1, 2, 3, 4, 5, 6, 7, 8]},
     ]
+
+
+def test_labels_use_fms_date_format_but_slot_dates_stay_iso():
+    """Labels are read by schedulers, so MM-DD-YY. Slot start/end dates are
+    passed back to the API and compared, so they must stay ISO."""
+    slots = find_available_slots(
+        busy_periods=[busy((2026, 5, 4), (2026, 5, 25), "Mazda CX-90")],
+        chain_start=datetime(2026, 4, 30),
+        chain_end=datetime(2026, 7, 30),
+        num_slots=1,
+        days_per_slot=7,
+        allow_double_booking=True,
+    )
+
+    assert slots[0]["start_date"] == "2026-04-30"
+    assert slots[0]["end_date"] == "2026-05-07"
+
+    periods = get_partner_busy_periods(
+        person_id=7,
+        current_activity_df=pd.DataFrame(),
+        scheduled_assignments_df=pd.DataFrame([
+            {"person_id": 7, "start_day": "2026-05-04", "end_day": "2026-05-25",
+             "status": "manual", "make": "Mazda", "model": "CX-90"},
+        ]),
+        start_date="2026-04-30",
+        end_date="2026-07-30",
+    )
+    assert periods[0]["label"] == "Mazda CX-90 (05-04-26 to 05-25-26)"
 
 
 def test_conflict_summary_tracks_partial_overlaps():

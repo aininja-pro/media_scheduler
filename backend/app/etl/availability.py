@@ -37,14 +37,18 @@ def generate_week_range(week_start: str, horizon_days: int = 7) -> List[date]:
     return [start_date + timedelta(days=i) for i in range(horizon_days)]
 
 
-def is_date_in_lifecycle_window(target_date: date, in_service_date, expected_turn_in_date) -> bool:
+def is_date_in_lifecycle_window(target_date: date, in_service_date, expected_turn_in_date=None) -> bool:
     """
     Check if target_date falls within the vehicle's lifecycle window.
+
+    Only in_service_date bounds the window. expected_turn_in_date is accepted
+    for backward compatibility but ignored: FMS treats it as an estimate and
+    keeps booking vehicles past it, so it must never block availability.
 
     Args:
         target_date: The date to check
         in_service_date: Vehicle's in-service date (or None/NaN)
-        expected_turn_in_date: Vehicle's expected turn-in date (or None/NaN)
+        expected_turn_in_date: Ignored (kept for backward compatibility)
 
     Returns:
         True if the date is within the lifecycle window, False otherwise
@@ -52,8 +56,6 @@ def is_date_in_lifecycle_window(target_date: date, in_service_date, expected_tur
     # Convert None/NaN to None for consistent handling
     if pd.isna(in_service_date):
         in_service_date = None
-    if pd.isna(expected_turn_in_date):
-        expected_turn_in_date = None
 
     # If in_service_date exists and target_date is before it, unavailable
     if in_service_date is not None:
@@ -63,16 +65,6 @@ def is_date_in_lifecycle_window(target_date: date, in_service_date, expected_tur
             in_service_date = in_service_date.date()
 
         if target_date < in_service_date:
-            return False
-
-    # If expected_turn_in_date exists and target_date is after it, unavailable
-    if expected_turn_in_date is not None:
-        if isinstance(expected_turn_in_date, str):
-            expected_turn_in_date = parse_date_string(expected_turn_in_date)
-        elif isinstance(expected_turn_in_date, datetime):
-            expected_turn_in_date = expected_turn_in_date.date()
-
-        if target_date > expected_turn_in_date:
             return False
 
     return True

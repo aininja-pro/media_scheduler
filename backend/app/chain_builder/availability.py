@@ -71,15 +71,15 @@ def build_chain_availability_grid(
         for _, vehicle in vehicles_df.iterrows():
             vin = vehicle['vin']
 
-            # Get vehicle lifecycle dates
+            # Get vehicle lifecycle dates.
+            # expected_turn_in_date is deliberately NOT used here: FMS treats it
+            # as an estimate and keeps booking vehicles past it, so it must never
+            # block availability. Endpoints surface it as a warning instead.
             in_service_date = vehicle.get('in_service_date')
-            turn_in_date = vehicle.get('expected_turn_in_date')
 
             # Convert to datetime
             if isinstance(in_service_date, str):
                 in_service_date = datetime.strptime(in_service_date, '%Y-%m-%d').date()
-            if isinstance(turn_in_date, str):
-                turn_in_date = datetime.strptime(turn_in_date, '%Y-%m-%d').date()
 
             # Check each day in chain period
             current_date = start_dt.date()
@@ -89,8 +89,6 @@ def build_chain_availability_grid(
                 # Check lifecycle availability
                 lifecycle_available = True
                 if in_service_date and check_date < in_service_date:
-                    lifecycle_available = False
-                if turn_in_date and check_date > turn_in_date:
                     lifecycle_available = False
 
                 # Check current activity (is it loaned out?)

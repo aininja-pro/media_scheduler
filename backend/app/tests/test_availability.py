@@ -55,18 +55,19 @@ class TestAvailabilityHelpers:
         assert is_date_in_lifecycle_window(target, date(2025, 1, 10), None) == True  # After in-service
         assert is_date_in_lifecycle_window(target, date(2025, 1, 20), None) == False  # Before in-service
 
-        # Only expected_turn_in_date constraint
+        # expected_turn_in_date is informational only (FMS keeps booking past it)
+        # and must never block availability
         assert is_date_in_lifecycle_window(target, None, date(2025, 1, 20)) == True  # Before turn-in
-        assert is_date_in_lifecycle_window(target, None, date(2025, 1, 10)) == False  # After turn-in
+        assert is_date_in_lifecycle_window(target, None, date(2025, 1, 10)) == True  # Past turn-in still available
 
-        # Both constraints - in window
+        # Both dates present - in-service satisfied
         assert is_date_in_lifecycle_window(target, date(2025, 1, 10), date(2025, 1, 20)) == True
 
-        # Both constraints - before window
+        # Both dates present - before in-service
         assert is_date_in_lifecycle_window(target, date(2025, 1, 16), date(2025, 1, 20)) == False
 
-        # Both constraints - after window
-        assert is_date_in_lifecycle_window(target, date(2025, 1, 10), date(2025, 1, 14)) == False
+        # Both dates present - past turn-in but in service, still available
+        assert is_date_in_lifecycle_window(target, date(2025, 1, 10), date(2025, 1, 14)) == True
 
     def test_has_overlapping_activity(self):
         """Test activity overlap detection."""
@@ -175,7 +176,7 @@ class TestBuildAvailabilityGrid:
         assert vin002_result['available'].all() == True
 
     def test_lifecycle_window_expected_turn_in(self):
-        """Test: expected_turn_in_date = Thursday blocks Fri–Sun for specific VIN."""
+        """Test: expected_turn_in_date never blocks availability (informational only)."""
         # Setup test data
         vehicles_df = pd.DataFrame([
             {
@@ -196,17 +197,10 @@ class TestBuildAvailabilityGrid:
 
         result = build_availability_grid(vehicles_df, activity_df, "2025-01-13", "Austin")
 
-        # Check VIN001 availability - should be blocked after Thursday
-        vin001_result = result[result['vin'] == 'VIN001'].copy()
-        vin001_result = vin001_result.set_index('day')
-
-        assert vin001_result.loc[date(2025, 1, 13)]['available'] == True   # Mon - available
-        assert vin001_result.loc[date(2025, 1, 14)]['available'] == True   # Tue - available
-        assert vin001_result.loc[date(2025, 1, 15)]['available'] == True   # Wed - available
-        assert vin001_result.loc[date(2025, 1, 16)]['available'] == True   # Thu - available (turn-in day)
-        assert vin001_result.loc[date(2025, 1, 17)]['available'] == False  # Fri - after turn-in
-        assert vin001_result.loc[date(2025, 1, 18)]['available'] == False  # Sat - after turn-in
-        assert vin001_result.loc[date(2025, 1, 19)]['available'] == False  # Sun - after turn-in
+        # VIN001 stays available past its expected turn-in date: FMS treats the
+        # date as an estimate and keeps booking vehicles after it
+        vin001_result = result[result['vin'] == 'VIN001']
+        assert vin001_result['available'].all() == True
 
         # Check VIN002 availability - should be all available (no lifecycle constraints)
         vin002_result = result[result['vin'] == 'VIN002']
@@ -330,8 +324,8 @@ class TestBuildAvailabilityGrid:
         assert vin001_result.loc[date(2025, 1, 15)]['available'] == True   # Wed - in service
         assert vin001_result.loc[date(2025, 1, 16)]['available'] == True   # Thu - in service
         assert vin001_result.loc[date(2025, 1, 17)]['available'] == True   # Fri - turn-in day
-        assert vin001_result.loc[date(2025, 1, 18)]['available'] == False  # Sat - after turn-in
-        assert vin001_result.loc[date(2025, 1, 19)]['available'] == False  # Sun - after turn-in
+        assert vin001_result.loc[date(2025, 1, 18)]['available'] == True   # Sat - past turn-in, still available (informational)
+        assert vin001_result.loc[date(2025, 1, 19)]['available'] == True   # Sun - past turn-in, still available (informational)
 
         # Check VIN002 - blocked by loan Wed-Thu only
         vin002_result = result[result['vin'] == 'VIN002'].copy()

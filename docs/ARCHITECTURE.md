@@ -17,7 +17,20 @@ High-level overview of how the Media Scheduler app fits together. See also
   scheduled_assignments, budgets, etc.) plus Supabase Auth for user accounts.
 - **Nightly sync** — APScheduler job in `main.py` pulls FMS data on a cron schedule.
 
-## Authentication & user management
+## Vehicle availability semantics
+
+A vehicle is considered available on a given day when nothing actually occupies it:
+no FMS activity (`current_activity`, synced nightly), no scheduler assignment
+(`scheduled_assignments` with status planned/manual/requested/active), and the day is
+not before the vehicle's `in_service_date`. Two engines implement this rule:
+`backend/app/chain_builder/availability.py` (Chain Builder) and
+`backend/app/etl/availability.py` (optimizer/solver).
+
+`expected_turn_in_date` is **informational, never a filter**. FMS treats it as an
+estimate and keeps booking vehicles past it, so filtering on it hid vehicles that FMS
+showed as available (client bug, Aug 2026). Instead, Chain Builder responses carry a
+per-vehicle `turn_in_warning` (the turn-in date, when it falls before the end of the
+proposed loan) and the UI shows it as an amber note on dropdown options and slot cards.
 
 The app supports **two sign-in paths**, resolved in `frontend/src/components/Login.jsx`:
 

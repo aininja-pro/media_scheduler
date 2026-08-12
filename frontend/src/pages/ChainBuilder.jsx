@@ -1612,7 +1612,8 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
           color: vehicle.color || '',
           score: vehicle.score,
           tier: vehicle.tier,
-          last_4_vin: vehicle.vin.slice(-4)
+          last_4_vin: vehicle.vin.slice(-4),
+          turn_in_warning: vehicle.turn_in_warning || null
         },
         eligible_vehicles: [],  // Will load on dropdown open
         available_count: data.slot_availability?.[index]?.available_count || 0
@@ -4314,6 +4315,11 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                                   </span>
                                                 )}{vehicle.color ? ` • ${vehicle.color}` : ''}
                                               </div>
+                                              {vehicle.turn_in_warning && (
+                                                <div className="text-amber-700 mt-0.5">
+                                                  ⚠ FMS expected turn-in {formatFmsDate(vehicle.turn_in_warning)}
+                                                </div>
+                                              )}
                                             </div>
                                           </button>
                                         );
@@ -4378,6 +4384,12 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                 </span>
                               )}
                             </div>
+
+                            {slot.selected_vehicle.turn_in_warning && (
+                              <div className="text-xs text-amber-700 pl-7">
+                                ⚠ FMS expected turn-in {formatFmsDate(slot.selected_vehicle.turn_in_warning)}
+                              </div>
+                            )}
 
                             {/* Change button */}
                             <div className="text-right">

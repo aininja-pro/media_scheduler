@@ -194,6 +194,22 @@ def _parse_chain_date(value) -> Optional[datetime]:
     return parsed.to_pydatetime()
 
 
+def _turn_in_warning(turn_in_value, slot_end) -> Optional[str]:
+    """Expected turn-in date (YYYY-MM-DD) when it lands before the end of the
+    loan window, else None.
+
+    Informational only: FMS treats expected turn-in as an estimate and keeps
+    booking vehicles past it, so it never filters availability (see
+    build_chain_availability_grid). Slots that outlive the date just carry
+    this warning for the scheduler.
+    """
+    turn_in_dt = _parse_chain_date(turn_in_value)
+    slot_end_dt = _parse_chain_date(slot_end)
+    if not turn_in_dt or not slot_end_dt or turn_in_dt >= slot_end_dt:
+        return None
+    return turn_in_dt.strftime('%Y-%m-%d')
+
+
 def _period_overlaps_slot(slot_start: datetime, slot_end: datetime, period_start, period_end) -> bool:
     period_start_dt = _parse_chain_date(period_start)
     period_end_dt = _parse_chain_date(period_end)
@@ -695,12 +711,17 @@ async def suggest_chain(
         # Enrich chain with FMS id/color from original vehicles_df (scoring function may drop them)
         for item in suggested_chain:
             vin = item.get('vin')
+            item.setdefault('turn_in_warning', None)
             if vin:
                 vehicle_row = vehicles_df[vehicles_df['vin'] == vin]
                 if not vehicle_row.empty and 'vehicle_id' in vehicles_df.columns:
                     item['vehicle_id'] = _clean_vehicle_id(vehicle_row.iloc[0]['vehicle_id'])
                 if not vehicle_row.empty and 'id' in vehicles_df.columns:
                     item['id'] = _clean_vehicle_id(vehicle_row.iloc[0]['id'])
+                if not vehicle_row.empty and 'expected_turn_in_date' in vehicles_df.columns:
+                    item['turn_in_warning'] = _turn_in_warning(
+                        vehicle_row.iloc[0]['expected_turn_in_date'], item.get('end_date')
+                    )
                 if not vehicle_row.empty and 'color' in vehicles_df.columns:
                     color_val = vehicle_row.iloc[0]['color']
                     if pd.isna(color_val):
@@ -1184,6 +1205,10 @@ async def get_slot_options(
             else:
                 color_val = ''
 
+            turn_in_warning = None
+            if not vehicle_row.empty and 'expected_turn_in_date' in vehicles_df.columns:
+                turn_in_warning = _turn_in_warning(vehicle_row.iloc[0]['expected_turn_in_date'], slot_end)
+
             # Debug first vehicle
             if idx == 0:
                 logger.info(f"First vehicle VIN: {vin}, color from vehicles_df: '{color_val}'")
@@ -1199,7 +1224,8 @@ async def get_slot_options(
                 "color": color_val,
                 "score": int(vehicle['score']),
                 "tier": vehicle.get('rank', 'C'),
-                "last_4_vin": last_4_vin
+                "last_4_vin": last_4_vin,
+                "turn_in_warning": turn_in_warning
             })
 
         logger.info(f"Returning {len(eligible_vehicles)} eligible vehicles for slot {slot_index}")

@@ -1739,6 +1739,12 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
         params.append('exclude_vins', excludeVins);
       }
 
+      // Keep the car already in THIS slot visible if the scheduler reopens the dropdown
+      const currentVin = manualSlots[slotIndex].selected_vehicle?.vin;
+      if (currentVin) {
+        params.append('keep_vins', currentVin);
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/chain-builder/get-slot-options?${params}`);
       const data = await response.json();
 
@@ -2772,7 +2778,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                   <div className="text-xs text-gray-600 space-y-1">
                     <div className="flex items-start gap-2">
                       <span className="text-green-600">✓</span>
-                      <span>Excludes vehicles partner has already reviewed</span>
+                      <span>Excludes vehicles the partner has already reviewed or is already scheduled in (including future loans)</span>
                     </div>
                     <div className="flex items-start gap-2">
                       <span className="text-green-600">✓</span>

@@ -422,13 +422,40 @@ async def suggest_chain(
 
         loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
 
-        # Get vehicles partner has NOT reviewed
+        # Load current activity
+        logger.info("Loading current activity")
+        activity_response = db.client.table('current_activity').select('*').execute()
+        activity_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
+
+        # Fix column name if needed
+        if not activity_df.empty and 'vehicle_vin' in activity_df.columns:
+            activity_df['vin'] = activity_df['vehicle_vin']
+
+        # Load scheduled assignments for this partner (for smart scheduling)
+        logger.info(f"Loading scheduled assignments for partner {person_id}")
+        scheduled_response = db.client.table('scheduled_assignments')\
+            .select('*')\
+            .eq('person_id', int(person_id))\
+            .execute()
+
+        scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+        logger.info(f"Found {len(scheduled_df)} scheduled assignments for partner {person_id}")
+
+        # Load ALL scheduled assignments (for vehicle conflict checking)
+        logger.info("Loading all scheduled assignments for conflict detection")
+        all_scheduled_response = db.client.table('scheduled_assignments').select('*').execute()
+        all_scheduled_df = pd.DataFrame(all_scheduled_response.data) if all_scheduled_response.data else pd.DataFrame()
+        logger.info(f"Loaded {len(all_scheduled_df)} total scheduled assignments for conflict checking")
+
+        # Hide cars this partner already had, currently has, or is already booked to get
         exclusion_result = get_vehicles_not_reviewed(
             person_id=person_id,
             office=office,
             loan_history_df=loan_history_df,
             vehicles_df=vehicles_df,
-            months_back=12
+            months_back=12,
+            current_activity_df=activity_df,
+            scheduled_assignments_df=all_scheduled_df,
         )
 
         available_vins = exclusion_result['available_vins']
@@ -459,31 +486,6 @@ async def suggest_chain(
             vehicles_df=vehicles_df,
             cooldown_days=30
         )
-
-        # Load current activity
-        logger.info("Loading current activity")
-        activity_response = db.client.table('current_activity').select('*').execute()
-        activity_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
-
-        # Fix column name if needed
-        if not activity_df.empty and 'vehicle_vin' in activity_df.columns:
-            activity_df['vin'] = activity_df['vehicle_vin']
-
-        # Load scheduled assignments for this partner (for smart scheduling)
-        logger.info(f"Loading scheduled assignments for partner {person_id}")
-        scheduled_response = db.client.table('scheduled_assignments')\
-            .select('*')\
-            .eq('person_id', int(person_id))\
-            .execute()
-
-        scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
-        logger.info(f"Found {len(scheduled_df)} scheduled assignments for partner {person_id}")
-
-        # Load ALL scheduled assignments (for vehicle conflict checking)
-        logger.info("Loading all scheduled assignments for conflict detection")
-        all_scheduled_response = db.client.table('scheduled_assignments').select('*').execute()
-        all_scheduled_df = pd.DataFrame(all_scheduled_response.data) if all_scheduled_response.data else pd.DataFrame()
-        logger.info(f"Loaded {len(all_scheduled_df)} total scheduled assignments for conflict checking")
 
         # Use smart scheduling to find slots that work around existing commitments
         estimated_chain_end = (start_dt + timedelta(days=num_vehicles * days_per_loan * 2)).strftime('%Y-%m-%d')
@@ -840,13 +842,21 @@ async def get_model_availability(
 
         loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
 
-        # Get vehicles partner has NOT reviewed
+        activity_response = db.client.table('current_activity').select('*').eq('person_id', int(person_id)).execute()
+        activity_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
+
+        scheduled_response = db.client.table('scheduled_assignments').select('*').eq('person_id', int(person_id)).execute()
+        scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+
+        # Hide cars this partner already had, currently has, or is already booked to get
         exclusion_result = get_vehicles_not_reviewed(
             person_id=person_id,
             office=office,
             loan_history_df=loan_history_df,
             vehicles_df=vehicles_df,
-            months_back=12
+            months_back=12,
+            current_activity_df=activity_df,
+            scheduled_assignments_df=scheduled_df,
         )
 
         available_vins = exclusion_result['available_vins']
@@ -921,6 +931,7 @@ async def get_slot_options(
     slot_index: int = Query(..., description="Slot index (0-based)", ge=0),
     preferred_makes: Optional[str] = Query(None, description="Comma-separated list of makes to filter"),
     exclude_vins: Optional[str] = Query(None, description="Comma-separated list of VINs to exclude (already selected in other slots)"),
+    keep_vins: Optional[str] = Query(None, description="Comma-separated VINs to keep in this slot's list (the car already selected here)"),
     allow_double_booking: bool = Query(False, description="Honour the requested start date even when the partner already has loans then, and report the overlaps"),
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
@@ -939,6 +950,7 @@ async def get_slot_options(
         slot_index: Which slot to get options for (0-based)
         preferred_makes: Optional comma-separated makes filter
         exclude_vins: Optional VINs already selected in other slots
+        keep_vins: Optional VIN already selected in this slot (keep it in the dropdown)
 
     Returns:
         Dictionary with:
@@ -988,35 +1000,15 @@ async def get_slot_options(
 
         loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
 
-        # Get vehicles partner has NOT reviewed
-        exclusion_result = get_vehicles_not_reviewed(
-            person_id=person_id,
-            office=office,
-            loan_history_df=loan_history_df,
-            vehicles_df=vehicles_df,
-            months_back=12
-        )
-
-        available_vins = exclusion_result['available_vins']
-        logger.info(f"Exclusion: {len(available_vins)} vehicles not reviewed by partner")
-
-        # Filter by preferred makes if specified
-        if preferred_makes:
-            preferred_makes_list = [m.strip() for m in preferred_makes.split(',')]
-            logger.info(f"Filtering to preferred makes: {preferred_makes_list}")
-
-            preferred_vehicles = vehicles_df[
-                (vehicles_df['vin'].isin(available_vins)) &
-                (vehicles_df['make'].isin(preferred_makes_list))
-            ]
-            available_vins = set(preferred_vehicles['vin'].unique())
-            logger.info(f"After make filtering: {len(available_vins)} vehicles available")
-
-        # Parse exclude_vins parameter
+        # Parse exclude_vins / keep_vins before we hide already-theirs cars
         excluded_vins_set = set()
         if exclude_vins:
             excluded_vins_set = set([v.strip() for v in exclude_vins.split(',')])
             logger.info(f"Excluding {len(excluded_vins_set)} VINs already selected in other slots")
+
+        keep_vins_set = set()
+        if keep_vins:
+            keep_vins_set = set([v.strip() for v in keep_vins.split(',') if v.strip()])
 
         # Load current activity and scheduled assignments
         logger.info("Loading current activity")
@@ -1041,6 +1033,33 @@ async def get_slot_options(
         all_scheduled_response = db.client.table('scheduled_assignments').select('*').execute()
         all_scheduled_df = pd.DataFrame(all_scheduled_response.data) if all_scheduled_response.data else pd.DataFrame()
         logger.info(f"Loaded {len(all_scheduled_df)} total scheduled assignments for conflict checking")
+
+        # Hide cars this partner already had, currently has, or is already booked to get
+        exclusion_result = get_vehicles_not_reviewed(
+            person_id=person_id,
+            office=office,
+            loan_history_df=loan_history_df,
+            vehicles_df=vehicles_df,
+            months_back=12,
+            current_activity_df=activity_df,
+            scheduled_assignments_df=all_scheduled_df,
+            keep_vins=keep_vins_set,
+        )
+
+        available_vins = exclusion_result['available_vins']
+        logger.info(f"Exclusion: {len(available_vins)} vehicles not already assigned to partner")
+
+        # Filter by preferred makes if specified
+        if preferred_makes:
+            preferred_makes_list = [m.strip() for m in preferred_makes.split(',')]
+            logger.info(f"Filtering to preferred makes: {preferred_makes_list}")
+
+            preferred_vehicles = vehicles_df[
+                (vehicles_df['vin'].isin(available_vins)) &
+                (vehicles_df['make'].isin(preferred_makes_list))
+            ]
+            available_vins = set(preferred_vehicles['vin'].unique())
+            logger.info(f"After make filtering: {len(available_vins)} vehicles available")
 
         # Use smart scheduling to calculate all slot dates
         smart_slots = adjust_chain_for_existing_commitments(

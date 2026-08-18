@@ -3,15 +3,78 @@ Exclusion logic for Chain Builder
 
 Filters out vehicles that:
 - Partner has already reviewed (from loan_history)
+- Partner already has in FMS now or later (from current_activity)
+- Partner already has planned in this scheduler (from scheduled_assignments)
 - Would violate model-specific cooldown rules
 """
 
 import pandas as pd
-from typing import Set, Dict, Any
-from datetime import datetime, timedelta
+from typing import Set, Dict, Any, Optional, Iterable
+from datetime import datetime
 import logging
 
+from .smart_scheduling import _is_real_blocker
+
 logger = logging.getLogger(__name__)
+
+
+def _empty_frame() -> pd.DataFrame:
+    return pd.DataFrame()
+
+
+def _partner_rows(df: pd.DataFrame, person_id: int) -> pd.DataFrame:
+    """Rows that belong to this partner. person_id may be stored as text or a number."""
+    if df is None or df.empty or 'person_id' not in df.columns:
+        return _empty_frame()
+
+    rows = df.copy()
+    rows = rows.dropna(subset=['person_id'])
+    rows['_person_id'] = pd.to_numeric(rows['person_id'], errors='coerce')
+    rows = rows.dropna(subset=['_person_id'])
+    return rows[rows['_person_id'].astype(int) == int(person_id)]
+
+
+def _vins_from_column(df: pd.DataFrame, columns: Iterable[str]) -> Set[str]:
+    """Collect VIN values from the first column that exists (vin vs vehicle_vin)."""
+    if df is None or df.empty:
+        return set()
+
+    for column in columns:
+        if column in df.columns:
+            return set(df[column].dropna().astype(str).unique())
+    return set()
+
+
+def _scheduled_vins_for_partner(df: pd.DataFrame, person_id: int) -> Set[str]:
+    """VINs this partner already has on a real (not cancelled) assignment."""
+    partner_rows = _partner_rows(df, person_id)
+    if partner_rows.empty:
+        return set()
+
+    if 'status' in partner_rows.columns:
+        partner_rows = partner_rows[partner_rows['status'].apply(_is_real_blocker)]
+
+    return _vins_from_column(partner_rows, ('vin',))
+
+
+def _activity_vins_for_partner(df: pd.DataFrame, person_id: int) -> Set[str]:
+    """VINs this partner has in FMS activity, including loans that start in the future."""
+    partner_rows = _partner_rows(df, person_id)
+    return _vins_from_column(partner_rows, ('vin', 'vehicle_vin'))
+
+
+def _history_vins_for_partner(df: pd.DataFrame, person_id: int) -> Set[str]:
+    partner_rows = _partner_rows(df, person_id)
+    return _vins_from_column(partner_rows, ('vin',))
+
+
+def _vehicle_make_model(office_vehicles: pd.DataFrame, vin: str) -> tuple:
+    vehicle_info = office_vehicles[office_vehicles['vin'].astype(str) == str(vin)]
+    if vehicle_info.empty:
+        return 'Unknown', 'Unknown'
+    make = vehicle_info.iloc[0]['make'] if 'make' in vehicle_info.columns else 'Unknown'
+    model = vehicle_info.iloc[0]['model'] if 'model' in vehicle_info.columns else 'Unknown'
+    return make, model
 
 
 def get_vehicles_not_reviewed(
@@ -19,95 +82,94 @@ def get_vehicles_not_reviewed(
     office: str,
     loan_history_df: pd.DataFrame,
     vehicles_df: pd.DataFrame,
-    months_back: int = 12
+    months_back: int = 12,  # unused; kept so existing callers do not break
+    current_activity_df: Optional[pd.DataFrame] = None,
+    scheduled_assignments_df: Optional[pd.DataFrame] = None,
+    keep_vins: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Get vehicles from office that partner has NOT reviewed.
+    Get vehicles from office that this partner should not be offered.
 
-    Args:
-        person_id: Media partner ID
-        office: Office to filter vehicles
-        loan_history_df: Historical loan data
-        vehicles_df: All vehicles in system
-        months_back: How far back to check (default 12 months, but we exclude ALL reviewed VINs)
+    A VIN is hidden if the partner already had it, currently has it, or is
+    already scheduled to get it later. Dates do not matter: a loan later this
+    month still hides the car from a chain being built for an earlier week.
 
-    Returns:
-        Dictionary with:
-        - available_vins: Set of VINs partner hasn't reviewed
-        - excluded_vins: Set of VINs partner has reviewed
-        - office_vehicle_count: Total vehicles in office
-        - exclusion_details: Details about excluded vehicles
+    keep_vins: VINs to leave in the list even if they would be excluded.
+    Used when a scheduler reopens a slot that already has a car selected.
+
+    months_back is unused (we exclude every matching VIN, not a time window).
     """
 
     try:
         # Filter vehicles to target office
         office_vehicles = vehicles_df[vehicles_df['office'] == office].copy()
-        all_office_vins = set(office_vehicles['vin'].unique())
+        all_office_vins = set(office_vehicles['vin'].dropna().astype(str).unique())
 
-        if loan_history_df.empty:
-            logger.info(f"No loan history found. All {len(all_office_vins)} vehicles in {office} are available.")
-            return {
-                'available_vins': all_office_vins,
-                'excluded_vins': set(),
-                'office_vehicle_count': len(all_office_vins),
-                'available_vehicle_count': len(all_office_vins),
-                'exclusion_details': []
-            }
+        if current_activity_df is None:
+            current_activity_df = _empty_frame()
+        if scheduled_assignments_df is None:
+            scheduled_assignments_df = _empty_frame()
+        if keep_vins is None:
+            keep_vins = set()
+        else:
+            keep_vins = {str(v) for v in keep_vins}
 
-        # Get all VINs this partner has EVER reviewed
-        # We exclude them permanently (not time-based exclusion)
+        # Past reviews, current/future FMS loans, and our own planned assignments
+        reviewed_vins = _history_vins_for_partner(loan_history_df, person_id)
+        activity_vins = _activity_vins_for_partner(current_activity_df, person_id)
+        scheduled_vins = _scheduled_vins_for_partner(scheduled_assignments_df, person_id)
 
-        # Ensure person_id types match for comparison
-        if 'person_id' in loan_history_df.columns:
-            # Convert to int for comparison
-            loan_history_df = loan_history_df.copy()
-            loan_history_df['person_id'] = loan_history_df['person_id'].astype(int)
-
-        partner_history = loan_history_df[loan_history_df['person_id'] == int(person_id)]
-
-        if partner_history.empty:
-            logger.info(f"Partner {person_id} has no loan history. All {len(all_office_vins)} vehicles available.")
-            return {
-                'available_vins': all_office_vins,
-                'excluded_vins': set(),
-                'office_vehicle_count': len(all_office_vins),
-                'available_vehicle_count': len(all_office_vins),
-                'exclusion_details': []
-            }
-
-        # Get VINs partner has reviewed
-        reviewed_vins = set(partner_history['vin'].dropna().unique())
-
-        # Filter to only VINs that are in this office
-        excluded_vins = reviewed_vins & all_office_vins  # Intersection
+        already_theirs = reviewed_vins | activity_vins | scheduled_vins
+        excluded_vins = (already_theirs & all_office_vins) - keep_vins
         available_vins = all_office_vins - excluded_vins
 
-        # Build exclusion details for logging/debugging
         exclusion_details = []
+        partner_history = _partner_rows(loan_history_df, person_id)
         if not partner_history.empty and 'end_date' in partner_history.columns:
-            # Convert end_date to datetime for sorting (use .copy() to avoid SettingWithCopyWarning)
             partner_history = partner_history.copy()
             partner_history['end_date_dt'] = pd.to_datetime(partner_history['end_date'], errors='coerce')
 
-            for vin in excluded_vins:
-                vin_history = partner_history[partner_history['vin'] == vin]
-                if not vin_history.empty:
-                    # Get most recent loan for this VIN
-                    latest = vin_history.sort_values('end_date_dt', ascending=False).iloc[0]
+        for vin in excluded_vins:
+            make, model = _vehicle_make_model(office_vehicles, vin)
 
-                    vehicle_info = office_vehicles[office_vehicles['vin'] == vin]
-                    make = vehicle_info.iloc[0]['make'] if not vehicle_info.empty and 'make' in vehicle_info.columns else 'Unknown'
-                    model = vehicle_info.iloc[0]['model'] if not vehicle_info.empty and 'model' in vehicle_info.columns else 'Unknown'
+            if vin in reviewed_vins:
+                last_reviewed = 'Unknown'
+                if not partner_history.empty and 'end_date_dt' in partner_history.columns:
+                    vin_history = partner_history[partner_history['vin'].astype(str) == str(vin)]
+                    if not vin_history.empty:
+                        latest = vin_history.sort_values('end_date_dt', ascending=False).iloc[0]
+                        if pd.notna(latest['end_date_dt']):
+                            last_reviewed = latest['end_date_dt'].strftime('%Y-%m-%d')
+                exclusion_details.append({
+                    'vin': vin,
+                    'make': make,
+                    'model': model,
+                    'last_reviewed_date': last_reviewed,
+                    'reason': 'Already reviewed by partner'
+                })
+            elif vin in activity_vins:
+                exclusion_details.append({
+                    'vin': vin,
+                    'make': make,
+                    'model': model,
+                    'last_reviewed_date': None,
+                    'reason': 'Already on an FMS loan (including future)'
+                })
+            else:
+                exclusion_details.append({
+                    'vin': vin,
+                    'make': make,
+                    'model': model,
+                    'last_reviewed_date': None,
+                    'reason': 'Already scheduled for this partner'
+                })
 
-                    exclusion_details.append({
-                        'vin': vin,
-                        'make': make,
-                        'model': model,
-                        'last_reviewed_date': latest['end_date_dt'].strftime('%Y-%m-%d') if pd.notna(latest['end_date_dt']) else 'Unknown',
-                        'reason': 'Already reviewed by partner'
-                    })
-
-        logger.info(f"Partner {person_id} exclusion: {len(excluded_vins)} VINs excluded, {len(available_vins)} available")
+        logger.info(
+            f"Partner {person_id} exclusion: {len(excluded_vins)} VINs excluded, "
+            f"{len(available_vins)} available "
+            f"(history={len(reviewed_vins)}, activity={len(activity_vins)}, "
+            f"scheduled={len(scheduled_vins)})"
+        )
 
         return {
             'available_vins': available_vins,

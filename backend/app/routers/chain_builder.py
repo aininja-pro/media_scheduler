@@ -16,6 +16,10 @@ import json
 
 from ..services.database import get_database, DatabaseService
 from ..services.conflicts import find_vehicle_conflicts
+from ..services.pagination import (
+    fetch_all_rows,
+    fetch_blocking_scheduled_assignments,
+)
 from ..chain_builder.exclusions import get_vehicles_not_reviewed, get_model_cooldown_status
 from ..chain_builder.vehicle_exclusions import get_partners_not_reviewed
 from ..utils.media_costs import get_cost_for_assignment
@@ -152,6 +156,24 @@ def _build_chain_budget_summary_for_quarter(
             'budget': total_budget,
         },
     }
+
+
+def _load_current_activity(db: DatabaseService) -> pd.DataFrame:
+    """All current FMS activity, paged past the 1000-row cap."""
+    activity_df = fetch_all_rows(db.client, 'current_activity')
+    if not activity_df.empty and 'vehicle_vin' in activity_df.columns:
+        activity_df = activity_df.copy()
+        activity_df['vin'] = activity_df['vehicle_vin']
+    return activity_df
+
+
+def _load_partner_scheduled(db: DatabaseService, person_id: int) -> pd.DataFrame:
+    """This partner's scheduled assignments (all statuses), paged."""
+    return fetch_all_rows(
+        db.client,
+        'scheduled_assignments',
+        filters=[('person_id', 'eq', int(person_id))],
+    )
 
 
 def _over_budget_makes(db: DatabaseService, office: str, start_date: str) -> set:
@@ -422,29 +444,16 @@ async def suggest_chain(
 
         loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
 
-        # Load current activity
         logger.info("Loading current activity")
-        activity_response = db.client.table('current_activity').select('*').execute()
-        activity_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
+        activity_df = _load_current_activity(db)
 
-        # Fix column name if needed
-        if not activity_df.empty and 'vehicle_vin' in activity_df.columns:
-            activity_df['vin'] = activity_df['vehicle_vin']
-
-        # Load scheduled assignments for this partner (for smart scheduling)
         logger.info(f"Loading scheduled assignments for partner {person_id}")
-        scheduled_response = db.client.table('scheduled_assignments')\
-            .select('*')\
-            .eq('person_id', int(person_id))\
-            .execute()
-
-        scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+        scheduled_df = _load_partner_scheduled(db, person_id)
         logger.info(f"Found {len(scheduled_df)} scheduled assignments for partner {person_id}")
 
-        # Load ALL scheduled assignments (for vehicle conflict checking)
-        logger.info("Loading all scheduled assignments for conflict detection")
-        all_scheduled_response = db.client.table('scheduled_assignments').select('*').execute()
-        all_scheduled_df = pd.DataFrame(all_scheduled_response.data) if all_scheduled_response.data else pd.DataFrame()
+        logger.info("Loading blocking scheduled assignments for conflict detection")
+        all_scheduled_df = fetch_blocking_scheduled_assignments(db.client)
+        logger.info(f"Loaded {len(all_scheduled_df)} blocking scheduled assignments for conflict checking")
         logger.info(f"Loaded {len(all_scheduled_df)} total scheduled assignments for conflict checking")
 
         # Hide cars this partner already had, currently has, or is already booked to get
@@ -842,11 +851,8 @@ async def get_model_availability(
 
         loan_history_df = pd.DataFrame(all_loan_history) if all_loan_history else pd.DataFrame()
 
-        activity_response = db.client.table('current_activity').select('*').eq('person_id', int(person_id)).execute()
-        activity_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
-
-        scheduled_response = db.client.table('scheduled_assignments').select('*').eq('person_id', int(person_id)).execute()
-        scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+        activity_df = _load_current_activity(db)
+        scheduled_df = _load_partner_scheduled(db, person_id)
 
         # Hide cars this partner already had, currently has, or is already booked to get
         exclusion_result = get_vehicles_not_reviewed(
@@ -1010,29 +1016,15 @@ async def get_slot_options(
         if keep_vins:
             keep_vins_set = set([v.strip() for v in keep_vins.split(',') if v.strip()])
 
-        # Load current activity and scheduled assignments
         logger.info("Loading current activity")
-        activity_response = db.client.table('current_activity').select('*').execute()
-        activity_df = pd.DataFrame(activity_response.data) if activity_response.data else pd.DataFrame()
+        activity_df = _load_current_activity(db)
 
-        # Fix column name if needed
-        if not activity_df.empty and 'vehicle_vin' in activity_df.columns:
-            activity_df['vin'] = activity_df['vehicle_vin']
-
-        # Load scheduled assignments for this partner (for smart scheduling)
         logger.info(f"Loading scheduled assignments for partner {person_id}")
-        scheduled_response = db.client.table('scheduled_assignments')\
-            .select('*')\
-            .eq('person_id', int(person_id))\
-            .execute()
+        scheduled_df = _load_partner_scheduled(db, person_id)
 
-        scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
-
-        # Load ALL scheduled assignments (for vehicle conflict checking)
-        logger.info("Loading all scheduled assignments for conflict detection")
-        all_scheduled_response = db.client.table('scheduled_assignments').select('*').execute()
-        all_scheduled_df = pd.DataFrame(all_scheduled_response.data) if all_scheduled_response.data else pd.DataFrame()
-        logger.info(f"Loaded {len(all_scheduled_df)} total scheduled assignments for conflict checking")
+        logger.info("Loading blocking scheduled assignments for conflict detection")
+        all_scheduled_df = fetch_blocking_scheduled_assignments(db.client)
+        logger.info(f"Loaded {len(all_scheduled_df)} blocking scheduled assignments for conflict checking")
 
         # Hide cars this partner already had, currently has, or is already booked to get
         exclusion_result = get_vehicles_not_reviewed(
@@ -1741,27 +1733,10 @@ async def get_vehicle_busy_periods(
         partners_lookup = {int(p['person_id']): p['name'] for p in partners_response.data} if partners_response.data else {}
 
         # 1. Get current active loans for this vehicle
-        # Note: current_activity doesn't have VIN column, need to get all and filter
-        current_activity_response = db.client.table('current_activity').select('*').execute()
-        current_activity_df = pd.DataFrame(current_activity_response.data) if current_activity_response.data else pd.DataFrame()
-
-        # Filter by VIN if dataframe has vehicle_vin column (check what column name exists)
-        if not current_activity_df.empty:
-            # Try different possible column names for VIN
-            vin_col = None
-            for col in ['vehicle_vin', 'vin', 'VIN']:
-                if col in current_activity_df.columns:
-                    vin_col = col
-                    break
-
-            if vin_col:
-                vehicle_activity = current_activity_df[current_activity_df[vin_col] == vin]
-            else:
-                # No VIN column found, can't filter by vehicle
-                logger.warning(f"No VIN column found in current_activity table. Columns: {current_activity_df.columns.tolist()}")
-                vehicle_activity = pd.DataFrame()
-        else:
-            vehicle_activity = pd.DataFrame()
+        vehicle_activity = fetch_all_rows(
+            db.client, 'current_activity',
+            filters=[('vehicle_vin', 'eq', vin)],
+        )
 
         for _, activity in vehicle_activity.iterrows():
             # Parse dates from activity
@@ -1791,41 +1766,29 @@ async def get_vehicle_busy_periods(
                         'status': 'active'
                     })
 
-        # 2. Get scheduled assignments for this vehicle
-        # First try exact match
-        scheduled_response = db.client.table('scheduled_assignments').select('*').eq('vin', vin).execute()
-        scheduled_assignments = scheduled_response.data if scheduled_response.data else []
-
-        logger.info(f"Found {len(scheduled_assignments)} scheduled assignments for VIN {vin} (exact match)")
-
-        # If no exact match, try case-insensitive or partial match
-        if not scheduled_assignments:
-            # Get all scheduled assignments and filter client-side
-            all_scheduled = db.client.table('scheduled_assignments').select('*').execute()
-            if all_scheduled.data:
-                scheduled_df = pd.DataFrame(all_scheduled.data)
-                if not scheduled_df.empty and 'vin' in scheduled_df.columns:
-                    # Case-insensitive match
-                    scheduled_df['vin_lower'] = scheduled_df['vin'].str.lower() if scheduled_df['vin'].dtype == 'object' else scheduled_df['vin']
-                    matching = scheduled_df[scheduled_df['vin_lower'] == vin.lower()]
-                    scheduled_assignments = matching.to_dict('records')
-                    logger.info(f"Found {len(scheduled_assignments)} assignments with case-insensitive match")
+        # 2. Get scheduled assignments for this vehicle (green/magenta/blue holds)
+        scheduled_df = fetch_all_rows(
+            db.client, 'scheduled_assignments',
+            filters=[('vin', 'eq', vin)],
+        )
+        scheduled_assignments = scheduled_df.to_dict('records') if not scheduled_df.empty else []
+        logger.info(f"Found {len(scheduled_assignments)} scheduled assignments for VIN {vin}")
 
         for assignment in scheduled_assignments:
-            # Parse dates from assignment
-            assignment_start = datetime.strptime(assignment['start_day'], '%Y-%m-%d') if assignment.get('start_day') else None
-            assignment_end = datetime.strptime(assignment['end_day'], '%Y-%m-%d') if assignment.get('end_day') else None
+            if not _is_real_partner_blocker(assignment.get('status')):
+                continue
+            assignment_start = _parse_chain_date(assignment.get('start_day'))
+            assignment_end = _parse_chain_date(assignment.get('end_day'))
 
-            # Check if overlaps with our search window
             if assignment_start and assignment_end:
                 if assignment_start <= end_dt and assignment_end >= start_dt:
                     busy_periods.append({
-                        'assignment_id': assignment.get('assignment_id'),  # CRITICAL: needed for deletion
+                        'assignment_id': assignment.get('assignment_id'),
                         'start_date': assignment['start_day'],
                         'end_date': assignment['end_day'],
                         'partner_name': assignment.get('partner_name', 'Unknown'),
                         'person_id': assignment.get('person_id'),
-                        'status': assignment.get('status', 'scheduled')  # 'manual' or 'requested'
+                        'status': assignment.get('status', 'scheduled')
                     })
 
         # Sort by start_date
@@ -1981,13 +1944,9 @@ async def suggest_vehicle_chain(
 
         loan_history_df = pd.DataFrame(loan_history) if loan_history else pd.DataFrame()
 
-        # Current activity
-        current_activity_response = db.client.table('current_activity').select('*').execute()
-        current_activity_df = pd.DataFrame(current_activity_response.data) if current_activity_response.data else pd.DataFrame()
-
-        # Scheduled assignments
-        scheduled_response = db.client.table('scheduled_assignments').select('*').execute()
-        scheduled_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+        # Current FMS activity and our own green/magenta holds, paged
+        current_activity_df = _load_current_activity(db)
+        scheduled_df = fetch_blocking_scheduled_assignments(db.client)
 
         logger.info(f"Loaded: {len(partners_df)} partners, {len(approved_makes_df)} approved_makes, {len(loan_history_df)} loan history")
 
@@ -2330,12 +2289,10 @@ async def get_partner_slot_options(
 
         # Load current activity and scheduled assignments for availability checking
         logger.info("Loading current activity for partner availability check")
-        current_activity_response = db.client.table('current_activity').select('*').execute()
-        current_activity_df = pd.DataFrame(current_activity_response.data) if current_activity_response.data else pd.DataFrame()
+        current_activity_df = _load_current_activity(db)
 
         logger.info("Loading scheduled assignments for partner availability check")
-        scheduled_response = db.client.table('scheduled_assignments').select('*').execute()
-        scheduled_assignments_df = pd.DataFrame(scheduled_response.data) if scheduled_response.data else pd.DataFrame()
+        scheduled_assignments_df = fetch_blocking_scheduled_assignments(db.client)
 
         # Get eligible partners
         exclusion_result = get_partners_not_reviewed(

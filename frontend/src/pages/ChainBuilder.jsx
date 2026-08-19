@@ -2778,7 +2778,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                   <div className="text-xs text-gray-600 space-y-1">
                     <div className="flex items-start gap-2">
                       <span className="text-green-600">✓</span>
-                      <span>Excludes vehicles the partner has already reviewed or is already scheduled in (including future loans)</span>
+                      <span>Saved or requested vehicles are held for those dates so the next media cannot double-book them</span>
                     </div>
                     <div className="flex items-start gap-2">
                       <span className="text-green-600">✓</span>
@@ -2886,7 +2886,22 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                 <Combobox
                   value={selectedPartnerObj}
                   onChange={(partner) => {
-                    setSelectedPartner(partner?.person_id || '');
+                    const nextId = partner?.person_id || '';
+                    if (nextId === selectedPartner) {
+                      return;
+                    }
+                    const unsavedPicks =
+                      (chain && chain.chain && chain.chain.length > 0) ||
+                      manualSlots.some((slot) => slot.selected_vehicle);
+                    if (unsavedPicks) {
+                      const proceed = window.confirm(
+                        'This chain is not saved yet. Those vehicles will not be held for the next media partner until you save or request. Switch partners anyway?'
+                      );
+                      if (!proceed) {
+                        return;
+                      }
+                    }
+                    setSelectedPartner(nextId);
                     setPartnerSearchQuery('');
                     setModelPreferences([]);
                   }}
@@ -3007,6 +3022,21 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                 <Combobox
                   value={selectedVehicle}
                   onChange={(vehicle) => {
+                    const nextVin = vehicle?.vin;
+                    if (selectedVehicle && nextVin === selectedVehicle.vin) {
+                      return;
+                    }
+                    const unsavedPicks =
+                      (vehicleChain && vehicleChain.optimal_chain && vehicleChain.optimal_chain.length > 0) ||
+                      manualPartnerSlots.some((slot) => slot.selected_partner);
+                    if (unsavedPicks) {
+                      const proceed = window.confirm(
+                        'This chain is not saved yet. Switch vehicles anyway?'
+                      );
+                      if (!proceed) {
+                        return;
+                      }
+                    }
                     setSelectedVehicle(vehicle);
                     setVehicleSearchQuery('');
                   }}

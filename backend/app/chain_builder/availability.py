@@ -5,11 +5,87 @@ Checks vehicle availability across multi-week chain periods
 """
 
 import pandas as pd
-from typing import Dict, List, Set, Any
-from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Set, Any, Tuple
+from datetime import date, datetime, timedelta
 import logging
 
+from .smart_scheduling import BLOCKING_STATUSES
+
 logger = logging.getLogger(__name__)
+
+
+def _norm_vin(value) -> str:
+    """VINs must match even when one side is padded or a different type."""
+    if value is None:
+        return ''
+    try:
+        if pd.isna(value):
+            return ''
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _as_date(value) -> Optional[date]:
+    """Accept YYYY-MM-DD, ISO timestamps, date, or datetime."""
+    parsed = pd.to_datetime(value, errors='coerce')
+    if pd.isna(parsed):
+        return None
+    return parsed.date()
+
+
+def _is_blocking_status(status) -> bool:
+    if status is None:
+        return True
+    try:
+        if pd.isna(status):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return str(status).strip().lower() in BLOCKING_STATUSES
+
+
+def _date_is_held(check_date: date, start: date, end: date) -> bool:
+    """True when this calendar day is taken.
+
+    Exclusive on the end so a same-day handoff is allowed: a loan ending
+    Monday does not hide the car from a loan starting Monday.
+    """
+    return start <= check_date < end
+
+
+def _index_vehicle_holds(
+    df: Optional[pd.DataFrame],
+    vin_columns: Tuple[str, ...],
+    start_col: str,
+    end_col: str,
+    person_col: str = 'person_id',
+    status_col: Optional[str] = None,
+) -> Dict[str, List[Tuple[date, date, Optional[int]]]]:
+    """Group holds by VIN so each vehicle/day check is a short list lookup."""
+    holds: Dict[str, List[Tuple[date, date, Optional[int]]]] = {}
+    if df is None or df.empty:
+        return holds
+
+    vin_col = next((col for col in vin_columns if col in df.columns), None)
+    if not vin_col or start_col not in df.columns or end_col not in df.columns:
+        return holds
+
+    for _, row in df.iterrows():
+        if status_col and status_col in df.columns and not _is_blocking_status(row.get(status_col)):
+            continue
+        vin = _norm_vin(row.get(vin_col))
+        start = _as_date(row.get(start_col))
+        end = _as_date(row.get(end_col))
+        if not vin or not start or not end:
+            continue
+        person_id = None
+        if person_col in df.columns:
+            pid = pd.to_numeric(row.get(person_col), errors='coerce')
+            if pd.notna(pid):
+                person_id = int(pid)
+        holds.setdefault(vin, []).append((start, end, person_id))
+    return holds
 
 
 def build_chain_availability_grid(
@@ -42,9 +118,10 @@ def build_chain_availability_grid(
         Covers full chain duration
 
     Note:
-        This function now checks for vehicle conflicts with OTHER partners' assignments.
-        It filters out vehicles that are assigned to other partners (excluding current_person_id)
-        with status 'active', 'planned', 'manual', or 'requested' during the same time period.
+        Green (saved), magenta (requested), and blue (active) assignments for
+        OTHER partners hold the vehicle on overlapping dates. The dropoff day
+        stays free so a same-day handoff still works. Cancelled/completed rows
+        do not hold the car.
     """
 
     try:
@@ -65,102 +142,51 @@ def build_chain_availability_grid(
         if office:
             vehicles_df = vehicles_df[vehicles_df['office'] == office].copy()
 
-        # Build availability grid
+        # Index holds once. Looking them up per vehicle-day used to miss rows
+        # when VIN types didn't match, and re-scanned the full table every day.
+        activity_holds = _index_vehicle_holds(
+            activity_df, ('vin', 'vehicle_vin'), 'start_date', 'end_date'
+        )
+        scheduled_holds = _index_vehicle_holds(
+            scheduled_assignments_df, ('vin',), 'start_day', 'end_day',
+            status_col='status',
+        )
+        current_pid = int(current_person_id) if current_person_id is not None else None
+
         availability_records = []
 
         for _, vehicle in vehicles_df.iterrows():
-            vin = vehicle['vin']
+            vin = _norm_vin(vehicle['vin'])
 
-            # Get vehicle lifecycle dates.
             # expected_turn_in_date is deliberately NOT used here: FMS treats it
             # as an estimate and keeps booking vehicles past it, so it must never
             # block availability. Endpoints surface it as a warning instead.
-            in_service_date = vehicle.get('in_service_date')
+            in_service_date = _as_date(vehicle.get('in_service_date'))
 
-            # Convert to datetime
-            if isinstance(in_service_date, str):
-                in_service_date = datetime.strptime(in_service_date, '%Y-%m-%d').date()
-
-            # Check each day in chain period
             current_date = start_dt.date()
             for day_offset in range(chain_duration_days):
                 check_date = current_date + timedelta(days=day_offset)
 
-                # Check lifecycle availability
-                lifecycle_available = True
-                if in_service_date and check_date < in_service_date:
-                    lifecycle_available = False
+                lifecycle_available = not (in_service_date and check_date < in_service_date)
 
-                # Check current activity (is it loaned out?)
-                activity_conflict = False
-                if not activity_df.empty:
-                    vehicle_activity = activity_df[
-                        (activity_df['vin'] == vin) |
-                        (activity_df.get('vehicle_vin') == vin)
-                    ]
+                activity_conflict = any(
+                    _date_is_held(check_date, start, end)
+                    for start, end, _pid in activity_holds.get(vin, [])
+                )
 
-                    for _, activity in vehicle_activity.iterrows():
-                        activity_start = activity.get('start_date')
-                        activity_end = activity.get('end_date')
-
-                        # Convert to date objects
-                        if isinstance(activity_start, str):
-                            activity_start = datetime.strptime(activity_start, '%Y-%m-%d').date()
-                        if isinstance(activity_end, str):
-                            activity_end = datetime.strptime(activity_end, '%Y-%m-%d').date()
-
-                        # Check if this date falls within activity period
-                        if activity_start and activity_end:
-                            if activity_start <= check_date <= activity_end:
-                                activity_conflict = True
-                                break
-
-                # Check scheduled assignments (for OTHER partners)
-                # This prevents recommending vehicles already assigned to other partners
+                # Green/magenta/blue holds from OTHER partners. This partner's
+                # own rows stay visible so they can reopen a slot they already
+                # filled. Same-day handoff (exclusive end) stays allowed.
                 scheduled_conflict = False
-                if not scheduled_conflict and scheduled_assignments_df is not None and not scheduled_assignments_df.empty:
-                    # Filter to relevant statuses: planned, manual, requested (GREEN/MAGENTA)
-                    # Exclude 'completed' status (vehicles that have been returned)
-                    relevant_statuses = ['planned', 'manual', 'requested', 'active']
-
-                    scheduled_for_vehicle = scheduled_assignments_df[
-                        (scheduled_assignments_df['vin'] == vin) &
-                        (scheduled_assignments_df['status'].isin(relevant_statuses))
-                    ].copy()
-
-                    # If current_person_id is provided, exclude this partner's assignments
-                    if current_person_id is not None and 'person_id' in scheduled_for_vehicle.columns:
-                        scheduled_for_vehicle = scheduled_for_vehicle[
-                            scheduled_for_vehicle['person_id'].astype(int) != int(current_person_id)
-                        ]
-
-                    for _, assignment in scheduled_for_vehicle.iterrows():
-                        assign_start = assignment.get('start_day')
-                        assign_end = assignment.get('end_day')
-
-                        # Convert to date objects
-                        if assign_start is not None:
-                            if isinstance(assign_start, str):
-                                assign_start = datetime.strptime(assign_start, '%Y-%m-%d').date()
-                            elif hasattr(assign_start, 'date'):
-                                assign_start = assign_start.date()
-
-                        if assign_end is not None:
-                            if isinstance(assign_end, str):
-                                assign_end = datetime.strptime(assign_end, '%Y-%m-%d').date()
-                            elif hasattr(assign_end, 'date'):
-                                assign_end = assign_end.date()
-
-                        # Check if this date falls within scheduled assignment period
-                        if assign_start and assign_end:
-                            if assign_start <= check_date <= assign_end:
-                                scheduled_conflict = True
-                                logger.debug(f"Vehicle {vin} has scheduled conflict on {check_date}: assigned to partner {assignment.get('person_id')} ({assign_start} to {assign_end}, status: {assignment.get('status')})")
-                                break
+                for start, end, holder_id in scheduled_holds.get(vin, []):
+                    if current_pid is not None and holder_id == current_pid:
+                        continue
+                    if _date_is_held(check_date, start, end):
+                        scheduled_conflict = True
+                        break
 
                 available = lifecycle_available and not activity_conflict and not scheduled_conflict
 
-                # Determine reason
                 reason = 'available'
                 if not available:
                     if not lifecycle_available:
@@ -224,9 +250,8 @@ def check_slot_availability(
 
         days_required = len(slot_dates)
 
-        # Filter availability to this VIN and date range
         vehicle_availability = availability_df[
-            (availability_df['vin'] == vin) &
+            (availability_df['vin'].astype(str).str.strip() == _norm_vin(vin)) &
             (availability_df['date'] >= start_dt) &
             (availability_df['date'] <= end_dt)
         ]
@@ -293,9 +318,10 @@ def get_available_vehicles_for_slot(
 
     available_vins = []
 
+    exclude_normalized = {_norm_vin(v) for v in exclude_vins}
+
     for vin in candidate_vins:
-        # Skip if already used in earlier slot
-        if vin in exclude_vins:
+        if _norm_vin(vin) in exclude_normalized:
             continue
 
         # Check availability for this slot

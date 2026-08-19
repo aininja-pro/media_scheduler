@@ -5,28 +5,28 @@ Prevents silent data truncation issues.
 """
 
 import pandas as pd
-from typing import Any, List, Optional
+from typing import List, Optional
+
+# Supabase returns at most 1000 rows unless the project max is raised.
+# Stay at 1000 so a "full page" always means "there may be more."
+DEFAULT_PAGE_SIZE = 1000
+
+# Rows that occupy a vehicle for other partners. Completed/cancelled/rejected
+# are history and must not hide the car.
+BLOCKING_ASSIGNMENT_STATUSES = ['planned', 'manual', 'requested', 'active']
 
 
-async def fetch_all_pages(
+def fetch_all_rows(
     db_client,
     table_name: str,
     select: str = '*',
     filters: Optional[List[tuple]] = None,
-    page_size: int = 5000
+    page_size: int = DEFAULT_PAGE_SIZE,
 ) -> pd.DataFrame:
-    """
-    Fetch all rows from a table with pagination.
+    """Fetch every matching row, paging past Supabase's 1000-row cap.
 
-    Args:
-        db_client: Supabase client
-        table_name: Name of table to query
-        select: Columns to select (default '*')
-        filters: Optional list of (column, op, value) tuples
-        page_size: Rows per page (default 5000)
-
-    Returns:
-        DataFrame with all rows
+    filters: optional list of (column, op, value) tuples.
+    ops: eq, gte, lte, in
     """
     all_rows = []
     offset = 0
@@ -34,7 +34,6 @@ async def fetch_all_pages(
     while True:
         query = db_client.table(table_name).select(select)
 
-        # Apply filters if provided
         if filters:
             for col, op, val in filters:
                 if op == 'eq':
@@ -43,9 +42,9 @@ async def fetch_all_pages(
                     query = query.gte(col, val)
                 elif op == 'lte':
                     query = query.lte(col, val)
-                # Add more operators as needed
+                elif op == 'in':
+                    query = query.in_(col, val)
 
-        # Paginate
         response = query.range(offset, offset + page_size - 1).execute()
 
         if not response.data:
@@ -53,13 +52,47 @@ async def fetch_all_pages(
 
         all_rows.extend(response.data)
 
-        # Check if we got a full page
         if len(response.data) < page_size:
             break
 
         offset += page_size
 
     return pd.DataFrame(all_rows)
+
+
+def fetch_blocking_scheduled_assignments(
+    db_client,
+    select: str = '*',
+) -> pd.DataFrame:
+    """All green/magenta/blue assignments that should hold a vehicle.
+
+    Filtering by status in the query matters: if we loaded the whole table
+    unpaged, the first 1000 rows were often old completed ones, and newer
+    requested rows never made it into the availability check.
+    """
+    return fetch_all_rows(
+        db_client,
+        'scheduled_assignments',
+        select=select,
+        filters=[('status', 'in', BLOCKING_ASSIGNMENT_STATUSES)],
+    )
+
+
+async def fetch_all_pages(
+    db_client,
+    table_name: str,
+    select: str = '*',
+    filters: Optional[List[tuple]] = None,
+    page_size: int = DEFAULT_PAGE_SIZE,
+) -> pd.DataFrame:
+    """Async wrapper around fetch_all_rows for existing callers."""
+    return fetch_all_rows(
+        db_client,
+        table_name,
+        select=select,
+        filters=filters,
+        page_size=page_size,
+    )
 
 
 def verify_no_truncation(df: pd.DataFrame, table_name: str) -> bool:

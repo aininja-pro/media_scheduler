@@ -792,7 +792,7 @@ function AppContent() {
                           </div>
                         </label>
                         <div className="text-xs text-gray-500">
-                          Columns: Office, Fleet, Year, Quarter or Month, Budget
+                          Columns: Office, Fleet, Year, Month, Budget #
                         </div>
                       </div>
                     ) : (

@@ -52,6 +52,47 @@ def test_expand_quarterly_excel_row():
     assert abs(sum(row["budget_amount"] for row in rows) - 2130) < 0.01
 
 
+def test_dave_monthly_export_zero_padded_months():
+    """DriveShop export uses Month as '01'..'12' and a Tableau footer row."""
+    from app.solver.budget_periods import (
+        budget_source_rows_from_dataframe,
+        is_junk_budget_excel_row,
+        month_cell_as_text,
+    )
+
+    assert month_cell_as_text("01") == "01"
+    assert month_cell_as_text("09") == "09"
+    assert month_cell_as_text(9) == "09"
+    assert is_junk_budget_excel_row(
+        "Applied filters:\nbudget is greater than $0\nYear is greater than 2025",
+        None,
+        None,
+    )
+
+    df = pd.DataFrame(
+        [
+            {"Office": "Atlanta", "Fleet": "ACURA", "Year": 2026, "Month": "01", "Budget #": 924},
+            {"Office": "Atlanta", "Fleet": "ACURA", "Year": 2026, "Month": "09", "Budget #": 413},
+            {"Office": "Atlanta", "Fleet": "AUDI", "Year": 2026, "Month": "10", "Budget #": 852},
+            {"Office": None, "Fleet": None, "Year": None, "Month": None, "Budget #": None},
+            {
+                "Office": "Applied filters:\nbudget is greater than $0",
+                "Fleet": None,
+                "Year": None,
+                "Month": None,
+                "Budget #": None,
+            },
+        ]
+    )
+    source = budget_source_rows_from_dataframe(df)
+    assert len(source) == 3
+    expanded = expand_budget_allocation_rows(source)
+    assert [row["quarter"] for row in expanded] == ["2026-01", "2026-09", "2026-10"]
+    assert expanded[0]["budget_amount"] == 924
+    assert expanded[1]["office"] == "Atlanta"
+    assert expanded[1]["fleet"] == "ACURA"
+
+
 def test_expand_monthly_excel_row():
     rows = expand_budget_allocation_rows(
         [
@@ -121,6 +162,7 @@ if __name__ == "__main__":
     test_add_month_and_label()
     test_quarter_split_adds_up()
     test_expand_quarterly_excel_row()
+    test_dave_monthly_export_zero_padded_months()
     test_expand_monthly_excel_row()
     test_parse_monthly_spend_csv()
     test_normalize_prefers_monthly_and_fills_from_quarter()

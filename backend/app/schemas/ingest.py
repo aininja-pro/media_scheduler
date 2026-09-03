@@ -380,7 +380,7 @@ class BudgetIngest(BaseModel):
     fleet: str
     year: int
     quarter: Optional[str] = None  # "Q1"–"Q4" or "2026-09"
-    month: Optional[str] = None  # "9", "Sep", or "2026-09"
+    month: Optional[str] = None  # "01", "9", "Sep", or "2026-09"
     budget_amount: Optional[float] = None
     amount_used: Optional[float] = None  # Kept for backward compatibility, but not expected
 

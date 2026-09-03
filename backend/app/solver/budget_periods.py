@@ -370,6 +370,89 @@ def normalize_budgets_to_months(budgets_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(list(monthly.values()))
 
 
+def month_cell_as_text(value: Any) -> Optional[str]:
+    """Keep Dave's '01' / '09' month cells as text so Excel does not turn them into dates."""
+    parsed = parse_month_value(value)
+    if parsed is not None:
+        return f"{parsed:02d}"
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def is_junk_budget_excel_row(office: Any, fleet: Any, year: Any) -> bool:
+    """Skip blank rows and the 'Applied filters:' footer Tableau puts on exports."""
+    office_text = str(office or "").strip()
+    if not office_text:
+        return True
+    lowered = office_text.lower()
+    if lowered.startswith("applied filters") or "budget is greater than" in lowered:
+        return True
+    if year in (None, "") or (isinstance(year, float) and pd.isna(year)):
+        return True
+    if not str(fleet or "").strip() or str(fleet).strip().lower() == "none":
+        return True
+    return False
+
+
+def _lookup_excel_value(row: Any, *names: str) -> Any:
+    """Read a cell by header name, ignoring extra spaces and capitalization."""
+    lookup = {str(label).strip().lower(): label for label in row.index}
+    for name in names:
+        key = name.strip().lower()
+        if key in lookup:
+            return row[lookup[key]]
+    return None
+
+
+def budget_source_rows_from_dataframe(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    Turn Dave's budget Excel into source rows.
+
+    Current format (Sept 2026):
+        Office, Fleet, Year, Month, Budget #
+        Atlanta, ACURA, 2026, 01, 924
+
+    Older format still works:
+        Office, Fleet, Year, Quarter, Budget #
+    """
+    if df is None or df.empty:
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    for _, row in df.iterrows():
+        office = _lookup_excel_value(row, "Office")
+        fleet = _lookup_excel_value(row, "Fleet")
+        year = _lookup_excel_value(row, "Year")
+        if is_junk_budget_excel_row(office, fleet, year):
+            continue
+        try:
+            year_int = int(float(str(year).replace(",", "").strip()))
+        except (TypeError, ValueError):
+            continue
+        rows.append(
+            {
+                "office": str(office).strip(),
+                "fleet": str(fleet).strip(),
+                "year": year_int,
+                "quarter": (
+                    str(_lookup_excel_value(row, "Quarter")).strip()
+                    if _lookup_excel_value(row, "Quarter") not in (None, "")
+                    and not (
+                        isinstance(_lookup_excel_value(row, "Quarter"), float)
+                        and pd.isna(_lookup_excel_value(row, "Quarter"))
+                    )
+                    else None
+                ),
+                "month": month_cell_as_text(_lookup_excel_value(row, "Month")),
+                "budget_amount": _lookup_excel_value(row, "Budget #", "Budget", "Budget Amount"),
+                "amount_used": None,
+            }
+        )
+    return rows
+
+
 def expand_budget_allocation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Turn an Excel upload into monthly records.

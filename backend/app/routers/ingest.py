@@ -15,7 +15,12 @@ import asyncio
 
 from ..schemas.ingest import INGEST_SCHEMAS
 from ..services.database import get_database, DatabaseService
-from ..solver.budget_periods import expand_budget_allocation_rows, parse_spend_csv
+from ..solver.budget_periods import (
+    budget_source_rows_from_dataframe,
+    expand_budget_allocation_rows,
+    month_cell_as_text,
+    parse_spend_csv,
+)
 
 # Add backend directory to path for importing analyze_preferred_days
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..', '..'))
@@ -349,16 +354,6 @@ async def ingest_operations_excel(
         )
 
 
-def _excel_col(row, *names):
-    """Find a column by name, ignoring extra spaces and case."""
-    lookup = {str(label).strip().lower(): label for label in row.index}
-    for name in names:
-        key = name.strip().lower()
-        if key in lookup:
-            return row[lookup[key]]
-    return None
-
-
 @router.post("/budgets")
 async def ingest_budgets_excel(
     file: UploadFile,
@@ -367,10 +362,12 @@ async def ingest_budgets_excel(
     """
     Ingest Budgets Excel file with budget allocations.
 
-    Accepts either:
-    - Monthly: Office, Fleet, Year, Month, Budget
-    - Quarterly (Dave's current export): Office, Fleet, Year, Quarter, Budget
-      Each quarter is stored as three equal months (Q3 $9,000 → $3,000 for Jul/Aug/Sep).
+    Current DriveShop export (monthly):
+        Office, Fleet, Year, Month, Budget #
+        Month is 01–12 (text), one row per office / fleet / month.
+
+    Older quarterly exports still work (Office, Fleet, Year, Quarter, Budget).
+    Those get split into three equal months.
 
     Only updates budget_amount. Monthly spend still comes from the FMS sync.
     """
@@ -388,40 +385,25 @@ async def ingest_budgets_excel(
         # Wrap bytes in BytesIO for pandas
         excel_buffer = BytesIO(content)
 
-        # Read the first sheet
-        df = pd.read_excel(excel_buffer)
-        df = df.fillna('')
+        # Keep Month as text ('01', '09') so pandas does not turn it into a date
+        df = pd.read_excel(
+            excel_buffer,
+            converters={
+                "Month": month_cell_as_text,
+                "month": month_cell_as_text,
+            },
+        )
+        df = df.fillna("")
 
         logger.info(f"Processing budgets Excel with columns: {list(df.columns)}")
 
         raw_rows = []
-        for index, row in df.iterrows():
+        for row_dict in budget_source_rows_from_dataframe(df):
             try:
-                budget_val = _excel_col(row, 'Budget #', 'Budget', 'Budget Amount')
-                year_val = _excel_col(row, 'Year')
-                if year_val is None or year_val == '':
-                    continue
-                row_dict = {
-                    'office': str(_excel_col(row, 'Office')).strip(),
-                    'fleet': str(_excel_col(row, 'Fleet')).strip(),
-                    'year': int(year_val) if pd.notna(year_val) else None,
-                    'quarter': (
-                        str(_excel_col(row, 'Quarter')).strip()
-                        if _excel_col(row, 'Quarter') not in (None, '')
-                        else None
-                    ),
-                    'month': (
-                        str(_excel_col(row, 'Month')).strip()
-                        if _excel_col(row, 'Month') not in (None, '')
-                        else None
-                    ),
-                    'budget_amount': budget_val if pd.notna(budget_val) and budget_val != '' else None,
-                    'amount_used': None,
-                }
                 validated_row = INGEST_SCHEMAS["budgets"](**row_dict)
                 raw_rows.append(validated_row.model_dump())
             except Exception as e:
-                logger.warning(f"Skipping budgets row {index + 2}: {str(e)}")
+                logger.warning(f"Skipping budget row {row_dict}: {str(e)}")
 
         expanded_rows = expand_budget_allocation_rows(raw_rows)
         validated_budgets = [INGEST_SCHEMAS["budgets"](**row) for row in expanded_rows]

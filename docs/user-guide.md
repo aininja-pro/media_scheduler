@@ -89,7 +89,7 @@ Adjust daily capacity overrides in Optimizer settings for special circumstances 
 
 ### Fleet Budgets
 
-Each fleet has quarterly budget allocations that affect assignment costs.
+Each fleet has monthly budget allocations that affect assignment costs. The Media Info panel shows this month, next month, and the month after.
 
 ### Cost Calculation
 

@@ -1,7 +1,11 @@
-# Phase 7.6: Quarterly Budget Constraints Policy
+# Phase 7.6: Monthly Budget Constraints Policy
 
 ## Overview
-Phase 7.6 adds budget awareness to the optimization, respecting quarterly budgets by office × fleet with either soft penalties or hard constraints.
+Phase 7.6 adds budget awareness to the optimization, respecting monthly budgets by office × fleet with either soft penalties or hard constraints.
+
+The Media Info panel shows three calendar months: this month, next month, and the month after (Pacific time). A loan is charged to the month of its start date.
+
+The `budgets.quarter` column stores a month period such as `2026-09`. Older Q1–Q4 Excel uploads are split into three equal months.
 
 > "We don't just schedule cars—we honor the purse strings." - Godin
 
@@ -11,7 +15,7 @@ Phase 7.6 adds budget awareness to the optimization, respecting quarterly budget
 - `office`: Text (e.g., "Los Angeles", "Atlanta")
 - `fleet`: Text, maps to make/brand (e.g., "TOYOTA", "AUDI")
 - `year`: Integer
-- `quarter`: Text ("Q1", "Q2", "Q3", "Q4")
+- `quarter`: Text month period ("2026-09"). Legacy values were "Q1"–"Q4".
 - `budget_amount`: Numeric (total budget)
 - `amount_used`: Numeric (already spent, NULL = 0)
 

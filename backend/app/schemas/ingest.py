@@ -371,20 +371,33 @@ class RulesIngest(BaseModel):
 
 
 class BudgetIngest(BaseModel):
-    """Schema for budgets Excel upload - Budget Allocations (manual)"""
+    """Schema for budgets Excel upload - Budget Allocations (manual).
+
+    `quarter` may be a legacy quarter (Q3) or a stored month period (2026-09).
+    `month` is optional; when present the ingest layer turns it into 2026-09.
+    """
     office: str
     fleet: str
     year: int
-    quarter: str  # "Q1", "Q2", "Q3", "Q4"
-    budget_amount: Optional[float] = None  # Quarterly budget allocation
+    quarter: Optional[str] = None  # "Q1"–"Q4" or "2026-09"
+    month: Optional[str] = None  # "9", "Sep", or "2026-09"
+    budget_amount: Optional[float] = None
     amount_used: Optional[float] = None  # Kept for backward compatibility, but not expected
 
-    @field_validator('office', 'fleet', 'quarter')
+    @field_validator('office', 'fleet')
     @classmethod
     def validate_required_fields(cls, v: str) -> str:
         if not v or len(v.strip()) == 0:
             raise ValueError("Field cannot be empty")
         return v.strip()
+
+    @field_validator('quarter', 'month')
+    @classmethod
+    def strip_optional_period(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        text = str(v).strip()
+        return text or None
 
     @field_validator('budget_amount', 'amount_used', mode='before')
     @classmethod
@@ -414,19 +427,29 @@ class BudgetIngest(BaseModel):
 
 
 class BudgetSpendingIngest(BaseModel):
-    """Schema for FMS budget spending CSV sync - Amount Used (auto-sync)"""
+    """Schema for FMS budget spending CSV sync - Amount Used (auto-sync).
+
+    `quarter` holds the month period ('2026-09') after the monthly report is parsed.
+    """
     office: str
     fleet: str
     year: int
-    quarter: str  # "Q1", "Q2", "Q3", "Q4"
-    amount_used: float  # Current spending for this office/fleet/quarter
+    quarter: str  # "2026-09" (or legacy "Q3")
+    amount_used: float  # Current spending for this office/fleet/month
 
-    @field_validator('fleet', 'quarter')
+    @field_validator('fleet')
     @classmethod
-    def validate_fleet_quarter(cls, v: str) -> str:
+    def validate_fleet(cls, v: str) -> str:
         if not v or len(v.strip()) == 0:
             raise ValueError("Field cannot be empty")
         return v.strip().upper()
+
+    @field_validator('quarter')
+    @classmethod
+    def validate_period(cls, v: str) -> str:
+        if not v or len(v.strip()) == 0:
+            raise ValueError("Field cannot be empty")
+        return v.strip()
 
     @field_validator('office')
     @classmethod

@@ -311,6 +311,20 @@ class DatabaseService:
             logger.error(f"Error in update_budget_allocations: {e}")
             raise
 
+    async def delete_legacy_quarter_budget_rows(self) -> int:
+        """Remove old Q1–Q4 rows after monthly records have been written."""
+        try:
+            result = self.client.table('budgets')\
+                .delete()\
+                .in_('quarter', ['Q1', 'Q2', 'Q3', 'Q4'])\
+                .execute()
+            deleted = len(result.data) if result.data else 0
+            logger.info(f"Deleted {deleted} legacy quarterly budget rows")
+            return deleted
+        except Exception as e:
+            logger.warning(f"Could not delete legacy quarterly budget rows: {e}")
+            return 0
+
     async def update_budget_spending(self, spending_records: List) -> Dict[str, Any]:
         """
         Update amount_used field only, preserving budget_amount from manual upload.

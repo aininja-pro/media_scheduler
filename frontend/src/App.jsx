@@ -36,7 +36,7 @@ function AppContent() {
   const [approvedRanksUrl, setApprovedRanksUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/approved_makes.rpt&init=csv')
   const [loanHistoryUrl, setLoanHistoryUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/loan_history.rpt&init=csv')
   const [currentActivityUrl, setCurrentActivityUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/current_vehicle_activity.rpt&init=csv')
-  const [budgetSpendingUrl, setBudgetSpendingUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/current_spend.rpt&init=csv&exportreportdataonly=true&columnnames=true')
+  const [budgetSpendingUrl, setBudgetSpendingUrl] = useState('https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/current_spend_by_month.rpt&init=csv&exportreportdataonly=true&columnnames=true')
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingMediaPartners, setIsLoadingMediaPartners] = useState(false)
   const [mediaPartnersProgress, setMediaPartnersProgress] = useState({ step: '', progress: 0 })
@@ -364,8 +364,8 @@ function AppContent() {
     { id: 'approved_makes', name: 'Approved Ranks', description: 'A+/A/B/C rankings per partner/make', icon: '⭐', autoSync: true },
     { id: 'loan_history', name: 'Loan History', description: 'Historical assignment data', icon: '📊', autoSync: true },
     { id: 'current_activity', name: 'Current Activity', description: 'Active bookings and holds', icon: '📅', autoSync: true },
-    { id: 'budget_spending', name: 'Budget Spending', description: 'Office/fleet spending (daily)', icon: '💰', autoSync: true },
-    { id: 'budgets', name: 'Budgets', description: 'Quarterly budget allocations', icon: '📊', autoSync: false },
+    { id: 'budget_spending', name: 'Budget Spending', description: 'Office/fleet spending (monthly)', icon: '💰', autoSync: true },
+    { id: 'budgets', name: 'Budgets', description: 'Monthly budget allocations', icon: '📊', autoSync: false },
     { id: 'operations_data', name: 'Operations Data', description: 'Rules, capacity limits, holiday dates', icon: '📋', autoSync: false }
   ]
   
@@ -792,7 +792,7 @@ function AppContent() {
                           </div>
                         </label>
                         <div className="text-xs text-gray-500">
-                          Columns: Office, Fleet, Year, Quarter, Budget
+                          Columns: Office, Fleet, Year, Quarter or Month, Budget
                         </div>
                       </div>
                     ) : (

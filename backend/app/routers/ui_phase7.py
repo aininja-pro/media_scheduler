@@ -20,7 +20,14 @@ from ..solver.ortools_solver_v2 import add_score_to_triples
 from ..etl.publication import compute_publication_rate_24m, compute_recency_scores
 from ..utils.geocoding import get_distance_from_office
 from ..utils.media_costs import get_cost_for_assignment, calculate_assignment_costs
-from ..solver.budget_constraints import normalize_fleet_name, get_quarter_from_date
+from ..solver.budget_constraints import normalize_fleet_name
+from ..solver.budget_periods import (
+    get_month_period,
+    normalize_budgets_to_months,
+    period_label,
+    rolling_display_months,
+    today_pacific,
+)
 
 router = APIRouter(prefix="/ui/phase7", tags=["UI Phase 7"])
 logger = logging.getLogger(__name__)
@@ -28,14 +35,6 @@ logger = logging.getLogger(__name__)
 
 # Fleets excluded from budget display (not actively scheduled)
 _EXCLUDED_BUDGET_FLEETS = {'BENTLEY', 'FERRARI', 'MASERATI'}
-
-
-def _next_quarter(year: int, quarter: str) -> tuple:
-    """Return (year, quarter) for the quarter immediately after the given one."""
-    qnum = int(quarter[1])
-    if qnum == 4:
-        return year + 1, 'Q1'
-    return year, f'Q{qnum + 1}'
 
 
 def _build_budget_summary_for_quarter(
@@ -474,12 +473,13 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
         print(f"Columns in triples: {list(triples_post.columns)}")
         print(f"Sample triple: {triples_post.iloc[0].to_dict() if not triples_post.empty else 'EMPTY'}")
 
-        # 5. Load budgets
+        # 5. Load budgets (expand any leftover Q1–Q4 rows into months)
         budgets_response = db.client.table('budgets').select('*').execute()
-        budgets_df = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+        raw_budgets_df = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+        budgets_df = normalize_budgets_to_months(raw_budgets_df)
 
         # Calculate actual cost per make from historical data
-        cost_per_assignment = calculate_cost_per_make(budgets_df, loan_history_df, request.office)
+        cost_per_assignment = calculate_cost_per_make(raw_budgets_df, loan_history_df, request.office)
         print(f"Calculated cost_per_assignment: {cost_per_assignment}")
 
         # 6. Run Phase 7 solver with all constraints
@@ -640,61 +640,55 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
                    f"${cost_breakdown['average_cost']:.2f} avg, "
                    f"Tiers: {cost_breakdown['tier_breakdown']}")
 
-        # Determine current and next quarter from the selected week start
-        week_start_dt = datetime.strptime(request.week_start, '%Y-%m-%d')
-        current_year, current_quarter = get_quarter_from_date(request.week_start)
-        next_year, next_quarter = _next_quarter(current_year, current_quarter)
-
-        # Boundary check: does the 7-day week land in two different quarters?
-        week_end_str = (week_start_dt + timedelta(days=6)).strftime('%Y-%m-%d')
-        end_year, end_quarter = get_quarter_from_date(week_end_str)
-        spans_quarter_boundary = (end_year != current_year) or (end_quarter != current_quarter)
-
-        # Partition real assignment costs by each loan's start_date quarter so the
-        # current/next-quarter tabs each only count items that actually charge there.
-        planned_current: Dict[str, float] = {}
-        planned_next: Dict[str, float] = {}
-        sources_current: Dict[str, List[str]] = {}
-        sources_next: Dict[str, List[str]] = {}
+        # Tabs are this month / next / following, based on today (Pacific),
+        # not the selected week. A loan still charges to its own start month.
+        display_months = rolling_display_months(today_pacific(), 3)
+        month_keys = ('current', 'next', 'following')
+        planned_by_period: Dict[str, Dict[str, float]] = {
+            period: {} for _, period in display_months
+        }
+        sources_by_period: Dict[str, Dict[str, List[str]]] = {
+            period: {} for _, period in display_months
+        }
+        used_periods = set()
 
         for assignment in assignments:
             raw_make = assignment['make']
             fleet_key = normalize_fleet_name(raw_make)
             cost = assignment.get('cost', 0)
-            a_year, a_quarter = get_quarter_from_date(assignment['start_day'])
+            _year, period = get_month_period(assignment['start_day'])
+            if period not in planned_by_period:
+                continue
+            planned_by_period[period][fleet_key] = planned_by_period[period].get(fleet_key, 0) + cost
+            sources_by_period[period].setdefault(fleet_key, []).append(str(raw_make).upper())
+            used_periods.add(period)
 
-            if a_year == current_year and a_quarter == current_quarter:
-                planned_current[fleet_key] = planned_current.get(fleet_key, 0) + cost
-                sources_current.setdefault(fleet_key, []).append(str(raw_make).upper())
-            elif a_year == next_year and a_quarter == next_quarter:
-                planned_next[fleet_key] = planned_next.get(fleet_key, 0) + cost
-                sources_next.setdefault(fleet_key, []).append(str(raw_make).upper())
+        month_summaries: Dict[str, Any] = {}
+        month_labels: Dict[str, str] = {}
+        for key, (year, period) in zip(month_keys, display_months):
+            month_labels[key] = period_label(period)
+            month_summaries[key] = _build_budget_summary_for_quarter(
+                office=request.office,
+                year=year,
+                quarter=period,
+                planned_by_fleet=planned_by_period[period],
+                fleet_sources_seed=sources_by_period[period],
+                budgets_df=budgets_df,
+            )
 
         logger.info(
-            f"Planned spend partition — current ({current_quarter} {current_year}): "
-            f"{planned_current}; next ({next_quarter} {next_year}): {planned_next}"
+            f"Planned spend partition — { {k: planned_by_period[p] for k, (_, p) in zip(month_keys, display_months)} }"
         )
 
-        budget_summary = _build_budget_summary_for_quarter(
-            office=request.office,
-            year=current_year,
-            quarter=current_quarter,
-            planned_by_fleet=planned_current,
-            fleet_sources_seed=sources_current,
-            budgets_df=budgets_df,
-        )
-        next_budget_summary = _build_budget_summary_for_quarter(
-            office=request.office,
-            year=next_year,
-            quarter=next_quarter,
-            planned_by_fleet=planned_next,
-            fleet_sources_seed=sources_next,
-            budgets_df=budgets_df,
-        )
+        budget_summary = month_summaries.get('current')
+        next_budget_summary = month_summaries.get('next')
+        following_budget_summary = month_summaries.get('following')
         quarter_labels = {
-            'current': f"{current_quarter} {current_year}",
-            'next': f"{next_quarter} {next_year}",
+            'current': month_labels['current'],
+            'next': month_labels['next'],
         }
+        spans_month_boundary = len(used_periods) > 1
+        spans_quarter_boundary = spans_month_boundary
 
         result = {
             'status': solver_result.get('meta', {}).get('solver_status', 'UNKNOWN'),
@@ -709,7 +703,11 @@ async def run_optimizer(request: RunRequest) -> Dict[str, Any]:
             'fairness_summary': fairness_summary,
             'budget_summary': budget_summary,
             'next_budget_summary': next_budget_summary,
+            'following_budget_summary': following_budget_summary,
+            'month_labels': month_labels,
+            'month_summaries': month_summaries,
             'quarter_labels': quarter_labels,
+            'spans_month_boundary': spans_month_boundary,
             'spans_quarter_boundary': spans_quarter_boundary,
             'cost_breakdown': cost_breakdown,  # Real media costs with 3-tier lookup
             'objective_breakdown': solver_result.get('objective_breakdown', {})
@@ -780,7 +778,8 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
     try:
         # Get current time for comparison
         now = datetime.now()
-        current_quarter = f"Q{((now.month - 1) // 3) + 1} {now.year}"
+        _year, current_month_period = get_month_period(today_pacific())
+        current_quarter = period_label(current_month_period)
 
         # Load current and recent activities for this VIN
         activity_response = db.client.table('current_activity')\
@@ -1048,25 +1047,25 @@ async def get_vehicle_context(vin: str) -> Dict[str, Any]:
         if vehicle_make and vehicle_office:
             # Convert make to fleet name (uppercase)
             fleet_name = vehicle_make.upper()
-            print(f"[DEBUG] Fetching budget for fleet={fleet_name}, office={vehicle_office}, quarter={current_quarter}")
+            print(f"[DEBUG] Fetching budget for fleet={fleet_name}, office={vehicle_office}, period={current_month_period}")
 
-            # Get budget for this fleet and office for current quarter
-            # Extract year and quarter number from current_quarter (e.g., "Q4 2025")
-            quarter_parts = current_quarter.split()
-            quarter_num = quarter_parts[0] if quarter_parts else None
-            year = int(quarter_parts[1]) if len(quarter_parts) > 1 else now.year
-
-            budget_response = db.client.table('budgets')\
+            year, period = get_month_period(today_pacific())
+            raw_budget_response = db.client.table('budgets')\
                 .select('*')\
                 .eq('office', vehicle_office)\
                 .eq('fleet', fleet_name)\
                 .eq('year', year)\
-                .eq('quarter', quarter_num)\
                 .execute()
+            monthly_office = normalize_budgets_to_months(
+                pd.DataFrame(raw_budget_response.data) if raw_budget_response.data else pd.DataFrame()
+            )
+            if not monthly_office.empty:
+                monthly_office = monthly_office[monthly_office['quarter'] == period]
+            budget_response_data = monthly_office.to_dict('records') if not monthly_office.empty else []
 
-            if budget_response.data:
-                print(f"[DEBUG] Found budget data: {budget_response.data}")
-                budget_data = budget_response.data[0]
+            if budget_response_data:
+                print(f"[DEBUG] Found budget data: {budget_response_data}")
+                budget_data = budget_response_data[0]
                 total_budget = float(budget_data.get('budget_amount', 0) or 0)
                 current_budget = float(budget_data.get('amount_used', 0) or 0)
                 percent_used = (current_budget / total_budget * 100) if total_budget > 0 else 0
@@ -1481,15 +1480,14 @@ async def get_overview(
             logger.info(f"Scheduled assignments starts this week: {existing_by_day}")
             logger.info(f"Total existing schedule breakdown: {existing_by_day}")
 
-        # 9. Load budget status for current quarter and YTD
+        # 9. Load budget status for the current calendar month and YTD
         budgets_response = db.client.table('budgets').select('*').eq('office', office).execute()
-        budgets_df = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+        budgets_df = normalize_budgets_to_months(
+            pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+        )
 
-        # Determine quarter from week_start
-        week_start_dt = datetime.strptime(week_start, '%Y-%m-%d')
-        current_year = week_start_dt.year
-        current_month = week_start_dt.month
-        current_quarter = f'Q{((current_month - 1) // 3) + 1}'
+        current_year, current_period = get_month_period(week_start)
+        current_quarter = period_label(current_period)
 
         # Build budget summary by fleet
         budget_by_fleet = {}
@@ -1507,16 +1505,16 @@ async def get_overview(
                 ytd_budget = fleet_budgets['budget_amount'].sum()
                 ytd_used = fleet_budgets['amount_used'].sum()
 
-                # Current quarter
-                quarter_budgets = fleet_budgets[fleet_budgets['quarter'] == current_quarter]
-                q_budget = quarter_budgets['budget_amount'].sum() if not quarter_budgets.empty else 0
-                q_used = quarter_budgets['amount_used'].sum() if not quarter_budgets.empty else 0
+                month_budgets = fleet_budgets[fleet_budgets['quarter'] == current_period]
+                q_budget = month_budgets['budget_amount'].sum() if not month_budgets.empty else 0
+                q_used = month_budgets['amount_used'].sum() if not month_budgets.empty else 0
 
                 budget_by_fleet[fleet] = {
                     'ytd_budget': float(ytd_budget),
                     'ytd_used': float(ytd_used),
                     'ytd_remaining': float(ytd_budget - ytd_used),
                     'current_quarter': current_quarter,
+                    'current_month': current_quarter,
                     'quarter_budget': float(q_budget),
                     'quarter_used': float(q_used),
                     'quarter_remaining': float(q_budget - q_used)
@@ -2375,25 +2373,23 @@ async def get_partner_intelligence(
         for make_item in approved_makes:
             make_item['is_new_to_partner'] = make_item['make'] not in historical_makes
 
-        # 3b. Add budget status for current quarter
+        # 3b. Add budget status for the current calendar month
         budget_status = {}
         current_quarter_str = None
 
         try:
             budgets_response = db.client.table('budgets').select('*').eq('office', office).execute()
-            budgets_df = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+            budgets_df = normalize_budgets_to_months(
+                pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+            )
 
             if not budgets_df.empty:
-                # Get current quarter
-                now = datetime.now()
-                current_year = now.year
-                current_quarter = f'Q{((now.month - 1) // 3) + 1}'
-                current_quarter_str = f"{current_quarter} {current_year}"
+                current_year, current_period = get_month_period(today_pacific())
+                current_quarter_str = period_label(current_period)
 
-                # Filter to current quarter
                 quarter_budgets = budgets_df[
                     (budgets_df['year'] == current_year) &
-                    (budgets_df['quarter'] == current_quarter)
+                    (budgets_df['quarter'] == current_period)
                 ]
 
                 # Build budget status for each approved make

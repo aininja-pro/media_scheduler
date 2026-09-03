@@ -1245,7 +1245,7 @@ export default function Partners({ office }) {
                           <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wide">
                             Approved Makes & Budget Status
                           </h3>
-                          <span className="text-xs text-gray-500">Current Quarter: Q4 2025</span>
+                          <span className="text-xs text-gray-500">Current Month: {partnerContext.current_quarter || 'Sep 2026'}</span>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="min-w-full divide-y divide-gray-200">
@@ -1253,7 +1253,7 @@ export default function Partners({ office }) {
                               <tr>
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Make</th>
                                 <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Tier</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Office Budget (Q4)</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Office Budget ({partnerContext.current_quarter || 'Sep 2026'})</th>
                                 <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">%</th>
                                 <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Cost/Loan</th>
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Partner Usage</th>

@@ -15,6 +15,7 @@ import asyncio
 
 from ..schemas.ingest import INGEST_SCHEMAS
 from ..services.database import get_database, DatabaseService
+from ..solver.budget_periods import expand_budget_allocation_rows, parse_spend_csv
 
 # Add backend directory to path for importing analyze_preferred_days
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..', '..'))
@@ -348,22 +349,30 @@ async def ingest_operations_excel(
         )
 
 
+def _excel_col(row, *names):
+    """Find a column by name, ignoring extra spaces and case."""
+    lookup = {str(label).strip().lower(): label for label in row.index}
+    for name in names:
+        key = name.strip().lower()
+        if key in lookup:
+            return row[lookup[key]]
+    return None
+
+
 @router.post("/budgets")
 async def ingest_budgets_excel(
     file: UploadFile,
     db: DatabaseService = Depends(get_database)
 ) -> Dict[str, Any]:
     """
-    Ingest Budgets Excel file with quarterly budget allocations.
+    Ingest Budgets Excel file with budget allocations.
 
-    NEW FORMAT (5 columns): Office, Fleet, Year, Quarter, Budget
-    Only updates budget_amount field, preserves amount_used from FMS sync.
+    Accepts either:
+    - Monthly: Office, Fleet, Year, Month, Budget
+    - Quarterly (Dave's current export): Office, Fleet, Year, Quarter, Budget
+      Each quarter is stored as three equal months (Q3 $9,000 → $3,000 for Jul/Aug/Sep).
 
-    Args:
-        file: Excel file upload with budget allocation data
-
-    Returns:
-        Dict with ingestion results
+    Only updates budget_amount. Monthly spend still comes from the FMS sync.
     """
     # Validate file type
     if not file.filename.endswith(('.xlsx', '.xls')):
@@ -385,42 +394,61 @@ async def ingest_budgets_excel(
 
         logger.info(f"Processing budgets Excel with columns: {list(df.columns)}")
 
-        validated_budgets = []
+        raw_rows = []
         for index, row in df.iterrows():
             try:
-                # Handle both "Budget" and "Budget #" column names
-                budget_col = 'Budget #' if 'Budget #' in row.index else 'Budget'
-
+                budget_val = _excel_col(row, 'Budget #', 'Budget', 'Budget Amount')
+                year_val = _excel_col(row, 'Year')
+                if year_val is None or year_val == '':
+                    continue
                 row_dict = {
-                    'office': str(row['Office']).strip(),
-                    'fleet': str(row['Fleet']).strip(),
-                    'year': int(row['Year']) if pd.notna(row['Year']) else None,
-                    'quarter': str(row['Quarter']).strip(),
-                    'budget_amount': row[budget_col] if pd.notna(row[budget_col]) else None,
-                    'amount_used': None  # Not included in new format
+                    'office': str(_excel_col(row, 'Office')).strip(),
+                    'fleet': str(_excel_col(row, 'Fleet')).strip(),
+                    'year': int(year_val) if pd.notna(year_val) else None,
+                    'quarter': (
+                        str(_excel_col(row, 'Quarter')).strip()
+                        if _excel_col(row, 'Quarter') not in (None, '')
+                        else None
+                    ),
+                    'month': (
+                        str(_excel_col(row, 'Month')).strip()
+                        if _excel_col(row, 'Month') not in (None, '')
+                        else None
+                    ),
+                    'budget_amount': budget_val if pd.notna(budget_val) and budget_val != '' else None,
+                    'amount_used': None,
                 }
                 validated_row = INGEST_SCHEMAS["budgets"](**row_dict)
-                validated_budgets.append(validated_row)
+                raw_rows.append(validated_row.model_dump())
             except Exception as e:
                 logger.warning(f"Skipping budgets row {index + 2}: {str(e)}")
+
+        expanded_rows = expand_budget_allocation_rows(raw_rows)
+        validated_budgets = [INGEST_SCHEMAS["budgets"](**row) for row in expanded_rows]
 
         if not validated_budgets:
             logger.error("No valid budget rows after validation. Check column headers & schema.")
             raise HTTPException(
                 status_code=422,
-                detail="No valid budget records found. Check Excel column headers (Office, Fleet, Year, Quarter, Budget)."
+                detail="No valid budget records found. Check Excel column headers (Office, Fleet, Year, Quarter or Month, Budget)."
             )
 
         # Upload to database - only update budget_amount field
         logger.info("Updating budget allocations in database...")
         result = await db.update_budget_allocations(validated_budgets)
+        deleted_legacy = await db.delete_legacy_quarter_budget_rows()
 
-        logger.info(f"Successfully processed {len(validated_budgets)} budget allocation records")
+        logger.info(
+            f"Successfully processed {len(validated_budgets)} monthly budget records "
+            f"(from {len(raw_rows)} Excel rows)"
+        )
 
         return {
             "status": "success",
             "message": f"Successfully processed budget allocations from Excel file",
             "total_rows_processed": len(validated_budgets),
+            "source_rows": len(raw_rows),
+            "legacy_quarter_rows_removed": deleted_legacy,
             "rows_affected": result.get("rows_affected", 0)
         }
 
@@ -442,15 +470,10 @@ async def ingest_budget_spending_from_url(
     """
     Sync budget spending (amount_used) from FMS CSV.
 
-    CSV Format: office, fleet, year, quarter, amount_used
-    Updates only amount_used field, preserves budget_amount from manual upload.
-    Creates rows with NULL budget_amount if office/fleet/quarter doesn't exist.
+    Monthly report (current): year, month, office, fleet, amount_used
+    Older quarterly report: fleet, office, year, quarter, amount_used
 
-    Args:
-        url: FMS CSV URL for budget spending data
-
-    Returns:
-        Dict with sync results
+    Updates only amount_used. Budget $ still comes from the Excel upload.
     """
     try:
         # Decode URL if FastAPI encoded it
@@ -472,8 +495,7 @@ async def ingest_budget_spending_from_url(
             logger.info(f"Fetched CSV: {response.status_code}, {len(csv_content)} chars")
             logger.info(f"First 200 chars: {csv_content[:200]}")
 
-        # Parse CSV - FMS format has NO HEADER, columns: fleet,office,year,quarter,amount_used
-        df = pd.read_csv(StringIO(csv_content), header=None, names=['fleet', 'office', 'year', 'quarter', 'amount_used'])
+        df = parse_spend_csv(csv_content)
         df = df.fillna('')
 
         logger.info(f"Processing {len(df)} budget spending records from FMS CSV")
@@ -494,18 +516,14 @@ async def ingest_budget_spending_from_url(
                 fleet_raw = str(row['fleet']).strip().upper() if pd.notna(row['fleet']) else ''
                 fleet_normalized = fleet_aliases.get(fleet_raw, fleet_raw)
 
-                # Parse year - FMS uses "2,025" format with comma
-                year_str = str(row['year']).replace(',', '').strip()
-                year_int = int(year_str) if year_str else None
-
-                # Parse amount_used - has quotes and commas from FMS
+                year_int = int(row['year']) if pd.notna(row['year']) and str(row['year']) != '' else None
                 amount_str = str(row['amount_used']).replace(',', '').strip()
 
                 row_dict = {
                     'office': str(row['office']).strip(),
                     'fleet': fleet_normalized,
                     'year': year_int,
-                    'quarter': str(row['quarter']).strip().upper(),
+                    'quarter': str(row['quarter']).strip(),
                     'amount_used': amount_str
                 }
                 validated_row = INGEST_SCHEMAS["budget_spending"](**row_dict)

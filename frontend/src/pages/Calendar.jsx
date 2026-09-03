@@ -2539,7 +2539,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                         <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wide">
                           Approved Makes & Budget Status
                         </h3>
-                        <span className="text-xs text-gray-500">Current Quarter: {partnerContext.current_quarter || 'Q4 2025'}</span>
+                        <span className="text-xs text-gray-500">Current Month: {partnerContext.current_quarter || 'Sep 2026'}</span>
                       </div>
                       <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
@@ -2547,7 +2547,7 @@ function Calendar({ sharedOffice, onOfficeChange, isActive, onBuildChainForVehic
                             <tr>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Make</th>
                               <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Rank</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Office Budget ({partnerContext.current_quarter || 'Q4'})</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Office Budget ({partnerContext.current_quarter || 'Sep 2026'})</th>
                               <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Pub %</th>
                               <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Cost/Loan</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Partner Usage</th>

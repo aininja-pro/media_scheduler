@@ -135,7 +135,7 @@ From the dashboard, the user uploads one or more CSV files via `POST /ingest/{ta
 *   **Tier Caps**: A+ = 999/week, A = 6, B = 2, C = 0
 *   **Cooldown**: 60 days same trim per partner
 *   **Capacity**: daily drivers_per_day per office
-*   **Budgets**: advisory only (warnings, no hard block in v1)
+*   **Budgets**: monthly allocations (this month + next two), advisory only (warnings, no hard block in v1)
 *   **JWT SSO**: requires shared `SCHEDULER_JWT_SECRET` and Rails proxy setup
 
 ## 8. Known Issues & Potential Pitfalls

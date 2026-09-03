@@ -1,8 +1,11 @@
 """
-Phase 7.6: Quarterly Budget Constraints
+Phase 7.6: Monthly Budget Constraints
 
-Implements budget awareness for optimization by office × fleet × quarter.
+Implements budget awareness for optimization by office × fleet × month.
 Supports both soft penalties and hard constraints.
+
+The budgets.quarter column stores 'YYYY-MM' (e.g. '2026-09').
+Older Q1–Q4 rows are expanded to three equal months at read time.
 
 "We don't just schedule cars—we honor the purse strings." - Godin
 """
@@ -12,6 +15,11 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Any, Optional
 from ortools.sat.python import cp_model
+
+from app.solver.budget_periods import (
+    get_month_period,
+    normalize_budgets_to_months,
+)
 
 
 # Default configuration
@@ -103,54 +111,54 @@ def load_budgets_for_week(
         week_start: Monday of the week
 
     Returns:
-        Dict mapping (office, fleet, year, quarter) to budget info
+        Dict mapping (office, fleet, year, month-period) to budget info
     """
     budgets = {}
 
-    # Determine which quarters the week might span
+    # A 7-day week can sit in one month or straddle two (e.g. Sep 28–Oct 4)
     week_start_date = pd.to_datetime(week_start)
     week_end_date = week_start_date + timedelta(days=6)
 
-    start_year, start_quarter = get_quarter_from_date(week_start)
-    end_year, end_quarter = get_quarter_from_date(str(week_end_date.date()))
+    start_year, start_period = get_month_period(week_start)
+    end_year, end_period = get_month_period(str(week_end_date.date()))
 
-    # Get relevant quarters
-    relevant_quarters = [(start_year, start_quarter)]
-    if (end_year, end_quarter) != (start_year, start_quarter):
-        relevant_quarters.append((end_year, end_quarter))
+    relevant_periods = [(start_year, start_period)]
+    if (end_year, end_period) != (start_year, start_period):
+        relevant_periods.append((end_year, end_period))
 
-    # Filter budgets
-    if not budgets_df.empty:
-        office_budgets = budgets_df[budgets_df['office'] == office]
+    monthly_df = normalize_budgets_to_months(budgets_df)
+    if monthly_df.empty:
+        return budgets
 
-        for _, row in office_budgets.iterrows():
-            year = int(row['year'])
-            quarter = row['quarter']
+    office_budgets = monthly_df[monthly_df['office'] == office]
 
-            # Check if this budget is relevant
-            if (year, quarter) in relevant_quarters:
-                fleet = normalize_fleet_name(row['fleet'])
-                budget_amount = float(row['budget_amount'])
-                amount_used = float(row['amount_used']) if pd.notna(row['amount_used']) else 0.0
+    for _, row in office_budgets.iterrows():
+        year = int(row['year'])
+        period = row['quarter']
 
-                # Calculate remaining budget
-                remaining = max(0, budget_amount - amount_used)
+        if (year, period) not in relevant_periods:
+            continue
 
-                key = (office, fleet, year, quarter)
-                if key in budgets:
-                    # Aggregate when fleet aliases collapse (e.g., LEXUS -> TOYOTA)
-                    budgets[key]['budget_amount'] += budget_amount
-                    budgets[key]['amount_used'] += amount_used
-                    budgets[key]['remaining'] = max(
-                        0,
-                        budgets[key]['budget_amount'] - budgets[key]['amount_used']
-                    )
-                else:
-                    budgets[key] = {
-                        'budget_amount': budget_amount,
-                        'amount_used': amount_used,
-                        'remaining': remaining
-                    }
+        fleet = normalize_fleet_name(row['fleet'])
+        budget_amount = float(row['budget_amount']) if pd.notna(row['budget_amount']) else 0.0
+        amount_used = float(row['amount_used']) if pd.notna(row['amount_used']) else 0.0
+        remaining = max(0, budget_amount - amount_used)
+
+        key = (office, fleet, year, period)
+        if key in budgets:
+            # Aggregate when fleet aliases collapse (e.g., LEXUS -> TOYOTA)
+            budgets[key]['budget_amount'] += budget_amount
+            budgets[key]['amount_used'] += amount_used
+            budgets[key]['remaining'] = max(
+                0,
+                budgets[key]['budget_amount'] - budgets[key]['amount_used']
+            )
+        else:
+            budgets[key] = {
+                'budget_amount': budget_amount,
+                'amount_used': amount_used,
+                'remaining': remaining
+            }
 
     return budgets
 
@@ -210,8 +218,8 @@ def add_budget_constraints(
     for idx, triple in triples_df.iterrows():
         # Determine budget bucket
         fleet = normalize_fleet_name(triple['make'])
-        year, quarter = get_quarter_from_date(triple['start_day'])
-        bucket_key = (office, fleet, year, quarter)
+        year, period = get_month_period(triple['start_day'])
+        bucket_key = (office, fleet, year, period)
 
         if bucket_key not in bucket_assignments:
             bucket_assignments[bucket_key] = []
@@ -232,7 +240,7 @@ def add_budget_constraints(
 
     # Process each budget bucket
     for bucket_key, assignments in bucket_assignments.items():
-        office, fleet, year, quarter = bucket_key
+        office, fleet, year, period = bucket_key
 
         # Get budget for this bucket
         if bucket_key in budgets:
@@ -262,7 +270,7 @@ def add_budget_constraints(
         # Create integer variable for total spend
         max_possible_spend = sum(cost for _, cost in assignments)
         planned_spend = model.NewIntVar(0, int(max_possible_spend),
-                                       f'spend_{fleet}_{year}_{quarter}')
+                                       f'spend_{fleet}_{year}_{period}')
         model.Add(planned_spend == sum(spend_terms))
 
         # Store budget info
@@ -276,13 +284,13 @@ def add_budget_constraints(
             # HARD MODE: Add constraint
             model.Add(planned_spend <= int(remaining))
             if verbose:
-                print(f"  Hard constraint: {fleet} {year}-{quarter} ≤ ${remaining:,.0f}")
+                print(f"  Hard constraint: {fleet} {year}-{period} ≤ ${remaining:,.0f}")
 
         else:
             # SOFT MODE: Add penalty for overage
             # over_budget = max(0, planned_spend - remaining)
             over_budget = model.NewIntVar(0, int(max_possible_spend),
-                                         f'over_{fleet}_{year}_{quarter}')
+                                         f'over_{fleet}_{year}_{period}')
             model.Add(over_budget >= planned_spend - int(remaining))
             model.Add(over_budget >= 0)
 
@@ -326,12 +334,13 @@ def build_budget_summary(
     if cost_per_assignment is None:
         cost_per_assignment = {}
 
-    # Calculate actual spend per bucket
+    # Calculate actual spend per bucket (charged to the loan's start month)
+    monthly_df = normalize_budgets_to_months(budgets_df)
     bucket_spend = {}
     for assignment in selected_assignments:
         fleet = normalize_fleet_name(assignment['make'])
-        year, quarter = get_quarter_from_date(assignment['start_day'])
-        bucket_key = (office, fleet, year, quarter)
+        year, period = get_month_period(assignment['start_day'])
+        bucket_key = (office, fleet, year, period)
 
         cost = cost_per_assignment.get(
             assignment['make'],
@@ -352,12 +361,12 @@ def build_budget_summary(
             budget_data = budget_info[bucket_key]['budget_data']
         else:
             # Look up from original budgets
-            if not budgets_df.empty:
-                budget_match = budgets_df[
-                    (budgets_df['office'] == office) &
-                    (budgets_df['fleet'].str.upper() == fleet) &
-                    (budgets_df['year'] == year) &
-                    (budgets_df['quarter'] == quarter)
+            if not monthly_df.empty:
+                budget_match = monthly_df[
+                    (monthly_df['office'] == office) &
+                    (monthly_df['fleet'].str.upper() == fleet) &
+                    (monthly_df['year'] == year) &
+                    (monthly_df['quarter'] == quarter)
                 ]
             else:
                 budget_match = pd.DataFrame()

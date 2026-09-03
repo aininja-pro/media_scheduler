@@ -47,7 +47,14 @@ from ..solver.partner_chain_solver import (
     solve_partner_chain,
     ModelPreference
 )
-from ..solver.budget_constraints import normalize_fleet_name, load_budgets_for_week, get_quarter_from_date
+from ..solver.budget_constraints import normalize_fleet_name, load_budgets_for_week
+from ..solver.budget_periods import (
+    get_month_period,
+    normalize_budgets_to_months,
+    period_label,
+    rolling_display_months,
+    today_pacific,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chain-builder", tags=["chain-builder"])
@@ -55,14 +62,6 @@ router = APIRouter(prefix="/chain-builder", tags=["chain-builder"])
 
 # Fleets excluded from budget display (not actively scheduled)
 _EXCLUDED_BUDGET_FLEETS = {'BENTLEY', 'FERRARI', 'MASERATI'}
-
-
-def _next_quarter(year: int, quarter: str) -> tuple:
-    """Return (year, quarter) for the quarter immediately after the given one."""
-    qnum = int(quarter[1])
-    if qnum == 4:
-        return year + 1, 'Q1'
-    return year, f'Q{qnum + 1}'
 
 
 def _build_chain_budget_summary_for_quarter(
@@ -651,7 +650,7 @@ async def suggest_chain(
         if 'office' in candidate_vehicles_df.columns:
             candidate_vehicles_df = candidate_vehicles_df.rename(columns={'office': 'vehicle_office'})
 
-        # Budget filter: drop vehicles whose make is at or over budget for this office/quarter.
+        # Budget filter: drop vehicles whose make is at or over budget for this office/month.
         if respect_budget_limits and not candidate_vehicles_df.empty:
             over_budget = _over_budget_makes(db, office, start_date)
             if over_budget:
@@ -670,7 +669,7 @@ async def suggest_chain(
                         status_code=400,
                         detail=(
                             "No vehicles remain after budget filter. All eligible makes are over budget "
-                            "for this quarter. Toggle off 'Respect Budget Limits' to override."
+                            "for this month. Toggle off 'Respect Budget Limits' to override."
                         )
                     )
 
@@ -1529,26 +1528,22 @@ async def calculate_chain_budget(
         office = request.get('office')
         chain = request.get('chain', [])
 
-        # Load budgets for this office
+        # Load budgets for this office, then turn Q3-style rows into months
         budgets_response = db.client.table('budgets').select('*').eq('office', office).execute()
-        budgets_df = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+        raw_budgets = pd.DataFrame(budgets_response.data) if budgets_response.data else pd.DataFrame()
+        budgets_df = normalize_budgets_to_months(raw_budgets)
 
-        # Determine current quarter from the first chain item (or "now" if chain is empty).
-        # Next quarter is computed off that anchor.
-        if chain and len(chain) > 0:
-            anchor_date = chain[0]['start_date']
-            current_year, current_quarter = get_quarter_from_date(anchor_date)
-        else:
-            current_year, current_quarter = get_quarter_from_date(datetime.now().strftime('%Y-%m-%d'))
-        next_year, next_quarter = _next_quarter(current_year, current_quarter)
+        # Tabs are always this month / next / following, based on today (Pacific).
+        display_months = rolling_display_months(today_pacific(), 3)
+        month_keys = ('current', 'next', 'following')
 
-        # Partition chain costs by each item's start_date quarter so each tab only
-        # counts loans that actually charge there.
-        planned_current: Dict[str, float] = {}
-        planned_next: Dict[str, float] = {}
-        sources_current: Dict[str, List[str]] = {}
-        sources_next: Dict[str, List[str]] = {}
-        spans_quarter_boundary = False
+        planned_by_period: Dict[str, Dict[str, float]] = {
+            period: {} for _, period in display_months
+        }
+        sources_by_period: Dict[str, Dict[str, List[str]]] = {
+            period: {} for _, period in display_months
+        }
+        used_periods = set()
 
         for assignment in chain:
             person_id = assignment.get('person_id')
@@ -1559,46 +1554,45 @@ async def calculate_chain_budget(
 
             cost_info = get_cost_for_assignment(person_id, make)
             fleet_key = normalize_fleet_name(make)
-            a_year, a_quarter = get_quarter_from_date(start_date)
+            _year, period = get_month_period(start_date)
+            if period not in planned_by_period:
+                continue
+            planned_by_period[period][fleet_key] = (
+                planned_by_period[period].get(fleet_key, 0) + cost_info['cost']
+            )
+            sources_by_period[period].setdefault(fleet_key, []).append(str(make).upper())
+            used_periods.add(period)
 
-            if a_year == current_year and a_quarter == current_quarter:
-                planned_current[fleet_key] = planned_current.get(fleet_key, 0) + cost_info['cost']
-                sources_current.setdefault(fleet_key, []).append(str(make).upper())
-            elif a_year == next_year and a_quarter == next_quarter:
-                planned_next[fleet_key] = planned_next.get(fleet_key, 0) + cost_info['cost']
-                sources_next.setdefault(fleet_key, []).append(str(make).upper())
-                spans_quarter_boundary = True
+        month_summaries: Dict[str, Any] = {}
+        month_labels: Dict[str, str] = {}
+        for key, (year, period) in zip(month_keys, display_months):
+            month_labels[key] = period_label(period)
+            month_summaries[key] = _build_chain_budget_summary_for_quarter(
+                office=office,
+                year=year,
+                quarter=period,
+                planned_by_fleet=planned_by_period[period],
+                fleet_sources_seed=sources_by_period[period],
+                budgets_df=budgets_df,
+            )
 
-        budget_summary = _build_chain_budget_summary_for_quarter(
-            office=office,
-            year=current_year,
-            quarter=current_quarter,
-            planned_by_fleet=planned_current,
-            fleet_sources_seed=sources_current,
-            budgets_df=budgets_df,
-        )
-        next_budget_summary = _build_chain_budget_summary_for_quarter(
-            office=office,
-            year=next_year,
-            quarter=next_quarter,
-            planned_by_fleet=planned_next,
-            fleet_sources_seed=sources_next,
-            budgets_df=budgets_df,
-        )
-
-        # Back-compat: keep the existing top-level fleets/total keys (mirror current quarter).
-        # Frontend can additionally read next_budget_summary / quarter_labels / spans_quarter_boundary.
-        if budget_summary is None:
+        current_summary = month_summaries.get('current')
+        if current_summary is None:
             response: Dict[str, Any] = {'fleets': {}, 'total': None}
         else:
-            response = dict(budget_summary)
+            response = dict(current_summary)
 
-        response['next_budget_summary'] = next_budget_summary
+        response['month_labels'] = month_labels
+        response['month_summaries'] = month_summaries
+        response['next_budget_summary'] = month_summaries.get('next')
+        response['following_budget_summary'] = month_summaries.get('following')
+        # Older UI still reads quarter_labels / spans_quarter_boundary
         response['quarter_labels'] = {
-            'current': f"{current_quarter} {current_year}",
-            'next': f"{next_quarter} {next_year}",
+            'current': month_labels['current'],
+            'next': month_labels['next'],
         }
-        response['spans_quarter_boundary'] = spans_quarter_boundary
+        response['spans_month_boundary'] = len(used_periods) > 1
+        response['spans_quarter_boundary'] = len(used_periods) > 1
 
         return response
 
@@ -1877,7 +1871,7 @@ async def suggest_vehicle_chain(
 
         logger.info(f"Vehicle: {vehicle_make} {vehicle_model}")
 
-        # Budget check: if this vehicle's make is at/over budget for the quarter, return early.
+        # Budget check: if this vehicle's make is at/over budget for the start month, return early.
         if respect_budget_limits:
             over_budget = _over_budget_makes(db, office, start_date)
             if normalize_fleet_name(vehicle_make) in over_budget:
@@ -1901,10 +1895,10 @@ async def suggest_vehicle_chain(
                     "optimal_chain": [],
                     "diagnostics": {"reason": "make_over_budget", "fleet": normalize_fleet_name(vehicle_make)},
                     "warning": (
-                        f"{vehicle_make} is over budget for this quarter in {office}. "
+                        f"{vehicle_make} is over budget for this month in {office}. "
                         f"Toggle off 'Respect Budget Limits' to override."
                     ),
-                    "message": f"{vehicle_make} is over budget for this quarter."
+                    "message": f"{vehicle_make} is over budget for this month."
                 }
 
         # 3. Load all necessary data with pagination

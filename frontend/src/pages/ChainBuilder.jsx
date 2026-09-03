@@ -1900,7 +1900,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
       // Surface budget-blocked status as a friendly error/warning instead of an empty chain
       if (data.status === 'BUDGET_BLOCKED') {
-        setError(data.warning || data.message || 'This vehicle is over budget for the quarter.');
+        setError(data.warning || data.message || 'This vehicle is over budget for the month.');
         setVehicleChain(null);
         setIsLoading(false);
         return;
@@ -3454,7 +3454,7 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                   <p className="text-xs text-gray-500 mt-1">
                     {respectBudgetLimits
                       ? 'Vehicles from over-budget makes are excluded'
-                      : 'All makes shown — overrides quarterly budget caps'}
+                      : 'All makes shown — overrides monthly budget caps'}
                   </p>
                 </div>
                 <button
@@ -5190,51 +5190,45 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
 
           <div className="space-y-4 text-sm">
             {/* Budget Status - Shows available to spend */}
-            {chainBudget && (chainBudget.fleets || chainBudget.next_budget_summary) && (() => {
-              const labels = chainBudget.quarter_labels || { current: 'Current Quarter', next: 'Next Quarter' };
-              const currentSummary = chainBudget.fleets
-                ? { fleets: chainBudget.fleets, total: chainBudget.total }
-                : null;
-              const activeSummary = budgetTab === 'current'
-                ? currentSummary
-                : chainBudget.next_budget_summary;
-              const activeLabel = budgetTab === 'current' ? labels.current : labels.next;
+            {chainBudget && (chainBudget.fleets || chainBudget.next_budget_summary || chainBudget.month_summaries) && (() => {
+              const labels = chainBudget.month_labels || chainBudget.quarter_labels || { current: 'This Month', next: 'Next Month' };
+              const currentSummary = chainBudget.month_summaries?.current
+                || (chainBudget.fleets ? { fleets: chainBudget.fleets, total: chainBudget.total } : null);
+              const tabSummaries = {
+                current: currentSummary,
+                next: chainBudget.month_summaries?.next || chainBudget.next_budget_summary,
+                following: chainBudget.month_summaries?.following || chainBudget.following_budget_summary,
+              };
+              const tabKeys = ['current', 'next', 'following'].filter((key) => labels[key]);
+              const activeSummary = tabSummaries[budgetTab] || currentSummary;
+              const activeLabel = labels[budgetTab] || labels.current;
+              const spansMonths = chainBudget.spans_month_boundary || chainBudget.spans_quarter_boundary;
 
               return (
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-3">Available to Spend</h3>
-                  {chainBudget.spans_quarter_boundary && (
+                  {spansMonths && (
                     <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                      ⚠️ This chain spans {labels.current} → {labels.next}
+                      ⚠️ This chain has loans in more than one month
                     </div>
                   )}
                   <div className="flex gap-1 mb-2 text-xs" role="tablist">
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={budgetTab === 'current'}
-                      onClick={() => setBudgetTab('current')}
-                      className={`flex-1 px-2 py-1 rounded border ${
-                        budgetTab === 'current'
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      {labels.current}
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={budgetTab === 'next'}
-                      onClick={() => setBudgetTab('next')}
-                      className={`flex-1 px-2 py-1 rounded border ${
-                        budgetTab === 'next'
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      {labels.next}
-                    </button>
+                    {tabKeys.map((key) => (
+                      <button
+                        key={key}
+                        type="button"
+                        role="tab"
+                        aria-selected={budgetTab === key}
+                        onClick={() => setBudgetTab(key)}
+                        className={`flex-1 px-1 py-1 rounded border ${
+                          budgetTab === key
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {labels[key]}
+                      </button>
+                    ))}
                   </div>
                   <div className="bg-gray-50 rounded p-3">
                     {activeSummary && activeSummary.fleets && Object.keys(activeSummary.fleets).length > 0 ? (

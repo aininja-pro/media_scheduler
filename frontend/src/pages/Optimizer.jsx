@@ -1497,7 +1497,7 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-3">Available to Spend</h3>
               {(() => {
-                if (!runResult?.budget_summary && !runResult?.next_budget_summary) {
+                if (!runResult?.budget_summary && !runResult?.next_budget_summary && !runResult?.month_summaries) {
                   return (
                     <div className="bg-gray-50 rounded p-3">
                       <div className="text-sm text-gray-400">Run optimizer to see metrics</div>
@@ -1505,46 +1505,41 @@ function Optimizer({ sharedOffice, onOfficeChange }) {
                   );
                 }
 
-                const labels = runResult?.quarter_labels || { current: 'Current Quarter', next: 'Next Quarter' };
-                const activeSummary = budgetTab === 'current'
-                  ? runResult?.budget_summary
-                  : runResult?.next_budget_summary;
-                const activeLabel = budgetTab === 'current' ? labels.current : labels.next;
+                const labels = runResult?.month_labels || runResult?.quarter_labels || { current: 'This Month', next: 'Next Month' };
+                const tabSummaries = {
+                  current: runResult?.month_summaries?.current || runResult?.budget_summary,
+                  next: runResult?.month_summaries?.next || runResult?.next_budget_summary,
+                  following: runResult?.month_summaries?.following || runResult?.following_budget_summary,
+                };
+                const tabKeys = ['current', 'next', 'following'].filter((key) => labels[key]);
+                const activeSummary = tabSummaries[budgetTab] || runResult?.budget_summary;
+                const activeLabel = labels[budgetTab] || labels.current;
+                const spansMonths = runResult?.spans_month_boundary || runResult?.spans_quarter_boundary;
 
                 return (
                   <div>
-                    {runResult?.spans_quarter_boundary && (
+                    {spansMonths && (
                       <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                        ⚠️ This week spans {labels.current} → {labels.next}
+                        ⚠️ This run has loans in more than one month
                       </div>
                     )}
                     <div className="flex gap-1 mb-2 text-xs" role="tablist">
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={budgetTab === 'current'}
-                        onClick={() => setBudgetTab('current')}
-                        className={`flex-1 px-2 py-1 rounded border ${
-                          budgetTab === 'current'
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        {labels.current}
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={budgetTab === 'next'}
-                        onClick={() => setBudgetTab('next')}
-                        className={`flex-1 px-2 py-1 rounded border ${
-                          budgetTab === 'next'
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        {labels.next}
-                      </button>
+                      {tabKeys.map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          role="tab"
+                          aria-selected={budgetTab === key}
+                          onClick={() => setBudgetTab(key)}
+                          className={`flex-1 px-1 py-1 rounded border ${
+                            budgetTab === key
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {labels[key]}
+                        </button>
+                      ))}
                     </div>
                     <div className="bg-gray-50 rounded p-3">
                       {activeSummary ? (

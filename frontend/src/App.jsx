@@ -278,7 +278,13 @@ function AppContent() {
       const result = await response.json()
       
       if (response.ok) {
-        alert(`Success! Processed ${result.total_rows_processed} budget records`)
+        const spend = result.spend_sync || {}
+        const spendNote = spend.status === 'success'
+          ? ` Spend refreshed on ${spend.rows_affected || 0} rows.`
+          : spend.status === 'error'
+            ? ` Budget saved, but spend refresh failed: ${spend.message || 'unknown error'}. Click Update Budget Spending.`
+            : ''
+        alert(`Success! Processed ${result.total_rows_processed} budget records.${spendNote}`)
       } else {
         alert(`Error: ${result.detail}`)
       }

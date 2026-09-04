@@ -16,6 +16,7 @@ import asyncio
 from ..schemas.ingest import INGEST_SCHEMAS
 from ..services.database import get_database, DatabaseService
 from ..solver.budget_periods import (
+    DEFAULT_MONTHLY_SPEND_URL,
     budget_source_rows_from_dataframe,
     expand_budget_allocation_rows,
     month_cell_as_text,
@@ -425,13 +426,23 @@ async def ingest_budgets_excel(
             f"(from {len(raw_rows)} Excel rows)"
         )
 
+        # A fresh Excel upload creates month rows with empty spend. Pull
+        # the FMS monthly spend file right away so Available = budget - spent.
+        spend_sync: Dict[str, Any] = {"status": "skipped"}
+        try:
+            spend_sync = await _sync_budget_spending_from_url(DEFAULT_MONTHLY_SPEND_URL, db)
+        except Exception as spend_error:
+            logger.warning(f"Budget uploaded but monthly spend refresh failed: {spend_error}")
+            spend_sync = {"status": "error", "message": str(spend_error)}
+
         return {
             "status": "success",
             "message": f"Successfully processed budget allocations from Excel file",
             "total_rows_processed": len(validated_budgets),
             "source_rows": len(raw_rows),
             "legacy_quarter_rows_removed": deleted_legacy,
-            "rows_affected": result.get("rows_affected", 0)
+            "rows_affected": result.get("rows_affected", 0),
+            "spend_sync": spend_sync,
         }
 
     except HTTPException:
@@ -442,6 +453,88 @@ async def ingest_budgets_excel(
             status_code=500,
             detail=f"Error processing Excel file: {str(e)}"
         )
+
+
+async def _sync_budget_spending_from_url(url: str, db: DatabaseService) -> Dict[str, Any]:
+    """
+    Download the FMS spend CSV and write amount_used onto matching budget rows.
+
+    Shared by the Data page button and the automatic refresh after a
+    budget Excel upload.
+    """
+    from urllib.parse import unquote
+
+    decoded_url = unquote(url)
+    logger.info(f"Fetching budget spending CSV from: {decoded_url}")
+
+    headers = {
+        'User-Agent': 'curl/8.7.1',
+        'Accept': '*/*',
+    }
+    async with httpx.AsyncClient(timeout=600.0) as client:
+        response = await client.get(decoded_url, headers=headers)
+        response.raise_for_status()
+        # response.text keeps the UTF-8 BOM; parse_spend_csv strips it.
+        csv_content = response.text
+
+        logger.info(f"Fetched CSV: {response.status_code}, {len(csv_content)} chars")
+        logger.info(f"First 200 chars: {csv_content[:200]}")
+
+    df = parse_spend_csv(csv_content)
+    df = df.fillna('')
+
+    logger.info(f"Processing {len(df)} budget spending records from FMS CSV")
+
+    # Fleet nicknames so "VW" spend lands on the VOLKSWAGEN budget row
+    fleet_aliases = {
+        'VW': 'VOLKSWAGEN',
+        'CHEVY': 'CHEVROLET',
+        'CHEV': 'CHEVROLET',
+        'GMC': 'GMC',
+        'CADILLAC': 'CADILLAC'
+    }
+
+    validated_spending = []
+    for index, row in df.iterrows():
+        try:
+            fleet_raw = str(row['fleet']).strip().upper() if pd.notna(row['fleet']) else ''
+            fleet_normalized = fleet_aliases.get(fleet_raw, fleet_raw)
+
+            year_int = int(row['year']) if pd.notna(row['year']) and str(row['year']) != '' else None
+            amount_str = str(row['amount_used']).replace(',', '').replace('\ufeff', '').strip()
+
+            row_dict = {
+                'office': str(row['office']).replace('\ufeff', '').strip(),
+                'fleet': fleet_normalized,
+                'year': year_int,
+                'quarter': str(row['quarter']).strip(),
+                'amount_used': amount_str
+            }
+            validated_row = INGEST_SCHEMAS["budget_spending"](**row_dict)
+            validated_spending.append(validated_row)
+        except Exception as e:
+            logger.warning(f"Skipping budget spending row {index + 1}: {str(e)}")
+            logger.warning(f"  Row data: {row.to_dict()}")
+            logger.warning(f"  Attempted dict: {row_dict}")
+
+    if not validated_spending:
+        raise HTTPException(
+            status_code=422,
+            detail="No valid budget spending records found in CSV"
+        )
+
+    logger.info(f"Updating budget spending for {len(validated_spending)} records...")
+    result = await db.update_budget_spending(validated_spending)
+
+    logger.info(f"Successfully updated {result.get('rows_affected', 0)} budget spending records")
+
+    return {
+        "table": "budget_spending",
+        "status": "success",
+        "message": "Successfully synced budget spending from FMS CSV",
+        "total_rows_processed": len(validated_spending),
+        "rows_affected": result.get("rows_affected", 0)
+    }
 
 
 @router.post("/budget_spending/url")
@@ -458,83 +551,7 @@ async def ingest_budget_spending_from_url(
     Updates only amount_used. Budget $ still comes from the Excel upload.
     """
     try:
-        # Decode URL if FastAPI encoded it
-        from urllib.parse import unquote
-        decoded_url = unquote(url)
-        logger.info(f"Fetching budget spending CSV from: {decoded_url}")
-
-        # Fetch CSV from URL with proper headers (match other FMS endpoints)
-        headers = {
-            'User-Agent': 'curl/8.7.1',
-            'Accept': '*/*',
-        }
-        async with httpx.AsyncClient(timeout=600.0) as client:
-            response = await client.get(decoded_url, headers=headers)
-            response.raise_for_status()
-            csv_content = response.text
-
-            # Log response info
-            logger.info(f"Fetched CSV: {response.status_code}, {len(csv_content)} chars")
-            logger.info(f"First 200 chars: {csv_content[:200]}")
-
-        df = parse_spend_csv(csv_content)
-        df = df.fillna('')
-
-        logger.info(f"Processing {len(df)} budget spending records from FMS CSV")
-
-        # Fleet normalization mapping (match optimizer logic)
-        fleet_aliases = {
-            'VW': 'VOLKSWAGEN',
-            'CHEVY': 'CHEVROLET',
-            'CHEV': 'CHEVROLET',
-            'GMC': 'GMC',
-            'CADILLAC': 'CADILLAC'
-        }
-
-        validated_spending = []
-        for index, row in df.iterrows():
-            try:
-                # Normalize fleet name
-                fleet_raw = str(row['fleet']).strip().upper() if pd.notna(row['fleet']) else ''
-                fleet_normalized = fleet_aliases.get(fleet_raw, fleet_raw)
-
-                year_int = int(row['year']) if pd.notna(row['year']) and str(row['year']) != '' else None
-                amount_str = str(row['amount_used']).replace(',', '').strip()
-
-                row_dict = {
-                    'office': str(row['office']).strip(),
-                    'fleet': fleet_normalized,
-                    'year': year_int,
-                    'quarter': str(row['quarter']).strip(),
-                    'amount_used': amount_str
-                }
-                validated_row = INGEST_SCHEMAS["budget_spending"](**row_dict)
-                validated_spending.append(validated_row)
-            except Exception as e:
-                logger.warning(f"Skipping budget spending row {index + 1}: {str(e)}")
-                logger.warning(f"  Row data: {row.to_dict()}")
-                logger.warning(f"  Attempted dict: {row_dict}")
-
-        if not validated_spending:
-            raise HTTPException(
-                status_code=422,
-                detail="No valid budget spending records found in CSV"
-            )
-
-        # Update database - only amount_used field
-        logger.info(f"Updating budget spending for {len(validated_spending)} records...")
-        result = await db.update_budget_spending(validated_spending)
-
-        logger.info(f"Successfully updated {result.get('rows_affected', 0)} budget spending records")
-
-        return {
-            "table": "budget_spending",
-            "status": "success",
-            "message": f"Successfully synced budget spending from FMS CSV",
-            "total_rows_processed": len(validated_spending),
-            "rows_affected": result.get("rows_affected", 0)
-        }
-
+        return await _sync_budget_spending_from_url(url, db)
     except HTTPException:
         raise
     except Exception as e:

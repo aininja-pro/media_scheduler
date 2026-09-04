@@ -53,6 +53,7 @@ from ..solver.budget_periods import (
     normalize_budgets_to_months,
     period_label,
     rolling_display_months,
+    rows_for_month,
     today_pacific,
 )
 
@@ -83,11 +84,7 @@ def _build_chain_budget_summary_for_quarter(
     """
     quarter_budgets = pd.DataFrame()
     if not budgets_df.empty:
-        quarter_budgets = budgets_df[
-            (budgets_df['office'] == office)
-            & (budgets_df['year'] == year)
-            & (budgets_df['quarter'] == quarter)
-        ]
+        quarter_budgets = rows_for_month(budgets_df, office, year, quarter)
 
     budget_fleets: Dict[str, Dict[str, float]] = {}
     fleet_sources: Dict[str, List[str]] = {k: list(v) for k, v in fleet_sources_seed.items()}

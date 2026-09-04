@@ -5247,6 +5247,12 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                     ${available?.toLocaleString()}
                                   </span>
                                 </div>
+                                <div className="flex justify-end text-xs text-gray-500 mt-0.5">
+                                  ${Math.round(data.budget || 0).toLocaleString()} budget
+                                  {data.current > 0
+                                    ? ` − $${Math.round(data.current).toLocaleString()} spent`
+                                    : ''}
+                                </div>
                                 {data.planned > 0 && (
                                   <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
                                     <span>+${Math.round(data.planned).toLocaleString()} this chain → Available: </span>
@@ -5261,6 +5267,9 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                         {activeSummary.total && (() => {
                           const totalAvailable = activeSummary.total.budget - activeSummary.total.current;
                           const totalAvailableAfterChain = activeSummary.total.budget - activeSummary.total.projected;
+                          const spendLooksMissing = budgetTab === 'current'
+                            && (activeSummary.total.budget || 0) > 0
+                            && (activeSummary.total.current || 0) === 0;
 
                           return (
                             <div className="border-t pt-2 mt-2">
@@ -5270,6 +5279,17 @@ function ChainBuilder({ sharedOffice, onOfficeChange, preloadedVehicle, onVehicl
                                   ${totalAvailable?.toLocaleString()}
                                 </span>
                               </div>
+                              <div className="flex justify-end text-xs text-gray-500 mt-0.5">
+                                ${Math.round(activeSummary.total.budget || 0).toLocaleString()} budget
+                                {activeSummary.total.current > 0
+                                  ? ` − $${Math.round(activeSummary.total.current).toLocaleString()} spent`
+                                  : ''}
+                              </div>
+                              {spendLooksMissing && (
+                                <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                                  Spend is still $0 for this month. On the Data page, click Update Budget Spending so leftover is budget minus actual spend.
+                                </div>
+                              )}
                               {activeSummary.total.planned > 0 && (
                                 <div className="flex justify-end items-center text-xs text-gray-500 mt-0.5">
                                   <span>+${Math.round(activeSummary.total.planned).toLocaleString()} this chain → Available: </span>

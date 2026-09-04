@@ -266,31 +266,25 @@ class DatabaseService:
             rows_affected = 0
             for record in record_dicts:
                 try:
-                    # First, try to find existing row
-                    existing = self.client.table('budgets')\
-                        .select('*')\
-                        .eq('office', record['office'])\
-                        .eq('fleet', record['fleet'])\
-                        .eq('year', record['year'])\
-                        .eq('quarter', record['quarter'])\
-                        .limit(1)\
-                        .execute()
+                    existing = self._find_budget_row(
+                        record['office'], record['fleet'], record['year'], record['quarter']
+                    )
 
-                    if existing.data:
+                    if existing:
                         # Update only budget_amount, preserve amount_used
                         result = self.client.table('budgets')\
                             .update({'budget_amount': record['budget_amount']})\
-                            .eq('office', record['office'])\
-                            .eq('fleet', record['fleet'])\
-                            .eq('year', record['year'])\
-                            .eq('quarter', record['quarter'])\
+                            .eq('office', existing['office'])\
+                            .eq('fleet', existing['fleet'])\
+                            .eq('year', existing['year'])\
+                            .eq('quarter', existing['quarter'])\
                             .execute()
                     else:
                         # Insert new row (amount_used will be NULL)
                         result = self.client.table('budgets')\
                             .insert({
-                                'office': record['office'],
-                                'fleet': record['fleet'],
+                                'office': str(record['office']).strip(),
+                                'fleet': str(record['fleet']).strip().upper(),
                                 'year': record['year'],
                                 'quarter': record['quarter'],
                                 'budget_amount': record['budget_amount'],
@@ -348,24 +342,18 @@ class DatabaseService:
             rows_affected = 0
             for record in record_dicts:
                 try:
-                    # First, try to find existing row
-                    existing = self.client.table('budgets')\
-                        .select('*')\
-                        .eq('office', record['office'])\
-                        .eq('fleet', record['fleet'])\
-                        .eq('year', record['year'])\
-                        .eq('quarter', record['quarter'])\
-                        .limit(1)\
-                        .execute()
+                    existing = self._find_budget_row(
+                        record['office'], record['fleet'], record['year'], record['quarter']
+                    )
 
-                    if existing.data:
+                    if existing:
                         # Update only amount_used, preserve budget_amount
                         result = self.client.table('budgets')\
                             .update({'amount_used': record['amount_used']})\
-                            .eq('office', record['office'])\
-                            .eq('fleet', record['fleet'])\
-                            .eq('year', record['year'])\
-                            .eq('quarter', record['quarter'])\
+                            .eq('office', existing['office'])\
+                            .eq('fleet', existing['fleet'])\
+                            .eq('year', existing['year'])\
+                            .eq('quarter', existing['quarter'])\
                             .execute()
                     else:
                         # Insert new row (budget_amount will be NULL)
@@ -375,8 +363,8 @@ class DatabaseService:
                         )
                         result = self.client.table('budgets')\
                             .insert({
-                                'office': record['office'],
-                                'fleet': record['fleet'],
+                                'office': str(record['office']).strip(),
+                                'fleet': str(record['fleet']).strip().upper(),
                                 'year': record['year'],
                                 'quarter': record['quarter'],
                                 'budget_amount': None,
@@ -397,6 +385,40 @@ class DatabaseService:
             logger.error(f"Error in update_budget_spending: {e}")
             raise
 
+    def _find_budget_row(
+        self, office: str, fleet: str, year: int, quarter: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find one budgets row for office / fleet / year / month.
+
+        Tries an exact match first, then the same fleet/month with an
+        office name that only differs by capitalization. That way spend
+        from "Los Angeles" still lands on a budget row saved as "los angeles".
+        """
+        fleet_clean = str(fleet or "").strip().upper()
+        office_clean = str(office or "").strip()
+        exact = self.client.table('budgets')\
+            .select('*')\
+            .eq('office', office_clean)\
+            .eq('fleet', fleet_clean)\
+            .eq('year', year)\
+            .eq('quarter', quarter)\
+            .limit(1)\
+            .execute()
+        if exact.data:
+            return exact.data[0]
+
+        candidates = self.client.table('budgets')\
+            .select('*')\
+            .eq('fleet', fleet_clean)\
+            .eq('year', year)\
+            .eq('quarter', quarter)\
+            .execute()
+        office_l = office_clean.lower()
+        for row in candidates.data or []:
+            if str(row.get('office') or '').strip().lower() == office_l:
+                return row
+        return None
 
     def _split_composite_columns(self, upsert_column: str) -> List[str]:
         """Split composite column string into individual column names"""

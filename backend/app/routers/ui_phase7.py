@@ -26,6 +26,7 @@ from ..solver.budget_periods import (
     normalize_budgets_to_months,
     period_label,
     rolling_display_months,
+    rows_for_month,
     today_pacific,
 )
 
@@ -55,11 +56,7 @@ def _build_budget_summary_for_quarter(
     if budgets_df.empty:
         return None
 
-    quarter_budgets = budgets_df[
-        (budgets_df['office'] == office)
-        & (budgets_df['year'] == year)
-        & (budgets_df['quarter'] == quarter)
-    ]
+    quarter_budgets = rows_for_month(budgets_df, office, year, quarter)
 
     if quarter_budgets.empty:
         return None
@@ -1496,7 +1493,8 @@ async def get_overview(
 
         if not budgets_df.empty:
             # Filter to current year
-            year_budgets = budgets_df[budgets_df['year'] == current_year]
+            year_num = pd.to_numeric(budgets_df['year'], errors='coerce')
+            year_budgets = budgets_df[year_num == current_year]
 
             for fleet in year_budgets['fleet'].unique():
                 fleet_budgets = year_budgets[year_budgets['fleet'] == fleet]
@@ -2387,10 +2385,9 @@ async def get_partner_intelligence(
                 current_year, current_period = get_month_period(today_pacific())
                 current_quarter_str = period_label(current_period)
 
-                quarter_budgets = budgets_df[
-                    (budgets_df['year'] == current_year) &
-                    (budgets_df['quarter'] == current_period)
-                ]
+                quarter_budgets = rows_for_month(
+                    budgets_df, office, current_year, current_period
+                )
 
                 # Build budget status for each approved make
                 for make_item in approved_makes:

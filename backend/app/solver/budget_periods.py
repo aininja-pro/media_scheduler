@@ -68,6 +68,12 @@ LEGACY_QUARTERS = {"Q1", "Q2", "Q3", "Q4"}
 MONTH_PERIOD_RE = re.compile(r"^(\d{4})-(\d{2})$")
 DISPLAY_MONTH_COUNT = 3
 
+# Dave's monthly FMS spend report. Same URL the Data page and nightly sync use.
+DEFAULT_MONTHLY_SPEND_URL = (
+    "https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/"
+    "current_spend_by_month.rpt&init=csv&exportreportdataonly=true&columnnames=true"
+)
+
 
 def today_pacific() -> str:
     """Today's date in America/Los_Angeles as YYYY-MM-DD."""
@@ -206,16 +212,35 @@ def parse_month_value(raw: Any) -> Optional[int]:
     return MONTH_NAME_TO_NUM.get(text.lower())
 
 
+def _clean_cell(value: Any) -> str:
+    """
+    Clean one CSV cell.
+
+    DriveShop files start with a hidden UTF-8 BOM (\\ufeff). If we leave
+    that on the first year, "2026" no longer looks like a year and the
+    whole spend file is read as the old quarterly format.
+    """
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    return (
+        str(value)
+        .replace("\ufeff", "")
+        .replace(",", "")
+        .replace('"', "")
+        .strip()
+    )
+
+
 def _looks_like_year(value: Any) -> bool:
     try:
-        year = int(float(str(value).replace(",", "").replace('"', "").strip()))
+        year = int(float(_clean_cell(value)))
     except (TypeError, ValueError):
         return False
     return 2000 <= year <= 2100
 
 
 def _first_row_is_header(values: Iterable[Any]) -> bool:
-    cells = [str(v).strip().lower() for v in values]
+    cells = [_clean_cell(v).lower() for v in values]
     if cells and _looks_like_year(cells[0]):
         return False
     header_words = {"year", "month", "office", "fleet", "amount", "amount_used", "spend"}
@@ -226,14 +251,16 @@ def parse_spend_csv(csv_content: str) -> pd.DataFrame:
     """
     Read Dave's monthly spend report (or the older quarterly one).
 
-    New report (no header, quoted fields):
+    New report (no header, quoted fields, often starts with a BOM):
         year, month, office, fleet, amount_used
         "2026","9","Dallas","AUDI","66.00"
 
     Older report:
         fleet, office, year, quarter, amount_used
     """
-    df = pd.read_csv(StringIO(csv_content), header=None, dtype=str)
+    # Strip the BOM so the first year is read as 2026, not "\\ufeff2026"
+    text = "" if csv_content is None else str(csv_content).lstrip("\ufeff")
+    df = pd.read_csv(StringIO(text), header=None, dtype=str)
     if df.empty:
         return pd.DataFrame(columns=["office", "fleet", "year", "quarter", "amount_used"])
 
@@ -253,7 +280,7 @@ def parse_spend_csv(csv_content: str) -> pd.DataFrame:
         periods = []
         years = []
         for _, row in df.iterrows():
-            year = int(float(str(row["year"]).replace(",", "").strip()))
+            year = int(float(_clean_cell(row["year"])))
             month = parse_month_value(row["month"])
             if month is None:
                 raise ValueError(f"Could not read month from {row['month']}")
@@ -261,8 +288,8 @@ def parse_spend_csv(csv_content: str) -> pd.DataFrame:
             periods.append(format_month_period(year, month))
         out = pd.DataFrame(
             {
-                "office": df["office"].astype(str).str.strip(),
-                "fleet": df["fleet"].astype(str).str.strip(),
+                "office": df["office"].astype(str).str.replace("\ufeff", "", regex=False).str.strip(),
+                "fleet": df["fleet"].astype(str).str.replace("\ufeff", "", regex=False).str.strip(),
                 "year": years,
                 "quarter": periods,
                 "amount_used": df["amount_used"],
@@ -273,20 +300,42 @@ def parse_spend_csv(csv_content: str) -> pd.DataFrame:
     df.columns = ["fleet", "office", "year", "quarter", "amount_used"]
     years = []
     for raw in df["year"]:
-        years.append(int(float(str(raw).replace(",", "").strip())))
+        years.append(int(float(_clean_cell(raw))))
     return pd.DataFrame(
         {
-            "office": df["office"].astype(str).str.strip(),
-            "fleet": df["fleet"].astype(str).str.strip(),
+            "office": df["office"].astype(str).str.replace("\ufeff", "", regex=False).str.strip(),
+            "fleet": df["fleet"].astype(str).str.replace("\ufeff", "", regex=False).str.strip(),
             "year": years,
-            "quarter": df["quarter"].astype(str).str.strip().str.upper(),
+            "quarter": df["quarter"].astype(str).str.replace("\ufeff", "", regex=False).str.strip().str.upper(),
             "amount_used": df["amount_used"],
         }
     )
 
 
 def _row_key(office: Any, fleet: Any, year: Any, period: str) -> Tuple[str, str, int, str]:
-    return (str(office), str(fleet), int(year), period)
+    # Same office / fleet should match even if one row says "Audi" and
+    # another says "AUDI", or one has an extra space.
+    return (str(office or "").strip(), str(fleet or "").strip().upper(), int(year), period)
+
+
+def rows_for_month(
+    budgets_df: pd.DataFrame,
+    office: str,
+    year: int,
+    period: str,
+) -> pd.DataFrame:
+    """Rows for one office and calendar month, ignoring office capitalization."""
+    if budgets_df is None or budgets_df.empty:
+        return pd.DataFrame()
+    office_norm = str(office).strip().lower()
+    year_num = pd.to_numeric(budgets_df["year"], errors="coerce")
+    office_series = budgets_df["office"].astype(str).str.strip().str.lower()
+    period_series = budgets_df["quarter"].astype(str).str.strip()
+    return budgets_df[
+        (office_series == office_norm)
+        & (year_num == int(year))
+        & (period_series == str(period).strip())
+    ]
 
 
 def normalize_budgets_to_months(budgets_df: pd.DataFrame) -> pd.DataFrame:
@@ -324,6 +373,7 @@ def normalize_budgets_to_months(budgets_df: pd.DataFrame) -> pd.DataFrame:
 
         if is_month_period(period_raw):
             key = _row_key(office, fleet, year, str(period_raw).strip())
+            office_clean, fleet_clean, _, period_clean = key
             if key in monthly:
                 existing = monthly[key]
                 if existing.get("budget_amount") is None and budget_amount is not None:
@@ -338,10 +388,10 @@ def normalize_budgets_to_months(budgets_df: pd.DataFrame) -> pd.DataFrame:
                     pass
             else:
                 monthly[key] = {
-                    "office": office,
-                    "fleet": fleet,
+                    "office": office_clean,
+                    "fleet": fleet_clean,
                     "year": year,
-                    "quarter": str(period_raw).strip(),
+                    "quarter": period_clean,
                     "budget_amount": budget_amount,
                     "amount_used": amount_used,
                 }
@@ -469,8 +519,8 @@ def expand_budget_allocation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, 
         if month is not None:
             expanded.append(
                 {
-                    "office": row["office"],
-                    "fleet": row["fleet"],
+                    "office": str(row["office"]).strip(),
+                    "fleet": str(row["fleet"]).strip().upper(),
                     "year": year,
                     "quarter": format_month_period(year, month),
                     "budget_amount": row.get("budget_amount"),
@@ -483,8 +533,8 @@ def expand_budget_allocation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, 
             for period, share in zip(months_for_quarter(year, str(quarter)), shares):
                 expanded.append(
                     {
-                        "office": row["office"],
-                        "fleet": row["fleet"],
+                        "office": str(row["office"]).strip(),
+                        "fleet": str(row["fleet"]).strip().upper(),
                         "year": year,
                         "quarter": period,
                         "budget_amount": share,
@@ -495,8 +545,8 @@ def expand_budget_allocation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, 
         if is_month_period(quarter):
             expanded.append(
                 {
-                    "office": row["office"],
-                    "fleet": row["fleet"],
+                    "office": str(row["office"]).strip(),
+                    "fleet": str(row["fleet"]).strip().upper(),
                     "year": year,
                     "quarter": str(quarter).strip(),
                     "budget_amount": row.get("budget_amount"),

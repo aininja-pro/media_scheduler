@@ -9,6 +9,7 @@ from app.solver.budget_periods import (
     parse_spend_csv,
     period_label,
     rolling_display_months,
+    rows_for_month,
     split_amount_across,
 )
 import pandas as pd
@@ -128,6 +129,28 @@ def test_parse_monthly_spend_csv():
     assert int(dallas["year"]) == 2026
 
 
+def test_parse_spend_csv_strips_bom_from_driveshop_export():
+    """
+    The live FMS file starts with a UTF-8 BOM. If we miss it, the first
+    year does not look like a year and every spend row is skipped.
+    """
+    csv = '\ufeff"2026","9","Los Angeles","AUDI","1,910.71"\n"2026","9","Los Angeles","MAZDA","4,986.22"\n'
+    df = parse_spend_csv(csv)
+    assert len(df) == 2
+    audi = df[df["fleet"] == "AUDI"].iloc[0]
+    assert audi["office"] == "Los Angeles"
+    assert audi["quarter"] == "2026-09"
+    assert int(audi["year"]) == 2026
+
+
+def test_parse_spend_csv_with_header_and_bom():
+    csv = '\ufeffYear,Month,Office,Fleet,Amount\n2026,9,Los Angeles,AUDI,"1,910.71"\n'
+    df = parse_spend_csv(csv)
+    assert len(df) == 1
+    assert df.iloc[0]["quarter"] == "2026-09"
+    assert df.iloc[0]["office"] == "Los Angeles"
+
+
 def test_normalize_prefers_monthly_and_fills_from_quarter():
     df = pd.DataFrame(
         [
@@ -157,6 +180,37 @@ def test_normalize_prefers_monthly_and_fills_from_quarter():
     assert july["amount_used"] is None or pd.isna(july["amount_used"])
 
 
+def test_normalize_merges_spend_and_budget_when_fleet_case_differs():
+    df = pd.DataFrame(
+        [
+            {
+                "office": "Los Angeles",
+                "fleet": "Audi",
+                "year": 2026,
+                "quarter": "2026-09",
+                "budget_amount": 4820,
+                "amount_used": None,
+            },
+            {
+                "office": "Los Angeles",
+                "fleet": "AUDI",
+                "year": 2026,
+                "quarter": "2026-09",
+                "budget_amount": None,
+                "amount_used": 1910.71,
+            },
+        ]
+    )
+    monthly = normalize_budgets_to_months(df)
+    row = monthly.iloc[0]
+    assert row["fleet"] == "AUDI"
+    assert abs(row["budget_amount"] - 4820) < 0.01
+    assert abs(row["amount_used"] - 1910.71) < 0.01
+    matched = rows_for_month(monthly, "los angeles", 2026, "2026-09")
+    assert len(matched) == 1
+    assert abs(matched.iloc[0]["amount_used"] - 1910.71) < 0.01
+
+
 if __name__ == "__main__":
     test_get_month_period()
     test_add_month_and_label()
@@ -165,5 +219,8 @@ if __name__ == "__main__":
     test_dave_monthly_export_zero_padded_months()
     test_expand_monthly_excel_row()
     test_parse_monthly_spend_csv()
+    test_parse_spend_csv_strips_bom_from_driveshop_export()
+    test_parse_spend_csv_with_header_and_bom()
     test_normalize_prefers_monthly_and_fills_from_quarter()
+    test_normalize_merges_spend_and_budget_when_fleet_case_differs()
     print("All monthly budget period tests passed")

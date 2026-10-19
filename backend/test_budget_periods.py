@@ -211,6 +211,33 @@ def test_normalize_merges_spend_and_budget_when_fleet_case_differs():
     assert abs(matched.iloc[0]["amount_used"] - 1910.71) < 0.01
 
 
+def test_nightly_sync_ignores_old_quarterly_spend_file(monkeypatch=None):
+    """The old quarterly file must not be what the nightly job pulls."""
+    from app.services.nightly_sync import budget_spending_url
+    from app.solver.budget_periods import DEFAULT_MONTHLY_SPEND_URL
+    import os
+
+    old = os.environ.get("FMS_BUDGET_SPENDING_CSV_URL")
+    try:
+        os.environ["FMS_BUDGET_SPENDING_CSV_URL"] = (
+            "https://reports.driveshop.com/?report=file:/home/deployer/reports/"
+            "ai_scheduling/current_spend.rpt&init=csv"
+        )
+        assert budget_spending_url() == DEFAULT_MONTHLY_SPEND_URL
+        assert "current_spend_by_month.rpt" in budget_spending_url()
+
+        os.environ["FMS_BUDGET_SPENDING_CSV_URL"] = DEFAULT_MONTHLY_SPEND_URL
+        assert budget_spending_url() == DEFAULT_MONTHLY_SPEND_URL
+
+        os.environ.pop("FMS_BUDGET_SPENDING_CSV_URL", None)
+        assert budget_spending_url() == DEFAULT_MONTHLY_SPEND_URL
+    finally:
+        if old is None:
+            os.environ.pop("FMS_BUDGET_SPENDING_CSV_URL", None)
+        else:
+            os.environ["FMS_BUDGET_SPENDING_CSV_URL"] = old
+
+
 if __name__ == "__main__":
     test_get_month_period()
     test_add_month_and_label()
@@ -223,4 +250,5 @@ if __name__ == "__main__":
     test_parse_spend_csv_with_header_and_bom()
     test_normalize_prefers_monthly_and_fills_from_quarter()
     test_normalize_merges_spend_and_budget_when_fleet_case_differs()
+    test_nightly_sync_ignores_old_quarterly_spend_file()
     print("All monthly budget period tests passed")

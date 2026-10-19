@@ -9,10 +9,11 @@ Syncs:
 - Loan History (loan_history.rpt)
 - Current Activity (current_vehicle_activity.rpt)
 - Approved Makes (approved_makes.rpt)
+- Budget spending (current_spend_by_month.rpt) — the "spent" number on each month
 
 Manual only (NOT synced):
 - Operations Data (Excel upload)
-- Budgets (Excel upload)
+- Budget dollar amounts (Excel upload). Spend is separate and comes from the monthly file.
 
 Author: Ray Rierson
 Date: November 12, 2025
@@ -30,15 +31,44 @@ from ..solver.budget_periods import DEFAULT_MONTHLY_SPEND_URL
 logger = logging.getLogger(__name__)
 pacific_tz = pytz.timezone('America/Los_Angeles')
 
-# FMS CSV Export URLs from environment
-SYNC_URLS = {
-    'vehicles': os.getenv('FMS_VEHICLES_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/active_vehicles.rpt&init=csv'),
-    'media_partners': os.getenv('FMS_PARTNERS_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/media_partners.rpt&init=csv'),
-    'loan_history': os.getenv('FMS_LOAN_HISTORY_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/loan_history.rpt&init=csv'),
-    'current_activity': os.getenv('FMS_CURRENT_ACTIVITY_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/current_vehicle_activity.rpt&init=csv'),
-    'approved_makes': os.getenv('FMS_APPROVED_MAKES_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/approved_makes.rpt&init=csv'),
-    'budget_spending': os.getenv('FMS_BUDGET_SPENDING_CSV_URL', DEFAULT_MONTHLY_SPEND_URL),
-}
+# Old quarterly export. It stores Q1–Q4 totals. The screen reads a month
+# such as 2026-10, so syncing this file leaves "spent" frozen.
+_LEGACY_QUARTERLY_SPEND_FILE = "current_spend.rpt"
+_MONTHLY_SPEND_FILE = "current_spend_by_month.rpt"
+
+
+def budget_spending_url() -> str:
+    """Which spend file the nightly job should pull.
+
+    The number next to each make (budget minus spent) comes from the
+    monthly file. If the server is still configured with the old quarterly
+    file, ignore that setting and use the monthly file.
+    """
+    configured = (os.getenv("FMS_BUDGET_SPENDING_CSV_URL") or "").strip()
+    if not configured:
+        return DEFAULT_MONTHLY_SPEND_URL
+    if (
+        _LEGACY_QUARTERLY_SPEND_FILE in configured
+        and _MONTHLY_SPEND_FILE not in configured
+    ):
+        logger.warning(
+            "FMS_BUDGET_SPENDING_CSV_URL points at the old quarterly spend file. "
+            "Using the monthly spend file so each month's spent amount updates."
+        )
+        return DEFAULT_MONTHLY_SPEND_URL
+    return configured
+
+
+def current_sync_urls() -> Dict[str, str]:
+    """FMS CSV export URLs. Read on each run so a setting change is picked up."""
+    return {
+        'vehicles': os.getenv('FMS_VEHICLES_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/active_vehicles.rpt&init=csv'),
+        'media_partners': os.getenv('FMS_PARTNERS_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/media_partners.rpt&init=csv'),
+        'loan_history': os.getenv('FMS_LOAN_HISTORY_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/loan_history.rpt&init=csv'),
+        'current_activity': os.getenv('FMS_CURRENT_ACTIVITY_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/current_vehicle_activity.rpt&init=csv'),
+        'approved_makes': os.getenv('FMS_APPROVED_MAKES_CSV_URL', 'https://reports.driveshop.com/?report=file:/home/deployer/reports/ai_scheduling/approved_makes.rpt&init=csv'),
+        'budget_spending': budget_spending_url(),
+    }
 
 # API base URL (for Render deployment or localhost)
 # Default to localhost, override with INTERNAL_API_URL env var for production
@@ -127,7 +157,7 @@ async def run_nightly_sync() -> Dict:
 
     # Sync each table sequentially
     # Note: Media partners takes longest due to geocoding
-    for table_name, csv_url in SYNC_URLS.items():
+    for table_name, csv_url in current_sync_urls().items():
         if csv_url:  # Only sync if URL is configured
             result = await sync_single_table(table_name, csv_url)
             results.append(result)
@@ -188,7 +218,7 @@ def get_sync_config() -> Dict:
     return {
         'sync_urls': {
             table: url if url else 'Not configured'
-            for table, url in SYNC_URLS.items()
+            for table, url in current_sync_urls().items()
         },
         'sync_hour': int(os.getenv('SYNC_HOUR', 2)),
         'sync_minute': int(os.getenv('SYNC_MINUTE', 0)),

@@ -147,7 +147,8 @@ async def trigger_manual_sync():
     - Current Activity
     - Approved Makes
 
-    Note: Operations Data and Budgets remain manual (Excel upload)
+    Note: Operations Data and budget dollar amounts stay on the Excel upload.
+    Spent amounts are included and come from the monthly spend file.
     """
     logger.info("[Manual Sync] Triggered by user")
     result = await run_nightly_sync()
